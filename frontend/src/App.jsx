@@ -330,7 +330,7 @@ function Login({ onBack, onDone }) {
         <button onClick={onBack} style={{background:"none",border:"none",fontSize:14,color:C.muted,cursor:"pointer",marginBottom:16}}>← חזרה</button>
         <h2 style={{fontFamily:"'Playfair Display',serif",marginBottom:20}}>התחבר</h2>
         <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="אימייל" style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:12,fontSize:15}} />
-        {err  <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
+        {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
         <Btn onClick={submit} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:13}}>{loading?"מתחבר...":"התחבר →"}</Btn>
       </div>
     </div>
