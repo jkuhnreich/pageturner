@@ -131,7 +131,7 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile }) {
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handle}/>
       <input ref={galRef} type="file" accept="image/*" style={{display:"none"}} onChange={handle}/>
       {loading
-        ? <div style={{textAlign:"center"}}><Spinner/><div style={{fontSize:12,color:C.muted,marginTop:8,fontWeight:600}}>Claude מנתח...</div></div>
+        ? <div style={{textAlign:"center"}}><Spinner/><div style={{fontSize:12,color:C.muted,marginTop:8,fontWeight:600}}>המערכת מנתחת את התמונה...</div></div>
         : preview
           ? <>
               <img src={preview} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
@@ -262,7 +262,7 @@ function AddBook({ user, onDone, toast_ }) {
       {step === "camera" && (
         <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"16px",marginBottom:12}}>
           <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:4}}>📸 צלם את שתי הכריכות</div>
-          <div style={{fontSize:12,color:C.muted,marginBottom:12}}>Claude יחלץ את הפרטים ויזין לטופס אוטומטית</div>
+          <div style={{fontSize:12,color:C.muted,marginBottom:12}}>המערכת תחלץ את הפרטים ותזין לטופס אוטומטית</div>
           <div style={{display:"flex",gap:10,marginBottom:10}}>
             <CoverSlot label="קדמית" sub="שם · מחבר · הוצאה" icon="📖" preview={fp} loading={fl} onFile={scanFront}/>
             <CoverSlot label="אחורית" sub="תקציר · ISBN" icon="📝" preview={bp} loading={bl} onFile={scanBack}/>
