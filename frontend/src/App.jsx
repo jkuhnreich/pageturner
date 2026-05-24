@@ -311,6 +311,32 @@ function AddBook({ user, onDone, toast_ }) {
   );
 }
 
+function Login({ onBack, onDone }) {
+  const [email, setEmail] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const submit = async () => {
+    if (!email.trim()) return setErr("הכנס אימייל");
+    setLoading(true); setErr("");
+    try {
+      const res = await api.post("/api/users/login", { email });
+      onDone(res.user);
+    } catch(e) { setErr(e.message); }
+    setLoading(false);
+  };
+  return (
+    <div style={{minHeight:"100vh",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",padding:24,direction:"rtl"}}>
+      <div style={{background:C.paper,borderRadius:20,padding:28,width:"100%",maxWidth:380}}>
+        <button onClick={onBack} style={{background:"none",border:"none",fontSize:14,color:C.muted,cursor:"pointer",marginBottom:16}}>← חזרה</button>
+        <h2 style={{fontFamily:"'Playfair Display',serif",marginBottom:20}}>התחבר</h2>
+        <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="אימייל" style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:12,fontSize:15}} />
+        {err  <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
+        <Btn onClick={submit} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:13}}>{loading?"מתחבר...":"התחבר →"}</Btn>
+      </div>
+    </div>
+  );
+}
+
 // ── מסך הרשמה ──────────────────────────────────────────────
 function Register({ onBack, onDone }) {
   const [type, setType] = useState(null);
@@ -391,7 +417,7 @@ function Register({ onBack, onDone }) {
 }
 
 // ── מסך פתיחה ──────────────────────────────────────────────
-function Splash({ onReg, onGuest }) {
+function Splash({ onReg, onGuest, onLogin }) {
   return (
     <div style={{minHeight:"100vh",background:HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
       <div style={{display:"flex",gap:5,marginBottom:34}}>
@@ -403,6 +429,7 @@ function Splash({ onReg, onGuest }) {
       <div style={{color:"rgba(255,255,255,.4)",fontSize:14,marginBottom:44}}>השאל · קנה · החלף · גלה</div>
       <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
         <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13}}>הרשמה →</Btn>
+              <Btn onClick={onLogin} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13,background:"rgba(255,255,255,.15)"}}>התחבר →</Btn>
         <button onClick={onGuest} style={{width:"100%",padding:"13px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:13,color:"rgba(255,255,255,.75)",fontSize:14,cursor:"pointer"}}>כניסה כאורח 👀</button>
       </div>
     </div>
@@ -479,7 +506,8 @@ export default function App() {
   };
 
   // ── screens ──────────────────────────────────────────────
-  if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest}/></>;
+  if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")}/></>;
+  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app")}}/>;
   if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
 
   const TABS = [
