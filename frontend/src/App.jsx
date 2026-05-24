@@ -507,7 +507,7 @@ export default function App() {
 
   // ── screens ──────────────────────────────────────────────
   if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")}/></>;
-  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app")}}/>;
+  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app")}}/></>; 
   if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
 
   const TABS = [
