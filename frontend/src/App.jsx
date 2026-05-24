@@ -4,12 +4,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 // ── כל קריאות ה-API עוברות דרך /api (proxy ל-3001) ─────────
 const api = {
   async get(path) {
-    const r = await fetch(path);
+    const r = await fetch(BASE + path);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   },
   async post(path, body) {
-    const r = await fetch(path, {
+    const r = await fetch(BASE + path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -19,7 +19,7 @@ const api = {
     return data;
   },
   async upload(path, formData) {
-    const r = await fetch(path, { method: "POST", body: formData });
+    const r = await fetch(BASE + path, { method: "POST", body: formData });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
     return data;
