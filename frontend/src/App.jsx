@@ -507,9 +507,9 @@ export default function App() {
         body: JSON.stringify({...fields, userId: user?.id})
       });
       if (!r.ok) throw new Error("שגיאה בעדכון");
-      setBooks(p => p.map(b => b.id===id ? {...b,...fields} : b));
       setEditBook(null);
       toast_("✓ הספר עודכן");
+      loadBooks();
     } catch(e) { toast_("שגיאה: " + e.message, "err"); }
   };
 
