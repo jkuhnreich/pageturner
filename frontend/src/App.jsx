@@ -328,25 +328,49 @@ function AddBook({ user, onDone, toast_, coords }) {
 
 function Login({ onBack, onDone }) {
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState("email");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const submit = async () => {
+
+  const sendOtp = async () => {
     if (!email.trim()) return setErr("הכנס אימייל");
     setLoading(true); setErr("");
     try {
-      const res = await api.post("/api/users/login", { email });
+      await api.post("/api/auth/send-otp", { email });
+      setStep("code");
+    } catch(e) { setErr(e.message); }
+    setLoading(false);
+  };
+
+  const verifyOtp = async () => {
+    if (!code.trim()) return setErr("הכנס קוד");
+    setLoading(true); setErr("");
+    try {
+      const res = await api.post("/api/auth/verify-otp", { email, code });
+      if (res.isNew) return setErr("משתמש לא נמצא — אנא הירשם");
       onDone(res.user);
     } catch(e) { setErr(e.message); }
     setLoading(false);
   };
+
   return (
     <div style={{minHeight:"100vh",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",padding:24,direction:"rtl"}}>
       <div style={{background:C.paper,borderRadius:20,padding:28,width:"100%",maxWidth:380}}>
-        <button onClick={onBack} style={{background:"none",border:"none",fontSize:16,color:C.muted,cursor:"pointer",marginBottom:20}}>← חזרה</button>
-        <h2 style={{fontFamily:"'Playfair Display',serif",marginBottom:20}}>התחבר</h2>
-        <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="אימייל" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:17}} />
-        {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
-        <Btn onClick={submit} disabled={loading} style={{width:"100%",padding:"17px",borderRadius:14}}>{loading?"מתחבר...":"התחבר →"}</Btn>
+        <button onClick={step==="code"?()=>setStep("email"):onBack} style={{background:"none",border:"none",fontSize:16,color:C.muted,cursor:"pointer",marginBottom:20}}>← חזרה</button>
+        <h2 style={{fontFamily:"'Playfair Display',serif",marginBottom:8}}>התחבר</h2>
+        {step==="email" ? <>
+          <p style={{fontSize:13,color:C.muted,marginBottom:20}}>נשלח לך קוד כניסה למייל</p>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="כתובת מייל" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:17}} />
+          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
+          <Btn onClick={sendOtp} disabled={loading} style={{width:"100%",padding:"17px",borderRadius:14}}>{loading?"שולח...":"שלח קוד →"}</Btn>
+        </> : <>
+          <p style={{fontSize:13,color:C.muted,marginBottom:20}}>הכנס את הקוד שנשלח ל-{email}</p>
+          <input type="number" value={code} onChange={e=>setCode(e.target.value)} placeholder="קוד בן 6 ספרות" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:22,textAlign:"center",letterSpacing:8}} />
+          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
+          <Btn onClick={verifyOtp} disabled={loading} style={{width:"100%",padding:"17px",borderRadius:14}}>{loading?"מאמת...":"כניסה →"}</Btn>
+          <button onClick={sendOtp} style={{width:"100%",marginTop:10,background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer"}}>לא קיבלת? שלח שוב</button>
+        </>}
       </div>
     </div>
   );
@@ -361,13 +385,29 @@ function Register({ onBack, onDone }) {
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
   const valid = form.name && form.phone && form.email && (type!=="store" || (form.storeName && form.address));
 
+  const [otpStep, setOtpStep] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [pendingUser, setPendingUser] = useState(null);
+
   const submit = async () => {
     setLoading(true); setErr("");
     try {
       const res = await api.post("/api/users/register", { ...form, type });
-      onDone(res.user);
+      await api.post("/api/auth/send-otp", { email: form.email });
+      setPendingUser(res.user);
+      setOtpStep(true);
     } catch(e) { setErr(e.message); }
     finally { setLoading(false); }
+  };
+
+  const verifyOtp = async () => {
+    if (!otp.trim()) return setErr("הכנס קוד");
+    setLoading(true); setErr("");
+    try {
+      await api.post("/api/auth/verify-otp", { email: form.email, code: otp });
+      onDone(pendingUser);
+    } catch(e) { setErr(e.message); }
+    setLoading(false);
   };
 
   const quotes = [
@@ -421,9 +461,13 @@ function Register({ onBack, onDone }) {
                 </>}
               </div>
               {err && <div style={{background:C.redL,borderRadius:10,padding:"10px 14px",fontSize:13,color:C.red,marginBottom:12}}>⚠️ {err}</div>}
-              <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"14px",borderRadius:13}}>
-                {loading ? <><Spinner/> נרשם...</> : type==="store" ? "🏪 פתח חנות" : "📖 מדפדפים →"}
-              </Btn>
+              {otpStep ? <>
+            <p style={{fontSize:13,color:C.muted,marginBottom:12}}>הכנס את הקוד שנשלח ל-{form.email}</p>
+            <input type="number" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="קוד בן 6 ספרות" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:22,textAlign:"center",letterSpacing:8}} />
+            <Btn onClick={verifyOtp} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:13}}>{loading?"מאמת...":"אמת וכנס →"}</Btn>
+          </> : <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"14px",borderRadius:13}}>
+            {loading ? <><Spinner/> שולח קוד...</> : type==="store" ? "🏪 פתח חנות" : "📖 מדפדפים →"}
+          </Btn>}
             </>
         }
       </div>

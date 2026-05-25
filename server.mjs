@@ -338,3 +338,54 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Anthropic:    ${process.env.ANTHROPIC_API_KEY?"✓":"✗ חסר!"}`);
   console.log(`   Database:     ${process.env.DATABASE_URL?"✓ PostgreSQL":"⚠ in-memory"}`);
 });
+
+// ── OTP ──────────────────────────────────────────────────
+const otps = {};
+
+app.post("/api/auth/send-otp", async (req, res) => {
+  const { email } = req.body;
+  if (!email?.trim()) return res.status(400).json({ error:"אימייל חסר" });
+  
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  otps[email.toLowerCase()] = { code, expires: Date.now() + 10 * 60 * 1000 };
+  
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: "Pageturner <onboarding@resend.dev>",
+        to: [email.trim()],
+        subject: "קוד הכניסה שלך ל-Pageturner",
+        html: `<div dir="rtl" style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:24px">
+          <h2 style="color:#0e0c08">📚 Pageturner</h2>
+          <p>קוד הכניסה שלך:</p>
+          <div style="font-size:36px;font-weight:900;letter-spacing:8px;color:#b5390e;padding:16px;background:#fef8ec;border-radius:12px;text-align:center">${code}</div>
+          <p style="color:#888;font-size:12px">הקוד תקף ל-10 דקות</p>
+        </div>`
+      })
+    });
+    if (!r.ok) { const t = await r.json(); throw new Error(t.message||"שגיאה בשליחה"); }
+    res.json({ ok: true });
+  } catch(e) {
+    console.error("OTP error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/auth/verify-otp", async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) return res.status(400).json({ error:"חסרים פרטים" });
+  
+  const stored = otps[email.toLowerCase()];
+  if (!stored) return res.status(400).json({ error:"לא נשלח קוד לכתובת זו" });
+  if (Date.now() > stored.expires) return res.status(400).json({ error:"הקוד פג תוקף" });
+  if (stored.code !== code) return res.status(400).json({ error:"קוד שגוי" });
+  
+  delete otps[email.toLowerCase()];
+  
+  const existing = await pool.query("SELECT * FROM users WHERE email=$1", [email.toLowerCase()]);
+  if (existing.rows.length) return res.json({ ok: true, user: existing.rows[0], isNew: false });
+  
+  res.json({ ok: true, user: null, isNew: true });
+});
