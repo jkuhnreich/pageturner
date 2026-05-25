@@ -160,7 +160,7 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile }) {
 }
 
 // ── מסך הוספת ספר ──────────────────────────────────────────
-function AddBook({ user, onDone, toast_ }) {
+function AddBook({ user, onDone, toast_, coords }) {
   const [step, setStep] = useState("choose"); // choose | camera | manual
   const [fp, setFp] = useState(null);  // front preview URL
   const [bp, setBp] = useState(null);  // back preview URL
@@ -172,17 +172,7 @@ function AddBook({ user, onDone, toast_ }) {
     summary:"", condition:"", mode:"sell", price:"", lendUntil:"", swapFor:""
   });
   const [saving, setSaving] = useState(false);
-  const [coords, setCoords] = useState(null);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => setCoords(null)
-      );
-    }
-  }, []);
 
   const scanFront = async file => {
     setFp(URL.createObjectURL(file));
@@ -329,7 +319,6 @@ function AddBook({ user, onDone, toast_ }) {
         )}
       </div>
 
-      <div style={{fontSize:12,color:coords?C.green:C.muted,marginBottom:8,textAlign:"center"}}>{coords?"📍 מיקום זוהה אוטומטית":"📍 לא זוהה מיקום — הספר יופיע ללא מרחק"}</div>
       <Btn onClick={save} disabled={!form.title.trim()||saving} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
         {saving ? <><Spinner/> מפרסם...</> : "פרסם ספר ✨"}
       </Btn>
@@ -643,7 +632,7 @@ export default function App() {
                 <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:7}}>להוסיף ספרים נדרש חשבון</div>
                 <Btn onClick={onGuestAction} style={{padding:"11px 26px"}}>הצטרף עכשיו →</Btn>
               </div>
-            : <AddBook user={user} onDone={b=>{setBooks(p=>[b,...p]);setTab("search");}} toast_={toast_}/>
+            : <AddBook user={user} onDone={b=>{setBooks(p=>[b,...p]);setTab("search");}} toast_={toast_} coords={userCoords}/>
         )}
 
         {/* פרופיל */}
@@ -748,7 +737,7 @@ function BookCard({ book, onEdit, isGuest, onGuest }) {
             <div style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11}}>{(book.ownerName||"?")[0]}</div>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownerName}</div>
-              <div style={{fontSize:11,color:C.muted}}>📍 {book.km===0?"אצלך":`${book.km} ק"מ`}</div>
+              <div style={{fontSize:11,color:C.muted}}>📍 {book.km==null||isNaN(book.km)?"מרחק לא ידוע":book.km===0?"אצלך":`${book.km} ק"מ`}</div>
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
