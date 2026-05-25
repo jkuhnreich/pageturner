@@ -561,10 +561,12 @@ export default function App() {
             {SPINES.map((c,i)=><div key={i} style={{flex:1,height:3,borderRadius:3,background:c}}/>)}
           </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-            <button onClick={()=>{setTab("search");setSearch("");setModeFilter("all");}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"right",padding:0}}>
+            <button onClick={()=>{setTab("search");setSearch("");setModeFilter("all");loadBooks();}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"right",padding:0}}>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,.35)",marginTop:1}}>{isGuest?"👀 אורח":`👤 ${user?.name||""}`}</div>
             </button>
+            {!isGuest && <button onClick={()=>setTab("profile")} style={{background:"none",border:"none",cursor:"pointer",textAlign:"left",padding:0}}>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(()=>{const h=new Date().getHours();return h<12?"☀️ בוקר טוב":h<17?"🌤️ צהריים טובים":h<21?"🌆 ערב טוב":"🌙 לילה טוב";})()} {user?.name||""}</div>
+            </button>}
             {isGuest && <button onClick={onGuestAction} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"5px 11px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>הצטרף →</button>}
           </div>
         </div>
