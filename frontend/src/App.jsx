@@ -222,6 +222,7 @@ function AddBook({ user, onDone, toast_ }) {
       const fd = new FormData();
       Object.entries(form).forEach(([k,v]) => { if(v) fd.append(k, String(v)); });
       fd.append("ownerName", user.storeName || user.name);
+      fd.append("ownerId", user.id);
       fd.append("ownerType", user.type);
       fd.append("phone", user.phone);
       if (frontFile) fd.append("frontImage", frontFile);
