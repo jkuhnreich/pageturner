@@ -487,25 +487,37 @@ export default function App() {
   const onGuestAction = useCallback(() => setScreen("register"), []);
 
   // טען ספרים מהשרת
+  const [userCoords, setUserCoords] = useState(null);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {}
+      );
+    }
+  }, []);
+
   const loadBooks = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set("q", search);
       if (modeFilter !== "all") params.set("mode", modeFilter);
+      if (userCoords) { params.set("lat", userCoords.lat); params.set("lng", userCoords.lng); }
       const data = await api.get(`/api/books?${params}`);
       setBooks(data);
     } catch(e) {
       toast_("שגיאה בטעינת ספרים: " + e.message, "err");
     } finally { setLoading(false); }
-  }, [search, modeFilter, toast_]);
+  }, [search, modeFilter, toast_, userCoords]);
 
   useEffect(() => {
     if (screen === "app") {
       const t = setTimeout(loadBooks, 200);
       return () => clearTimeout(t);
     }
-  }, [screen, search, modeFilter, loadBooks]);
+  }, [screen, search, modeFilter, loadBooks, userCoords]);
 
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); };
