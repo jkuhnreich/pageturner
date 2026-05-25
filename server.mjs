@@ -49,7 +49,7 @@ async function initDB() {
       createdAt BIGINT
     )
   `);
-  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lendUntil TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT"); } catch {}
   console.log("✅ DB ready");
 }
 
@@ -227,11 +227,11 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
     const id = randomUUID();
     const frontImg = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}` : (b.thumbnail||null);
     await pool.query(
-      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendDuration,swapFor,lendUntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,frontImg,thumbnail,createdAt)
+      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,frontImg,thumbnail,createdAt)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
       [id, b.title.trim(), b.author||"", b.publisher||"", b.year||"", b.summary||"", b.condition||"",
        b.series||"", b.volume||"", b.isbn||"", b.genre||"", b.mode||"sell",
-       b.mode==="sell"?(Number(b.price)||null):null, b.lendDuration||"", b.swapFor||"", b.lendUntil||"",
+       b.mode==="sell"?(Number(b.price)||null):null, b.lendDuration||"", b.swapFor||"", b.lendUntil||b.lenduntil||"",
        true, b.ownerName||"אני", b.ownerType||"private", b.phone||"", b.ownerId||null,
        b.lat?parseFloat(b.lat):null, b.lng?parseFloat(b.lng):null, frontImg, b.thumbnail||null, Date.now()]
     );
@@ -247,7 +247,7 @@ app.put("/api/books/:id", async (req,res) => {
     if (!existing) return res.status(404).json({ error:"לא נמצא" });
     if (userId && existing.ownerid && existing.ownerid !== userId) return res.status(403).json({ error:"אין הרשאה" });
     await pool.query(
-      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendDuration=$9,swapFor=$10,lendUntil=$11 WHERE id=$12`,
+      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11 WHERE id=$12`,
       [title||existing.title, author||existing.author, publisher||existing.publisher, year||existing.year,
        summary||existing.summary, mode||existing.mode, mode==="sell"?(Number(price)||null):null,
        condition||existing.condition, lendDuration||existing.lendduration, swapFor||existing.swapfor, lendUntil||existing.lenduntil||"", req.params.id]
