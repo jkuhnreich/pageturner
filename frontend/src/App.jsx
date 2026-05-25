@@ -754,7 +754,8 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
   const [f, setF] = useState({
     title:book.title||"", author:book.author||"", publisher:book.publisher||"",
     year:book.year||"", summary:book.summary||"", condition:book.condition||"",
-    mode:book.mode||"sell", price:book.price||"", avail:book.avail!==false
+    mode:book.mode||"sell", price:book.price||"", avail:book.avail!==false,
+    lendUntil:book.lenduntil||"", swapFor:book.swapfor||""
   });
   const [del, setDel] = useState(false);
   const upd = k => e => setF(p=>({...p,[k]:e.target.value}));
@@ -790,6 +791,12 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
             ))}
           </div>
           {f.mode==="sell"&&<Inp label="מחיר (₪)" type="number" value={f.price} onChange={upd("price")} icon="₪"/>}
+          {f.mode==="lend"&&<div style={{marginBottom:13}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>תאריך החזרה</div>
+            <input type="date" value={f.lendUntil||""} onChange={e=>setF(p=>({...p,lendUntil:e.target.value}))} min={new Date().toISOString().split("T")[0]} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:15,background:C.bg}}/>
+          </div>}
+          {f.mode==="swap"&&<Inp label="איזה ספר מחפש?" value={f.swapFor||""} onChange={e=>setF(p=>({...p,swapFor:e.target.value}))} placeholder="שם ספר / נושא / סוגה" icon="🔍"/>}
+          {f.mode==="give"&&<div style={{padding:"10px 12px",background:"#f0fdf4",borderRadius:10,fontSize:13,color:"#15803d",fontWeight:600,marginBottom:13}}>🎁 הספר יסומן כמסירה חינם</div>}
           <div style={{display:"flex",gap:9,marginTop:5}}>
             <Btn variant="outline" onClick={onCancel} style={{flex:1,padding:"11px"}}>ביטול</Btn>
             <Btn onClick={()=>onSave(book.id,{...f,price:f.mode==="sell"?Number(f.price):null})} disabled={!f.title.trim()} style={{flex:2,padding:"11px"}}>✓ שמור</Btn>
