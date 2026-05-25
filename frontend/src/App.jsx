@@ -595,7 +595,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={b.mine?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={b.ownerid===user?.id?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction}/>)
         )}
 
         {/* הוספה */}
@@ -627,9 +627,9 @@ export default function App() {
                   {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user.phone}</div>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>
-                {books.filter(b=>b.ownerId===user?.id).length>0&&<>
+                {books.filter(b=>b.ownerid===user?.id).length>0&&<>
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הספרים שלי</div>
-                  {books.filter(b=>b.ownerId===user?.id).map(b=>(
+                  {books.filter(b=>b.ownerid===user?.id).map(b=>(
                     <div key={b.id} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11}}>
                       <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📖</div>
                       <div style={{flex:1,minWidth:0}}>
@@ -677,8 +677,8 @@ function BookCard({ book, onEdit, isGuest, onGuest }) {
         <div style={{display:"flex",gap:11,marginBottom:10}}>
           {/* ספר thumbnail */}
           <div style={{width:50,height:72,borderRadius:"3px 8px 8px 3px",flexShrink:0,background:book.frontImg?undefined:color,overflow:"hidden",position:"relative",boxShadow:`3px 3px 10px ${color}44`}}>
-            {book.frontImg
-              ? <img src={book.frontImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            {(book.frontimg||book.thumbnail)
+              ? <img src={book.frontimg||book.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               : <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>📖</div>
             }
           </div>
