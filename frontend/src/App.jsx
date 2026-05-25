@@ -438,8 +438,12 @@ function Splash({ onReg, onGuest, onLogin }) {
 
 // ── App ראשי ────────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen] = useState("splash");
-  const [user, setUser] = useState(null);
+  const [screen, setScreen] = useState(() => {
+    try { return localStorage.getItem("pt_screen") || "splash"; } catch { return "splash"; }
+  });
+  const [user, setUser] = useState(() => {
+    try { const u = localStorage.getItem("pt_user"); return u ? JSON.parse(u) : null; } catch { return null; }
+  });
   const [books, setBooks] = useState([]);
   const [tab, setTab] = useState("search");
   const [search, setSearch] = useState("");
@@ -477,7 +481,7 @@ export default function App() {
     }
   }, [screen, search, modeFilter, loadBooks]);
 
-  const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); };
+  const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); };
 
   const saveEdit = async (id, fields) => {
@@ -507,7 +511,7 @@ export default function App() {
 
   // ── screens ──────────────────────────────────────────────
   if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")}/></>;
-  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app")}}/></>; 
+  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app");try{localStorage.setItem("pt_user",JSON.stringify(u));localStorage.setItem("pt_screen","app");}catch{}}}/></>; 
   if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
 
   const TABS = [
@@ -635,7 +639,7 @@ export default function App() {
                     </div>
                   ))}
                 </>}
-                <Btn variant="outline" onClick={()=>{setUser(null);setScreen("splash");}} style={{width:"100%",marginTop:4}}>יציאה</Btn>
+                <Btn variant="outline" onClick={()=>{setUser(null);setScreen("splash");try{localStorage.removeItem("pt_user");localStorage.removeItem("pt_screen");}catch{}}} style={{width:"100%",marginTop:4}}>יציאה</Btn>
               </div>
         )}
       </div>
