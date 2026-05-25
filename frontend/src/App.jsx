@@ -626,9 +626,9 @@ export default function App() {
                   {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user.phone}</div>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>
-                {books.filter(b=>b.mine).length>0&&<>
+                {books.filter(b=>b.ownerId===user?.id).length>0&&<>
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הספרים שלי</div>
-                  {books.filter(b=>b.mine).map(b=>(
+                  {books.filter(b=>b.ownerId===user?.id).map(b=>(
                     <div key={b.id} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11}}>
                       <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📖</div>
                       <div style={{flex:1,minWidth:0}}>
