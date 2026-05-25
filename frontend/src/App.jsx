@@ -328,11 +328,11 @@ function Login({ onBack, onDone }) {
   return (
     <div style={{minHeight:"100vh",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",padding:24,direction:"rtl"}}>
       <div style={{background:C.paper,borderRadius:20,padding:28,width:"100%",maxWidth:380}}>
-        <button onClick={onBack} style={{background:"none",border:"none",fontSize:14,color:C.muted,cursor:"pointer",marginBottom:16}}>← חזרה</button>
+        <button onClick={onBack} style={{background:"none",border:"none",fontSize:16,color:C.muted,cursor:"pointer",marginBottom:20}}>← חזרה</button>
         <h2 style={{fontFamily:"'Playfair Display',serif",marginBottom:20}}>התחבר</h2>
-        <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="אימייל" style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:12,fontSize:15}} />
+        <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="אימייל" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:17}} />
         {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
-        <Btn onClick={submit} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:13}}>{loading?"מתחבר...":"התחבר →"}</Btn>
+        <Btn onClick={submit} disabled={loading} style={{width:"100%",padding:"17px",borderRadius:14}}>{loading?"מתחבר...":"התחבר →"}</Btn>
       </div>
     </div>
   );
