@@ -716,8 +716,18 @@ function BookCard({ book, onEdit, isGuest, onGuest }) {
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             {onEdit && <button onClick={()=>onEdit(book)} style={{padding:"6px 10px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️</button>}
-            {book.avail && !book.mine && <>
+            {book.avail && <>
               <a href={`tel:${book.phone}`} onClick={e=>{if(isGuest){e.preventDefault();onGuest();}}} style={{padding:"7px 10px",background:C.tealL,border:`1px solid ${C.teal}30`,borderRadius:9,color:C.teal,fontSize:12,fontWeight:700,textDecoration:"none"}}>📞</a>
+              {book.phone && <a
+                href={`https://wa.me/972${(book.phone||"").replace(/^0/,"").replace(/-/g,"")}?text=${encodeURIComponent(
+                  book.mode==="sell"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין לרכישה?`:
+                  book.mode==="lend"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין להשאלה?`:
+                  book.mode==="swap"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם תהיה מעוניין להחליף?`:
+                  `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין למסירה?`
+                )}`}
+                onClick={e=>{if(isGuest){e.preventDefault();onGuest();}}}
+                target="_blank"
+                style={{padding:"7px 10px",background:"#dcfce7",border:"1px solid #16a34a30",borderRadius:9,color:"#16a34a",fontSize:12,fontWeight:700,textDecoration:"none"}}>💬</a>}
             </>}
           </div>
         </div>
