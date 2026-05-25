@@ -333,12 +333,6 @@ app.post("/api/auth/google", async (req, res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`\n📚 ספרייה שכונתית v4 — port ${PORT}`);
-  console.log(`   Anthropic:    ${process.env.ANTHROPIC_API_KEY?"✓":"✗ חסר!"}`);
-  console.log(`   Database:     ${process.env.DATABASE_URL?"✓ PostgreSQL":"⚠ in-memory"}`);
-});
-
 // ── OTP ──────────────────────────────────────────────────
 const otps = {};
 
@@ -388,4 +382,10 @@ app.post("/api/auth/verify-otp", async (req, res) => {
   if (existing.rows.length) return res.json({ ok: true, user: existing.rows[0], isNew: false });
   
   res.json({ ok: true, user: null, isNew: true });
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`\n📚 ספרייה שכונתית v4 — port ${PORT}`);
+  console.log(`   Anthropic:    ${process.env.ANTHROPIC_API_KEY?"✓":"✗ חסר!"}`);
+  console.log(`   Database:     ${process.env.DATABASE_URL?"✓ PostgreSQL":"⚠ in-memory"}`);
 });
