@@ -40,6 +40,7 @@ const MODES = {
   sell:  { label:"מכירה",  icon:"₪",  bg:"#fef8ec", fg:"#c4841a" },
   lend:  { label:"השאלה",  icon:"↩",  bg:"#eef2ff", fg:"#4338ca" },
   swap:  { label:"החלפה",  icon:"⇄",  bg:"#f0fdf9", fg:"#0f766e" },
+  give:  { label:"מסירה",  icon:"🎁", bg:"#f0fdf4", fg:"#15803d" },
 };
 
 const CSS = `
@@ -168,7 +169,7 @@ function AddBook({ user, onDone, toast_ }) {
   const [frontFile, setFrontFile] = useState(null);
   const [form, setForm] = useState({
     title:"", author:"", publisher:"", year:"",
-    summary:"", condition:"", mode:"sell", price:""
+    summary:"", condition:"", mode:"sell", price:"", lendUntil:"", swapFor:""
   });
   const [saving, setSaving] = useState(false);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
@@ -302,6 +303,18 @@ function AddBook({ user, onDone, toast_ }) {
         </div>
         {form.mode === "sell" && (
           <Inp label="מחיר (₪)" type="number" value={form.price} onChange={upd("price")} placeholder="0" icon="₪"/>
+        )}
+        {form.mode === "lend" && (
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>תאריך החזרה</div>
+            <input type="date" value={form.lendUntil||""} onChange={e=>setForm(f=>({...f,lendUntil:e.target.value}))} min={new Date().toISOString().split("T")[0]} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:15,background:C.bg}}/>
+          </div>
+        )}
+        {form.mode === "swap" && (
+          <Inp label="איזה ספר מחפש?" value={form.swapFor||""} onChange={e=>setForm(f=>({...f,swapFor:e.target.value}))} placeholder="שם ספר / נושא / סוגה" icon="🔍"/>
+        )}
+        {form.mode === "give" && (
+          <div style={{padding:"10px 12px",background:"#f0fdf4",borderRadius:10,fontSize:13,color:"#15803d",fontWeight:600}}>🎁 הספר יסומן כמסירה חינם — כל אחד יכול לבוא לקחת!</div>
         )}
       </div>
 

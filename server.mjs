@@ -39,7 +39,7 @@ async function initDB() {
       year TEXT, summary TEXT, condition TEXT,
       series TEXT, volume TEXT, isbn TEXT, genre TEXT,
       mode TEXT DEFAULT 'sell',
-      price REAL, lendDuration TEXT, swapFor TEXT,
+      price REAL, lendDuration TEXT, swapFor TEXT, lendUntil TEXT,
       avail BOOLEAN DEFAULT true,
       ownerName TEXT, ownerType TEXT, phone TEXT,
       ownerId TEXT,
@@ -49,6 +49,7 @@ async function initDB() {
       createdAt BIGINT
     )
   `);
+  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lendUntil TEXT"); } catch {}
   console.log("✅ DB ready");
 }
 
@@ -226,11 +227,11 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
     const id = randomUUID();
     const frontImg = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}` : (b.thumbnail||null);
     await pool.query(
-      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendDuration,swapFor,avail,ownerName,ownerType,phone,ownerId,lat,lng,frontImg,thumbnail,createdAt)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendDuration,swapFor,lendUntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,frontImg,thumbnail,createdAt)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
       [id, b.title.trim(), b.author||"", b.publisher||"", b.year||"", b.summary||"", b.condition||"",
        b.series||"", b.volume||"", b.isbn||"", b.genre||"", b.mode||"sell",
-       b.mode==="sell"?(Number(b.price)||null):null, b.lendDuration||"", b.swapFor||"",
+       b.mode==="sell"?(Number(b.price)||null):null, b.lendDuration||"", b.swapFor||"", b.lendUntil||"",
        true, b.ownerName||"אני", b.ownerType||"private", b.phone||"", b.ownerId||null,
        b.lat?parseFloat(b.lat):null, b.lng?parseFloat(b.lng):null, frontImg, b.thumbnail||null, Date.now()]
     );
