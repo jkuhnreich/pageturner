@@ -487,11 +487,11 @@ export default function App() {
 
   const saveEdit = async (id, fields) => {
     try {
-      await api.post(`/api/books/${id}`, fields);  // PUT via api.post workaround — actually use fetch directly
-      const r = await fetch(`/api/books/${id}`, {
+
+      const r = await fetch(BASE + `/api/books/${id}`, {
         method:"PUT",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(fields)
+        body: JSON.stringify({...fields, userId: user?.id})
       });
       if (!r.ok) throw new Error("שגיאה בעדכון");
       setBooks(p => p.map(b => b.id===id ? {...b,...fields} : b));
@@ -502,7 +502,7 @@ export default function App() {
 
   const deleteBook = async id => {
     try {
-      const r = await fetch(`/api/books/${id}`, {method:"DELETE"});
+      const r = await fetch(BASE + `/api/books/${id}?userId=${user?.id}`, {method:"DELETE"});
       if (!r.ok) throw new Error("שגיאה במחיקה");
       setBooks(p => p.filter(b => b.id!==id));
       setEditBook(null);
@@ -631,7 +631,7 @@ export default function App() {
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הספרים שלי</div>
                   {books.filter(b=>b.ownerid===user?.id).map(b=>(
                     <div key={b.id} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11}}>
-                      <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📖</div>
+                      <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>{(b.frontimg||b.thumbnail)?<img src={b.frontimg||b.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}</div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.title}</div>
                         <div style={{fontSize:11,color:C.muted}}>{b.author}</div>
