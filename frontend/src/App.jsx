@@ -172,7 +172,17 @@ function AddBook({ user, onDone, toast_ }) {
     summary:"", condition:"", mode:"sell", price:"", lendUntil:"", swapFor:""
   });
   const [saving, setSaving] = useState(false);
+  const [coords, setCoords] = useState(null);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => setCoords(null)
+      );
+    }
+  }, []);
 
   const scanFront = async file => {
     setFp(URL.createObjectURL(file));
@@ -225,6 +235,7 @@ function AddBook({ user, onDone, toast_ }) {
       fd.append("ownerName", user.storeName || user.name);
       fd.append("ownerId", user.id);
       fd.append("ownerType", user.type);
+      if (coords) { fd.append("lat", coords.lat); fd.append("lng", coords.lng); }
       fd.append("phone", user.phone);
       if (frontFile) fd.append("frontImage", frontFile);
 
@@ -318,6 +329,7 @@ function AddBook({ user, onDone, toast_ }) {
         )}
       </div>
 
+      <div style={{fontSize:12,color:coords?C.green:C.muted,marginBottom:8,textAlign:"center"}}>{coords?"📍 מיקום זוהה אוטומטית":"📍 לא זוהה מיקום — הספר יופיע ללא מרחק"}</div>
       <Btn onClick={save} disabled={!form.title.trim()||saving} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
         {saving ? <><Spinner/> מפרסם...</> : "פרסם ספר ✨"}
       </Btn>
