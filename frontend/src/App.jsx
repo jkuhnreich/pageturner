@@ -769,13 +769,13 @@ export default function App() {
                 {myBooks.length>0&&<>
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הספרים שלי</div>
                   {myBooks.map(b=>(
-                    <div key={b.id} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11}}>
+                    <div key={b.id} onClick={()=>setViewBook(b)} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11,cursor:"pointer"}}>
                       <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>{(b.frontimg||b.thumbnail)?<img src={b.frontimg||b.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}</div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.title}</div>
                         <div style={{fontSize:11,color:C.muted}}>{b.author}</div>
                       </div>
-                      <button onClick={()=>setEditBook(b)} style={{padding:"7px 11px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️ ערוך</button>
+                      <button onClick={e=>{e.stopPropagation();setEditBook(b);}} style={{padding:"7px 11px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️ ערוך</button>
                     </div>
                   ))}
                 </>}
@@ -897,7 +897,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
                       {s:"lent",   ic:"📚", t:"הושאל"},
                       {s:"swapped",ic:"🔄", t:"הוחלף"},
                       {s:"given",  ic:"🎁", t:"נמסר חינם"},
-                      {s:"removed",ic:"📦", t:"הוצאתי מהמחזור"},
+                      
                     ].map(o=>(
                       <button key={o.s} onClick={()=>closeDeal(o.s)} disabled={closing}
                         style={{padding:"12px 8px",borderRadius:11,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:12,fontWeight:700,color:C.ink}}>
