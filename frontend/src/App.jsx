@@ -649,7 +649,16 @@ export default function App() {
         {TABS.map(([id,ic,lb])=>{
           const a = tab===id;
           return (
-            <button key={id} onClick={()=>setTab(id)}
+            <button key={id} onClick={()=>{
+              setTab(id);
+              if (id === "add" && navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                  pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                  () => {},
+                  { enableHighAccuracy: false, timeout: 10000 }
+                );
+              }
+            }}
               style={{flex:1,padding:"8px 3px 7px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderBottom:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
               <span style={{fontSize:a?18:16}}>{ic}</span>
               <span style={{fontSize:10,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
