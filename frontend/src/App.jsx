@@ -654,7 +654,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
-      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user}/>}
+      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}}/>}
 
       {/* Header */}
       <div style={{background:HDR,flexShrink:0}}>
@@ -805,7 +805,24 @@ export default function App() {
 
 // ── כרטיס ספר ──────────────────────────────────────────────
 
-function BookPage({ book, onClose, isGuest, onGuest, user }) {
+function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
+  const [showCloseDeal, setShowCloseDeal] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  const closeDeal = async (status) => {
+    setClosing(true);
+    try {
+      const r = await fetch(BASE + `/api/books/${book.id}`, {
+        method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ userId: user?.id, avail: false, dealStatus: status })
+      });
+      if (!r.ok) throw new Error("שגיאה");
+      onBookUpdated && onBookUpdated();
+      onClose();
+    } catch(e) {}
+    setClosing(false);
+  };
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
   const waMsg = book.mode==="sell"
@@ -867,6 +884,31 @@ function BookPage({ book, onClose, isGuest, onGuest, user }) {
               </div>
           )}
           {!book.avail&&<div style={{textAlign:"center",padding:"12px",background:"#fef2f2",borderRadius:12,color:C.red,fontWeight:700,fontSize:13}}>⛔ הספר אינו זמין כרגע</div>}
+          {book.ownerid===user?.id && book.avail && <>
+            {!showCloseDeal
+              ? <button onClick={()=>setShowCloseDeal(true)} style={{width:"100%",marginTop:10,padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:C.muted,fontWeight:600}}>
+                  🤝 סגור עסקה
+                </button>
+              : <div style={{marginTop:10,background:C.bg,borderRadius:14,padding:"16px"}}>
+                  <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:12,textAlign:"center"}}>מה קרה עם הספר?</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    {[
+                      {s:"sold",   ic:"🤝", t:"נמכר"},
+                      {s:"lent",   ic:"📚", t:"הושאל"},
+                      {s:"swapped",ic:"🔄", t:"הוחלף"},
+                      {s:"given",  ic:"🎁", t:"נמסר חינם"},
+                      {s:"removed",ic:"📦", t:"הוצאתי מהמחזור"},
+                    ].map(o=>(
+                      <button key={o.s} onClick={()=>closeDeal(o.s)} disabled={closing}
+                        style={{padding:"12px 8px",borderRadius:11,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:12,fontWeight:700,color:C.ink}}>
+                        <div style={{fontSize:22,marginBottom:4}}>{o.ic}</div>{o.t}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={()=>setShowCloseDeal(false)} style={{width:"100%",marginTop:10,padding:"9px",borderRadius:9,border:"none",background:"none",color:C.muted,fontSize:12,cursor:"pointer"}}>ביטול</button>
+                </div>
+            }
+          </>}
         </div>
       </div>
     </div>

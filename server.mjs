@@ -52,6 +52,7 @@ async function initDB() {
   `);
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT"); } catch {}
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS city TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS dealstatus TEXT"); } catch {}
   console.log("✅ DB ready");
 }
 
@@ -260,16 +261,16 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
 });
 
 app.put("/api/books/:id", async (req,res) => {
-  const { userId, title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail, lat, lng } = req.body;
+  const { userId, title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail, lat, lng, dealStatus } = req.body;
   try {
     const existing = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
     if (!existing) return res.status(404).json({ error:"לא נמצא" });
     if (userId && existing.ownerid && existing.ownerid !== userId) return res.status(403).json({ error:"אין הרשאה" });
     await pool.query(
-      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11,avail=$12,lat=$13,lng=$14,city=$15 WHERE id=$16`,
+      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11,avail=$12,lat=$13,lng=$14,city=$15,dealstatus=$16 WHERE id=$17`,
       [title||existing.title, author||existing.author, publisher||existing.publisher, year||existing.year,
        summary||existing.summary, mode||existing.mode, mode==="sell"?(Number(price)||null):null,
-       condition||existing.condition, lendDuration||existing.lendduration, swapFor||existing.swapfor, lendUntil||existing.lenduntil||"", avail!==undefined?avail:existing.avail, lat?parseFloat(lat):existing.lat, lng?parseFloat(lng):existing.lng, lat&&lng?(await reverseGeocode(parseFloat(lat),parseFloat(lng)))||existing.city:existing.city, req.params.id]
+       condition||existing.condition, lendDuration||existing.lendduration, swapFor||existing.swapfor, lendUntil||existing.lenduntil||"", avail!==undefined?avail:existing.avail, lat?parseFloat(lat):existing.lat, lng?parseFloat(lng):existing.lng, lat&&lng?(await reverseGeocode(parseFloat(lat),parseFloat(lng)))||existing.city:existing.city, dealStatus||existing.dealstatus||null, req.params.id]
     );
     const book = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
     res.json({ ok:true, book });
