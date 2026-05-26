@@ -527,7 +527,8 @@ export default function App() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => {}
+        () => {},
+        { enableHighAccuracy: false, timeout: 10000 }
       );
     }
   }, []);
