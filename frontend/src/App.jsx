@@ -504,6 +504,7 @@ export default function App() {
     try { const u = localStorage.getItem("pt_user"); return u ? JSON.parse(u) : null; } catch { return null; }
   });
   const [books, setBooks] = useState([]);
+  const [myBooks, setMyBooks] = useState([]);
   const [tab, setTab] = useState("search");
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
@@ -530,6 +531,18 @@ export default function App() {
       );
     }
   }, []);
+
+  const loadMyBooks = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const data = await api.get(`/api/books?ownerId=${user.id}&all=true`);
+      setMyBooks(data);
+    } catch(e) {}
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (tab === "profile") loadMyBooks();
+  }, [tab, loadMyBooks]);
 
   const loadBooks = useCallback(async () => {
     setLoading(true);
@@ -699,9 +712,9 @@ export default function App() {
                   {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user.phone}</div>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>
-                {books.filter(b=>b.ownerid===user?.id).length>0&&<>
+                {myBooks.length>0&&<>
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הספרים שלי</div>
-                  {books.filter(b=>b.ownerid===user?.id).map(b=>(
+                  {myBooks.map(b=>(
                     <div key={b.id} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11}}>
                       <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>{(b.frontimg||b.thumbnail)?<img src={b.frontimg||b.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}</div>
                       <div style={{flex:1,minWidth:0}}>

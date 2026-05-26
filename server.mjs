@@ -202,9 +202,13 @@ app.get("/api/books/search", async (req,res) => {
 });
 
 app.get("/api/books", async (req,res) => {
-  const { q, mode, lat, lng } = req.query;
+  const { q, mode, lat, lng, ownerId, all } = req.query;
   try {
-    let query = "SELECT * FROM books WHERE avail=true";
+    let query = ownerId && all ? "SELECT * FROM books WHERE ownerid=$1" : "SELECT * FROM books WHERE avail=true";
+    if (ownerId && all) {
+      const result = await pool.query(query, [ownerId]);
+      return res.json(result.rows);
+    }
     const params = [];
     if (q?.trim()) { params.push(`%${q.toLowerCase()}%`); query += ` AND (LOWER(title) LIKE $${params.length} OR LOWER(author) LIKE $${params.length})`; }
     if (mode && mode!=="all") { params.push(mode); query += ` AND mode=$${params.length}`; }
