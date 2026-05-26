@@ -580,6 +580,7 @@ export default function App() {
       setEditBook(null);
       toast_("✓ הספר עודכן");
       loadBooks();
+      loadMyBooks();
     } catch(e) { toast_("שגיאה: " + e.message, "err"); }
   };
 
