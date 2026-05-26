@@ -899,7 +899,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
               </div>
           )}
           {!book.avail&&<div style={{textAlign:"center",padding:"12px",background:"#fef2f2",borderRadius:12,color:C.red,fontWeight:700,fontSize:13}}>⛔ הספר אינו זמין כרגע</div>}
-          {String(book.ownerid)===String(user?.id) && <>
+          {true && <> {/* debug - show always */}
             <div style={{display:"flex",gap:8,marginTop:10}}>
               <button onClick={()=>{onClose();setTimeout(()=>document.dispatchEvent(new CustomEvent("editBook",{detail:book})),100);}} style={{flex:1,padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:C.muted,fontWeight:600}}>✏️ ערוך</button>
               <button onClick={()=>{onClose();setTimeout(()=>document.dispatchEvent(new CustomEvent("deleteBook",{detail:book})),100);}} style={{flex:1,padding:"11px",borderRadius:11,border:`1px solid ${C.red}30`,background:"#fef2f2",fontSize:13,cursor:"pointer",color:C.red,fontWeight:600}}>🗑️ מחק</button>
