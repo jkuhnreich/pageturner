@@ -745,7 +745,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={b.ownerid===user?.id?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={setViewBook}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={setViewBook}/>)
         )}
 
         {/* הוספה */}
