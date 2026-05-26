@@ -241,16 +241,16 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
 });
 
 app.put("/api/books/:id", async (req,res) => {
-  const { userId, title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil } = req.body;
+  const { userId, title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail } = req.body;
   try {
     const existing = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
     if (!existing) return res.status(404).json({ error:"לא נמצא" });
     if (userId && existing.ownerid && existing.ownerid !== userId) return res.status(403).json({ error:"אין הרשאה" });
     await pool.query(
-      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11 WHERE id=$12`,
+      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11,avail=$12 WHERE id=$13`,
       [title||existing.title, author||existing.author, publisher||existing.publisher, year||existing.year,
        summary||existing.summary, mode||existing.mode, mode==="sell"?(Number(price)||null):null,
-       condition||existing.condition, lendDuration||existing.lendduration, swapFor||existing.swapfor, lendUntil||existing.lenduntil||"", req.params.id]
+       condition||existing.condition, lendDuration||existing.lendduration, swapFor||existing.swapfor, lendUntil||existing.lenduntil||"", avail!==undefined?avail:existing.avail, req.params.id]
     );
     const book = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
     res.json({ ok:true, book });
