@@ -216,16 +216,27 @@ function AddBook({ user, onDone, toast_, coords }) {
     } finally { setBl(false); }
   };
 
+  const getCoords = () => new Promise(resolve => {
+    if (coords) return resolve(coords);
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 10000 }
+    );
+  });
+
   const save = async () => {
     if (!form.title.trim()) return toast_("שם ספר הוא שדה חובה", "warn");
     setSaving(true);
     try {
+      const location = await getCoords();
       const fd = new FormData();
       Object.entries(form).forEach(([k,v]) => { if(v) fd.append(k, String(v)); });
       fd.append("ownerName", user.storeName || user.name);
       fd.append("ownerId", user.id);
       fd.append("ownerType", user.type);
-      if (coords) { fd.append("lat", coords.lat); fd.append("lng", coords.lng); }
+      if (location) { fd.append("lat", location.lat); fd.append("lng", location.lng); }
       fd.append("phone", user.phone);
       if (frontFile) fd.append("frontImage", frontFile);
 
