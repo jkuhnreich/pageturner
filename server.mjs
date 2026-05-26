@@ -348,7 +348,7 @@ app.post("/api/auth/send-otp", async (req, res) => {
       method: "POST",
       headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: "Pageturner <onboarding@resend.dev>",
+        from: "Pageturner <noreply@pageturner.co.il>",
         to: [email.trim()],
         subject: "קוד הכניסה שלך ל-Pageturner",
         html: `<div dir="rtl" style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:24px">
