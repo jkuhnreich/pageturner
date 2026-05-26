@@ -552,6 +552,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [editBook, setEditBook] = useState(null);
+  const [viewBook, setViewBook] = useState(null);
 
   const toast_ = useCallback((msg, type="ok") => {
     setToast({msg, type});
@@ -653,6 +654,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
+      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user}/>}
 
       {/* Header */}
       <div style={{background:HDR,flexShrink:0}}>
@@ -732,7 +734,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={b.ownerid===user?.id?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={b.ownerid===user?.id?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={setViewBook}/>)
         )}
 
         {/* הוספה */}
@@ -802,13 +804,77 @@ export default function App() {
 }
 
 // ── כרטיס ספר ──────────────────────────────────────────────
-function BookCard({ book, onEdit, isGuest, onGuest }) {
+
+function BookPage({ book, onClose, isGuest, onGuest, user }) {
+  const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
+  const m = MODES[book.mode] || MODES.sell;
+  const waMsg = book.mode==="sell"
+    ? `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין לרכישה?`
+    : book.mode==="lend"
+    ? `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין להשאלה?`
+    : book.mode==="swap"
+    ? `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם תרצה להחליף?`
+    : `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא עדיין זמין למסירה?`;
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"92vh",overflowY:"auto",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}}>
+        <div style={{padding:"12px 0 4px",display:"flex",justifyContent:"center"}}><div style={{width:32,height:4,borderRadius:99,background:C.border}}/></div>
+        <div style={{padding:"4px 17px 32px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div style={{fontSize:15,fontWeight:800,color:C.ink}}>פרטי הספר</div>
+            <button onClick={onClose} style={{background:C.bg,border:"none",borderRadius:9,width:30,height:30,cursor:"pointer",fontSize:16}}>✕</button>
+          </div>
+          <div style={{display:"flex",gap:14,marginBottom:18}}>
+            <div style={{width:70,height:100,borderRadius:"4px 10px 10px 4px",flexShrink:0,background:color,overflow:"hidden",boxShadow:`4px 4px 14px ${color}44`}}>
+              {(book.frontimg||book.thumbnail)
+                ? <img src={book.frontimg||book.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:16,fontWeight:800,color:C.ink,marginBottom:4}}>{book.title}</div>
+              <div style={{fontSize:13,color:C.muted,marginBottom:4}}>{book.author}</div>
+              {book.publisher&&<div style={{fontSize:12,color:C.muted}}>{book.publisher}{book.year?` (${book.year})`:""}</div>}
+              <div style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:8,padding:"4px 10px",background:m.bg,borderRadius:99}}>
+                <span style={{fontSize:12}}>{m.icon}</span>
+                <span style={{fontSize:12,fontWeight:700,color:m.fg}}>{m.label}{book.mode==="sell"&&book.price?` · ₪${book.price}`:""}</span>
+              </div>
+            </div>
+          </div>
+          {book.summary&&<div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:6}}>תקציר</div>
+            <div style={{fontSize:13,color:C.ink,lineHeight:1.7}}>{book.summary}</div>
+          </div>}
+          <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+            {book.condition&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>⭐ {book.condition}</div>}
+            {book.city&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>📍 {book.city}</div>}
+            {book.km!=null&&!isNaN(book.km)&&!isGuest&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>{book.km<0.1?"פחות מ-100 מטר":`${book.km} ק"מ`}</div>}
+          </div>
+          <div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:4}}>המפרסם</div>
+            <div style={{fontSize:14,fontWeight:700,color:C.ink}}>{book.ownername||"משתמש"}</div>
+          </div>
+          {book.avail&&(
+            isGuest
+              ? <Btn onClick={onGuest} style={{width:"100%",padding:"14px",fontSize:15}}>הצטרף לפנייה 📱</Btn>
+              : book.ownerid!==user?.id&&<a href={`https://wa.me/972${(book.phone||"").replace(/^0/,"")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{display:"block",textDecoration:"none"}}>
+                  <Btn style={{width:"100%",padding:"14px",fontSize:15,background:"#25D366",color:"#fff"}}>📱 שלח הודעה בוואטסאפ</Btn>
+                </a>
+          )}
+          {!book.avail&&<div style={{textAlign:"center",padding:"12px",background:"#fef2f2",borderRadius:12,color:C.red,fontWeight:700,fontSize:13}}>⛔ הספר אינו זמין כרגע</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
   const [exp, setExp] = useState(false);
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
 
   return (
-    <div style={{background:C.white,borderRadius:18,border:"1px solid #ede8de",padding:"15px",marginBottom:9,position:"relative",overflow:"hidden",boxShadow:"0 2px 9px rgba(0,0,0,.05)"}}>
+    <div onClick={()=>onView&&onView(book)} style={{background:C.white,borderRadius:18,border:"1px solid #ede8de",padding:"15px",marginBottom:9,position:"relative",overflow:"hidden",boxShadow:"0 2px 9px rgba(0,0,0,.05)",cursor:"pointer"}}>
       <div style={{position:"absolute",top:0,right:0,width:4,height:"100%",background:color,opacity:.8}}/>
       <div style={{marginRight:11}}>
         <div style={{display:"flex",gap:11,marginBottom:10}}>
