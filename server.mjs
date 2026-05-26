@@ -242,7 +242,9 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
   try {
     const id = randomUUID();
     const frontImg = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}` : (b.thumbnail||null);
-    const city = (b.lat && b.lng) ? await reverseGeocode(parseFloat(b.lat), parseFloat(b.lng)) : null;
+    console.log("UPLOAD lat/lng:", b.lat, b.lng);
+      const city = (b.lat && b.lng) ? await reverseGeocode(parseFloat(b.lat), parseFloat(b.lng)) : null;
+      console.log("CITY:", city);
     await pool.query(
       `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
