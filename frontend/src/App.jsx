@@ -608,6 +608,17 @@ export default function App() {
     }
   }, [screen, search, modeFilter, loadBooks, userCoords]);
 
+  useEffect(() => {
+    const onEdit = e => setEditBook(e.detail);
+    const onDelete = e => deleteBook(e.detail.id);
+    document.addEventListener("editBook", onEdit);
+    document.addEventListener("deleteBook", onDelete);
+    return () => {
+      document.removeEventListener("editBook", onEdit);
+      document.removeEventListener("deleteBook", onDelete);
+    };
+  }, []);
+
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); };
 
@@ -884,9 +895,14 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
               </div>
           )}
           {!book.avail&&<div style={{textAlign:"center",padding:"12px",background:"#fef2f2",borderRadius:12,color:C.red,fontWeight:700,fontSize:13}}>⛔ הספר אינו זמין כרגע</div>}
-          {book.ownerid===user?.id && book.avail && <>
+          {book.ownerid===user?.id && <>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>{onClose();setTimeout(()=>document.dispatchEvent(new CustomEvent("editBook",{detail:book})),100);}} style={{flex:1,padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:C.muted,fontWeight:600}}>✏️ ערוך</button>
+              <button onClick={()=>{onClose();setTimeout(()=>document.dispatchEvent(new CustomEvent("deleteBook",{detail:book})),100);}} style={{flex:1,padding:"11px",borderRadius:11,border:`1px solid ${C.red}30`,background:"#fef2f2",fontSize:13,cursor:"pointer",color:C.red,fontWeight:600}}>🗑️ מחק</button>
+            </div>
+            {book.avail && <>
             {!showCloseDeal
-              ? <button onClick={()=>setShowCloseDeal(true)} style={{width:"100%",marginTop:10,padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:C.muted,fontWeight:600}}>
+              ? <button onClick={()=>setShowCloseDeal(true)} style={{width:"100%",marginTop:8,padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:C.muted,fontWeight:600}}>
                   🤝 סגור עסקה
                 </button>
               : <div style={{marginTop:10,background:C.bg,borderRadius:14,padding:"16px"}}>
@@ -978,6 +994,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
                 onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}}}
                 target="_blank"
                 style={{padding:"7px 10px",background:"#dcfce7",border:"1px solid #16a34a30",borderRadius:9,color:"#16a34a",fontSize:12,fontWeight:700,textDecoration:"none"}}><svg viewBox="0 0 24 24" width="16" height="16" fill="#16a34a"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.528 5.855L.057 23.882l6.186-1.438A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.658-.511-5.18-1.401l-.36-.214-3.795.881.925-3.701-.236-.375A9.932 9.932 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg></a>}
+            </>}
             </>}
           </div>
         </div>
