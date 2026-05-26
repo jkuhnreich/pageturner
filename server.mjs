@@ -51,6 +51,7 @@ async function initDB() {
     )
   `);
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS city TEXT"); } catch {}
   console.log("✅ DB ready");
 }
 
