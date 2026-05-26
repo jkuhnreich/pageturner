@@ -857,9 +857,14 @@ function BookPage({ book, onClose, isGuest, onGuest, user }) {
           {book.avail&&(
             isGuest
               ? <Btn onClick={onGuest} style={{width:"100%",padding:"14px",fontSize:15}}>הצטרף לפנייה 📱</Btn>
-              : book.ownerid!==user?.id&&<a href={`https://wa.me/972${(book.phone||"").replace(/^0/,"")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{display:"block",textDecoration:"none"}}>
-                  <Btn style={{width:"100%",padding:"14px",fontSize:15,background:"#25D366",color:"#fff"}}>📱 שלח הודעה בוואטסאפ</Btn>
+              : book.ownerid!==user?.id&&<div style={{display:"flex",gap:10}}>
+                <a href={`https://wa.me/972${(book.phone||"").replace(/^0/,"")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{flex:1,textDecoration:"none"}}>
+                  <Btn style={{width:"100%",padding:"14px",fontSize:15,background:"#25D366",color:"#fff"}}>📱 וואטסאפ</Btn>
                 </a>
+                {book.phone&&<a href={`tel:${book.phone}`} style={{textDecoration:"none"}}>
+                  <Btn style={{padding:"14px 18px",fontSize:18,background:C.bg,color:C.ink,border:`1px solid ${C.border}`}}>📞</Btn>
+                </a>}
+              </div>
           )}
           {!book.avail&&<div style={{textAlign:"center",padding:"12px",background:"#fef2f2",borderRadius:12,color:C.red,fontWeight:700,fontSize:13}}>⛔ הספר אינו זמין כרגע</div>}
         </div>
@@ -903,7 +908,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
             <div style={{fontSize:12,color:"#3d3830",background:C.bg,borderRadius:9,padding:"8px 11px",lineHeight:1.6,fontStyle:"italic",maxHeight:exp?"none":"3.2em",overflow:"hidden",WebkitMaskImage:exp?"none":"linear-gradient(to bottom,black 55%,transparent 100%)"}}>
               "{book.summary}"
             </div>
-            <button onClick={()=>setExp(p=>!p)} style={{fontSize:11,color:C.indigo,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:"3px 11px 0"}}>
+            <button onClick={e=>{e.stopPropagation();setExp(p=>!p)}} style={{fontSize:11,color:C.indigo,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:"3px 11px 0"}}>
               {exp?"פחות ▲":"קרא עוד ▼"}
             </button>
           </>
