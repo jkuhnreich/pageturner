@@ -923,9 +923,9 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            {onEdit && <button onClick={()=>onEdit(book)} style={{padding:"6px 10px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️</button>}
+            {onEdit && <button onClick={e=>{e.stopPropagation();onEdit(book);}} style={{padding:"6px 10px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️</button>}
             {book.avail && <>
-              <a href={`tel:${book.phone}`} onClick={e=>{if(isGuest){e.preventDefault();onGuest();}}} style={{padding:"7px 10px",background:C.tealL,border:`1px solid ${C.teal}30`,borderRadius:9,color:C.teal,fontSize:12,fontWeight:700,textDecoration:"none"}}>📞</a>
+              <a href={`tel:${book.phone}`} onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}}} style={{padding:"7px 10px",background:C.tealL,border:`1px solid ${C.teal}30`,borderRadius:9,color:C.teal,fontSize:12,fontWeight:700,textDecoration:"none"}}>📞</a>
               {book.phone && <a
                 href={`https://wa.me/972${(book.phone||"").replace(/^0/,"").replace(/-/g,"")}?text=${encodeURIComponent(
                   book.mode==="sell"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין לרכישה?`:
@@ -933,7 +933,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
                   book.mode==="swap"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם תהיה מעוניין להחליף?`:
                   `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין למסירה?`
                 )}`}
-                onClick={e=>{if(isGuest){e.preventDefault();onGuest();}}}
+                onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}}}
                 target="_blank"
                 style={{padding:"7px 10px",background:"#dcfce7",border:"1px solid #16a34a30",borderRadius:9,color:"#16a34a",fontSize:12,fontWeight:700,textDecoration:"none"}}><svg viewBox="0 0 24 24" width="16" height="16" fill="#16a34a"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.528 5.855L.057 23.882l6.186-1.438A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.658-.511-5.18-1.401l-.36-.214-3.795.881.925-3.701-.236-.375A9.932 9.932 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg></a>}
             </>}
@@ -953,18 +953,18 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
     lendUntil:book.lenduntil||"", swapFor:book.swapfor||""
   });
   const [del, setDel] = useState(false);
-  const [locStatus, setLocStatus] = useState(book.lat ? "✅ מיקום קיים" : "📍 אין מיקום");
+  const [locStatus, setLocStatus] = useState(null);
   const upd = k => e => setF(p=>({...p,[k]:e.target.value}));
 
   const updateLocation = () => {
     if (!navigator.geolocation) return;
-    setLocStatus("⏳ מאתר מיקום...");
+    setLocStatus("searching");
     navigator.geolocation.getCurrentPosition(
       pos => {
         setF(p=>({...p, lat: pos.coords.latitude, lng: pos.coords.longitude}));
-        setLocStatus("✅ מיקום עודכן");
+        setLocStatus("done");
       },
-      () => setLocStatus("❌ לא ניתן לאתר מיקום"),
+      () => setLocStatus("error"),
       { enableHighAccuracy: false, timeout: 10000 }
     );
   };
@@ -986,6 +986,9 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
           </div>
           <TA label="תקציר" value={f.summary} onChange={upd("summary")}/>
           <Inp label="מצב" value={f.condition} onChange={upd("condition")} icon="⭐"/>
+          <button onClick={updateLocation} style={{width:"100%",padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:locStatus==="done"?C.green:locStatus==="error"?C.red:C.muted,marginBottom:13,fontWeight:600,textAlign:"right"}}>
+            {locStatus==="searching"?"⏳ מאתר מיקום...":locStatus==="done"?"✅ המיקום עודכן בהצלחה":locStatus==="error"?"❌ לא ניתן לאתר מיקום":"📍 עדכן את מיקום הספר"}
+          </button>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",background:C.bg,borderRadius:10,marginBottom:13}}>
             <span style={{fontSize:13,fontWeight:600}}>זמין</span>
             <div onClick={()=>setF(p=>({...p,avail:!p.avail}))} style={{width:42,height:22,borderRadius:99,background:f.avail?C.teal:C.border,position:"relative",cursor:"pointer",transition:"background .18s"}}>
@@ -1007,7 +1010,6 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
           {f.mode==="swap"&&<Inp label="איזה ספר מחפש?" value={f.swapFor||""} onChange={e=>setF(p=>({...p,swapFor:e.target.value}))} placeholder="שם ספר / נושא / סוגה" icon="🔍"/>}
           {f.mode==="give"&&<div style={{padding:"10px 12px",background:"#f0fdf4",borderRadius:10,fontSize:13,color:"#15803d",fontWeight:600,marginBottom:13}}>🎁 הספר יסומן כמסירה חינם</div>}
           <div style={{display:"flex",gap:9,marginTop:5}}>
-            <button onClick={updateLocation} style={{padding:"11px 14px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:12,cursor:"pointer",color:C.muted,whiteSpace:"nowrap"}}>{locStatus}</button>
             <Btn variant="outline" onClick={onCancel} style={{flex:1,padding:"11px"}}>ביטול</Btn>
             <Btn onClick={()=>onSave(book.id,{...f,price:f.mode==="sell"?Number(f.price):null})} disabled={!f.title.trim()} style={{flex:2,padding:"11px"}}>✓ שמור</Btn>
           </div>
