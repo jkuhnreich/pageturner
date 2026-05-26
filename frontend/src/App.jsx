@@ -161,7 +161,8 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile }) {
 
 // ── מסך הוספת ספר ──────────────────────────────────────────
 function AddBook({ user, onDone, toast_, coords }) {
-  const [step, setStep] = useState("choose"); // choose | camera | manual
+  const [step, setStep] = useState("gps"); // gps | choose | camera | manual
+  const [gpsGranted, setGpsGranted] = useState(false);
   const [fp, setFp] = useState(null);  // front preview URL
   const [bp, setBp] = useState(null);  // back preview URL
   const [fl, setFl] = useState(false); // front loading
@@ -247,6 +248,35 @@ function AddBook({ user, onDone, toast_, coords }) {
       toast_("שגיאה בפרסום: " + e.message, "err");
     } finally { setSaving(false); }
   };
+
+  if (step === "gps") return (
+    <div style={{animation:"fadeUp .2s ease",textAlign:"center",padding:"24px 16px"}}>
+      <div style={{fontSize:52,marginBottom:16}}>📍</div>
+      <div style={{fontSize:17,fontWeight:800,color:C.ink,marginBottom:10}}>איפה הספר נמצא?</div>
+      <div style={{fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:24}}>
+        כדי שאנשים בסביבתך יוכלו למצוא את הספר, נבקש גישה למיקומך המשוער.<br/>
+        המיקום משמש רק להצגת הספר לאנשים קרובים — לא נשמר בפרופיל שלך.
+      </div>
+      <Btn onClick={()=>{
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            pos => {
+              setGpsGranted(true);
+              if (typeof coords === "object" && coords !== null) return;
+            },
+            () => setGpsGranted(false),
+            { enableHighAccuracy: false, timeout: 10000 }
+          );
+        }
+        setStep("choose");
+      }} style={{width:"100%",padding:"14px",marginBottom:10,fontSize:15}}>
+        📍 אפשר מיקום משוער
+      </Btn>
+      <button onClick={()=>setStep("choose")} style={{background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer",textDecoration:"underline"}}>
+        דלג (הספר יוצג ללא מרחק)
+      </button>
+    </div>
+  );
 
   if (step === "choose") return (
     <div style={{animation:"fadeUp .2s ease"}}>
