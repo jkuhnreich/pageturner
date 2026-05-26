@@ -953,7 +953,21 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
     lendUntil:book.lenduntil||"", swapFor:book.swapfor||""
   });
   const [del, setDel] = useState(false);
+  const [locStatus, setLocStatus] = useState(book.lat ? "✅ מיקום קיים" : "📍 אין מיקום");
   const upd = k => e => setF(p=>({...p,[k]:e.target.value}));
+
+  const updateLocation = () => {
+    if (!navigator.geolocation) return;
+    setLocStatus("⏳ מאתר מיקום...");
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setF(p=>({...p, lat: pos.coords.latitude, lng: pos.coords.longitude}));
+        setLocStatus("✅ מיקום עודכן");
+      },
+      () => setLocStatus("❌ לא ניתן לאתר מיקום"),
+      { enableHighAccuracy: false, timeout: 10000 }
+    );
+  };
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:400,background:"rgba(14,12,8,.65)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={e=>e.target===e.currentTarget&&onCancel()}>
@@ -993,6 +1007,7 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
           {f.mode==="swap"&&<Inp label="איזה ספר מחפש?" value={f.swapFor||""} onChange={e=>setF(p=>({...p,swapFor:e.target.value}))} placeholder="שם ספר / נושא / סוגה" icon="🔍"/>}
           {f.mode==="give"&&<div style={{padding:"10px 12px",background:"#f0fdf4",borderRadius:10,fontSize:13,color:"#15803d",fontWeight:600,marginBottom:13}}>🎁 הספר יסומן כמסירה חינם</div>}
           <div style={{display:"flex",gap:9,marginTop:5}}>
+            <button onClick={updateLocation} style={{padding:"11px 14px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:12,cursor:"pointer",color:C.muted,whiteSpace:"nowrap"}}>{locStatus}</button>
             <Btn variant="outline" onClick={onCancel} style={{flex:1,padding:"11px"}}>ביטול</Btn>
             <Btn onClick={()=>onSave(book.id,{...f,price:f.mode==="sell"?Number(f.price):null})} disabled={!f.title.trim()} style={{flex:2,padding:"11px"}}>✓ שמור</Btn>
           </div>
