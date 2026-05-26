@@ -44,6 +44,7 @@ async function initDB() {
       ownerName TEXT, ownerType TEXT, phone TEXT,
       ownerId TEXT,
       lat REAL, lng REAL,
+      city TEXT,
       frontImg TEXT,
       thumbnail TEXT,
       createdAt BIGINT
@@ -86,6 +87,16 @@ async function geocode(address) {
     const r = await fetch(u, { headers: { "User-Agent": "SefariaShkhunati/1.0" } });
     const d = await r.json();
     if (d?.[0]) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+  } catch {}
+  return null;
+}
+
+async function reverseGeocode(lat, lng) {
+  try {
+    const u = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`;
+    const r = await fetch(u, { headers: { "User-Agent": "SefariaShkhunati/1.0" } });
+    const d = await r.json();
+    return d?.address?.city || d?.address?.town || d?.address?.village || d?.address?.suburb || null;
   } catch {}
   return null;
 }
@@ -230,14 +241,15 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
   try {
     const id = randomUUID();
     const frontImg = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}` : (b.thumbnail||null);
+    const city = (b.lat && b.lng) ? await reverseGeocode(parseFloat(b.lat), parseFloat(b.lng)) : null;
     await pool.query(
-      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,frontImg,thumbnail,createdAt)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
       [id, b.title.trim(), b.author||"", b.publisher||"", b.year||"", b.summary||"", b.condition||"",
        b.series||"", b.volume||"", b.isbn||"", b.genre||"", b.mode||"sell",
        b.mode==="sell"?(Number(b.price)||null):null, b.lendDuration||"", b.swapFor||"", b.lendUntil||b.lenduntil||"",
        true, b.ownerName||"אני", b.ownerType||"private", b.phone||"", b.ownerId||null,
-       b.lat?parseFloat(b.lat):null, b.lng?parseFloat(b.lng):null, frontImg, b.thumbnail||null, Date.now()]
+       b.lat?parseFloat(b.lat):null, b.lng?parseFloat(b.lng):null, city, frontImg, b.thumbnail||null, Date.now()]
     );
     const book = (await pool.query("SELECT * FROM books WHERE id=$1", [id])).rows[0];
     res.json({ ok:true, book });

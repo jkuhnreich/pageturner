@@ -797,7 +797,7 @@ function BookCard({ book, onEdit, isGuest, onGuest }) {
             <div style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11}}>{(book.ownername||book.ownerName||"?")[0]}</div>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownername||book.ownerName}</div>
-              <div style={{fontSize:11,color:C.muted}}>📍 {book.km==null||isNaN(book.km)?"מרחק לא ידוע":book.km===0?"אצלך":`${book.km} ק"מ`}</div>
+              <div style={{fontSize:11,color:C.muted}}>📍 {book.km!=null&&!isNaN(book.km)?(book.km===0?"אצלך":`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
