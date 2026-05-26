@@ -817,6 +817,9 @@ export default function App() {
 // ── כרטיס ספר ──────────────────────────────────────────────
 
 function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
+  // debug
+  const [debugMsg, setDebugMsg] = useState(`owner:${book.ownerid} user:${user?.id}`);
+
   const [showCloseDeal, setShowCloseDeal] = useState(false);
   const [closing, setClosing] = useState(false);
 
@@ -851,6 +854,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
         <div style={{padding:"4px 17px 32px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:800,color:C.ink}}>פרטי הספר</div>
+            <div style={{fontSize:10,color:"red"}}>{debugMsg}</div>
             <button onClick={onClose} style={{background:C.bg,border:"none",borderRadius:9,width:30,height:30,cursor:"pointer",fontSize:16}}>✕</button>
           </div>
           <div style={{display:"flex",gap:14,marginBottom:18}}>
@@ -895,7 +899,6 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
               </div>
           )}
           {!book.avail&&<div style={{textAlign:"center",padding:"12px",background:"#fef2f2",borderRadius:12,color:C.red,fontWeight:700,fontSize:13}}>⛔ הספר אינו זמין כרגע</div>}
-          {console.log("ownerid:", book.ownerid, "userid:", user?.id)}
           {String(book.ownerid)===String(user?.id) && <>
             <div style={{display:"flex",gap:8,marginTop:10}}>
               <button onClick={()=>{onClose();setTimeout(()=>document.dispatchEvent(new CustomEvent("editBook",{detail:book})),100);}} style={{flex:1,padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:C.muted,fontWeight:600}}>✏️ ערוך</button>
