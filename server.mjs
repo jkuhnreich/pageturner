@@ -106,6 +106,25 @@ async function geocode(address) {
   return null;
 }
 
+function mapGenre(categories) {
+  if (!categories || !categories.length) return "";
+  const c = categories.join(" ").toLowerCase();
+  if (c.includes("fiction") || c.includes("novel") || c.includes("literature")) return "ספרות ורומנים";
+  if (c.includes("thriller") || c.includes("mystery") || c.includes("crime") || c.includes("detective")) return "מתח";
+  if (c.includes("fantasy") || c.includes("science fiction") || c.includes("sci-fi")) return "מדע בדיוני ופנטזיה";
+  if (c.includes("romance") || c.includes("love")) return "אהבה ורומנטיקה";
+  if (c.includes("history")) return "היסטוריה";
+  if (c.includes("biography") || c.includes("autobiography") || c.includes("memoir")) return "ביוגרפיה";
+  if (c.includes("science") || c.includes("philosophy")) return "מדע ופילוסופיה";
+  if (c.includes("self-help") || c.includes("personal development") || c.includes("psychology")) return "פיתוח אישי";
+  if (c.includes("business") || c.includes("economics") || c.includes("finance")) return "עסקים וכלכלה";
+  if (c.includes("children") || c.includes("juvenile") || c.includes("young adult")) return "ילדים ונוער";
+  if (c.includes("cooking") || c.includes("food")) return "בישול ואפייה";
+  if (c.includes("poetry")) return "שירה";
+  if (c.includes("religion") || c.includes("jewish") || c.includes("spiritual")) return "יהדות ורוחניות";
+  return "אחר";
+}
+
 async function reverseGeocode(lat, lng) {
   try {
     const u = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`;
@@ -217,7 +236,7 @@ async function enrich(vision) {
       publisher: best.publisher || vision.publisher, year: best.year || vision.year,
       language: vision.language || best.language, series: vision.series || "",
       volume: vision.volume || "", thumbnail: best.thumbnail, isbn: best.isbn,
-      description: best.description, categories: best.categories, googleId: best.googleId,
+      description: best.description, categories: best.categories, googleId: best.googleId, genre: mapGenre(best.categories),
     }
   };
 }
@@ -314,7 +333,7 @@ app.get("/api/books/search", async (req,res) => {
 });
 
 app.get("/api/books", async (req,res) => {
-  const { q, mode, lat, lng, ownerId, all } = req.query;
+  const { q, mode, lat, lng, ownerId, all, genre } = req.query;
   try {
     let query = ownerId && all ? "SELECT * FROM books WHERE ownerid=$1" : "SELECT * FROM books WHERE avail=true";
     if (ownerId && all) {
@@ -324,6 +343,7 @@ app.get("/api/books", async (req,res) => {
     const params = [];
     if (q?.trim()) { params.push(`%${q.toLowerCase()}%`); query += ` AND (LOWER(title) LIKE $${params.length} OR LOWER(author) LIKE $${params.length})`; }
     if (mode && mode!=="all") { params.push(mode); query += ` AND mode=$${params.length}`; }
+    if (genre && genre!=="all") { params.push(genre); query += ` AND genre=$${params.length}`; }
     query += " ORDER BY createdAt DESC";
     const result = await pool.query(query, params);
     let books = result.rows;

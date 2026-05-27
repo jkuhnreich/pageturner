@@ -170,7 +170,7 @@ function AddBook({ user, onDone, toast_, coords }) {
   const [frontFile, setFrontFile] = useState(null);
   const [form, setForm] = useState({
     title:"", author:"", publisher:"", year:"",
-    summary:"", condition:"", mode:"sell", price:"", lendUntil:"", swapFor:""
+    summary:"", condition:"", genre:"", mode:"sell", price:"", lendUntil:"", swapFor:""
   });
   const [saving, setSaving] = useState(false);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
@@ -191,6 +191,7 @@ function AddBook({ user, onDone, toast_, coords }) {
         publisher: d.publisher || f.publisher,
         year:      d.year      || f.year,
         thumbnail: d.thumbnail || f.thumbnail,
+        genre:     d.genre     || f.genre,
       }));
       const cnt = [d.title, d.author, d.publisher].filter(Boolean).length;
       toast_(`✓ כריכה קדמית — ${cnt} פרטים חולצו`);
@@ -341,6 +342,26 @@ function AddBook({ user, onDone, toast_, coords }) {
         </div>
         <TA label="תקציר" value={form.summary} onChange={upd("summary")} placeholder="תקציר הסיפור..."/>
         <Inp label="מצב" value={form.condition} onChange={upd("condition")} placeholder="כמו חדש / טוב / שימוש רב" icon="⭐"/>
+        <div style={{marginBottom:13}}>
+          <div style={{fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>סוגה</div>
+          <select value={form.genre} onChange={e=>setForm(f=>({...f,genre:e.target.value}))} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:14,background:C.bg,direction:"rtl"}}>
+            <option value="">בחר סוגה (מומלץ)</option>
+            <option value="ספרות ורומנים">ספרות ורומנים</option>
+            <option value="מתח">מתח</option>
+            <option value="מדע בדיוני ופנטזיה">מדע בדיוני ופנטזיה</option>
+            <option value="אהבה ורומנטיקה">אהבה ורומנטיקה</option>
+            <option value="היסטוריה">היסטוריה</option>
+            <option value="ביוגרפיה">ביוגרפיה</option>
+            <option value="מדע ופילוסופיה">מדע ופילוסופיה</option>
+            <option value="פיתוח אישי">פיתוח אישי</option>
+            <option value="עסקים וכלכלה">עסקים וכלכלה</option>
+            <option value="ילדים ונוער">ילדים ונוער</option>
+            <option value="בישול ואפייה">בישול ואפייה</option>
+            <option value="שירה">שירה</option>
+            <option value="יהדות ורוחניות">יהדות ורוחניות</option>
+            <option value="אחר">אחר</option>
+          </select>
+        </div>
       </div>
 
       {/* מה לעשות */}
@@ -560,6 +581,7 @@ export default function App() {
   const [tab, setTab] = useState("search");
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
+  const [genreFilter, setGenreFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [editBook, setEditBook] = useState(null);
@@ -604,20 +626,21 @@ export default function App() {
       const params = new URLSearchParams();
       if (search) params.set("q", search);
       if (modeFilter !== "all") params.set("mode", modeFilter);
+      if (genreFilter !== "all") params.set("genre", genreFilter);
       if (userCoords) { params.set("lat", userCoords.lat); params.set("lng", userCoords.lng); }
       const data = await api.get(`/api/books?${params}`);
       setBooks(data);
     } catch(e) {
       toast_("שגיאה בטעינת ספרים: " + e.message, "err");
     } finally { setLoading(false); }
-  }, [search, modeFilter, toast_, userCoords]);
+  }, [search, modeFilter, genreFilter, toast_, userCoords]);
 
   useEffect(() => {
     if (screen === "app") {
       const t = setTimeout(loadBooks, 200);
       return () => clearTimeout(t);
     }
-  }, [screen, search, modeFilter, loadBooks, userCoords]);
+  }, [screen, search, modeFilter, genreFilter, loadBooks, userCoords]);
 
   useEffect(() => {
     const onEdit = e => setEditBook(e.detail);
@@ -825,6 +848,15 @@ export default function App() {
               style={{padding:"5px 11px",borderRadius:99,fontSize:12,fontWeight:modeFilter===k?700:500,border:"none",cursor:"pointer",background:modeFilter===k?C.ink:C.bg,color:modeFilter===k?"#fff":C.muted,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
               {ic} {l}
             </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "search" && (
+        <div style={{display:"flex",gap:6,padding:"6px 13px 8px",background:C.white,borderBottom:`1px solid ${C.border}`,overflowX:"auto",flexShrink:0,scrollbarWidth:"none"}}>
+          <button onClick={()=>setGenreFilter("all")} style={{padding:"4px 10px",borderRadius:99,fontSize:11,fontWeight:genreFilter==="all"?700:500,border:"none",cursor:"pointer",background:genreFilter==="all"?C.teal:"#f0f0f0",color:genreFilter==="all"?"#fff":C.muted,whiteSpace:"nowrap"}}>כל הסוגות</button>
+          {["ספרות ורומנים","מתח","מדע בדיוני ופנטזיה","אהבה ורומנטיקה","היסטוריה","ביוגרפיה","מדע ופילוסופיה","פיתוח אישי","עסקים וכלכלה","ילדים ונוער","בישול ואפייה","שירה","יהדות ורוחניות","אחר"].map(g=>(
+            <button key={g} onClick={()=>setGenreFilter(g)} style={{padding:"4px 10px",borderRadius:99,fontSize:11,fontWeight:genreFilter===g?700:500,border:"none",cursor:"pointer",background:genreFilter===g?C.teal:"#f0f0f0",color:genreFilter===g?"#fff":C.muted,whiteSpace:"nowrap"}}>{g}</button>
           ))}
         </div>
       )}
