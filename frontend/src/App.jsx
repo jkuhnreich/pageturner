@@ -843,7 +843,7 @@ export default function App() {
       {/* Filter chips */}
       {tab === "search" && (
         <div style={{display:"flex",gap:6,padding:"8px 13px",background:C.white,borderBottom:`1px solid ${C.border}`,overflowX:"auto",flexShrink:0}}>
-          {[["all","הכל","📚"],["sell","מכירה","₪"],["lend","השאלה","↩"],["swap","החלפה","⇄"],["give","מסירה","🎁"]].map(([k,l,ic])=>(
+          {[["all","הכל","📚"],["sell","מכירה","₪"],["lend","השאלה","↩"],["swap","החלפה","⇄"]].map(([k,l,ic])=>(
             <button key={k} onClick={()=>setModeFilter(k)}
               style={{padding:"5px 11px",borderRadius:99,fontSize:12,fontWeight:modeFilter===k?700:500,border:"none",cursor:"pointer",background:modeFilter===k?C.ink:C.bg,color:modeFilter===k?"#fff":C.muted,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
               {ic} {l}
