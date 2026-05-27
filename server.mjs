@@ -210,7 +210,9 @@ app.post("/api/analyze/front", upload.single("image"), async (req,res) => {
     if ((conf.publisher||0) < 0.7) vision.publisher = "";
     if ((conf.year||0) < 0.7) vision.year = "";
     if ((conf.author||0) < 0.7) vision.author = "";
+    console.log("VISION:", JSON.stringify(vision));
     const { googleResults, enriched } = await enrich(vision);
+    console.log("ENRICHED:", JSON.stringify(enriched));
     res.json({ ok:true, data:enriched, googleResults });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
