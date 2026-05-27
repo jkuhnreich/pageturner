@@ -141,16 +141,24 @@ async function gBooks(query, max = 10) {
 }
 
 async function enrich(vision) {
-  const q = [vision.title, vision.author].filter(Boolean).join(" ");
-  if (!q.trim()) return { googleResults:[], enriched: vision };
-  const results = await gBooks(q, 5);
+  let results = [];
+  // חפש קודם לפי ISBN אם יש
+  if (vision.isbn) {
+    results = await gBooks(`isbn:${vision.isbn}`, 3);
+  }
+  // אם לא נמצא — חפש לפי שם ומחבר
+  if (!results.length) {
+    const q = [vision.title, vision.author].filter(Boolean).join(" ");
+    if (!q.trim()) return { googleResults:[], enriched: vision };
+    results = await gBooks(q, 5);
+  }
   if (!results.length) return { googleResults:[], enriched: vision };
   const best = results.find(r => r.title.toLowerCase().includes((vision.title||"").toLowerCase())) || results[0];
   return {
     googleResults: results,
     enriched: {
       title: vision.title || best.title, author: vision.author || best.author,
-      publisher: vision.publisher || best.publisher, year: vision.year || best.year,
+      publisher: best.publisher || vision.publisher, year: best.year || vision.year,
       language: vision.language || best.language, series: vision.series || "",
       volume: vision.volume || "", thumbnail: best.thumbnail, isbn: best.isbn,
       description: best.description, categories: best.categories, googleId: best.googleId,
