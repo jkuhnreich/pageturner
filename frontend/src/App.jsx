@@ -638,13 +638,17 @@ export default function App() {
   const handleContactAnswer = async (answer, dealStatus) => {
     if (!pendingContact) return;
     try {
+      // "לא" — לא מסמן askedStatus כדי לאפשר שאילה חוזרת
+      // "skip" ו-"done" — מסמן askedStatus=true לצמיתות
+      const markAsked = answer === "skip" || answer === "done";
       await fetch(BASE + `/api/contacts/${pendingContact.id}`, {
         method:"PUT",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ status: answer, dealStatus, bookId: pendingContact.bookid })
+        body: JSON.stringify({ status: answer, dealStatus, bookId: pendingContact.bookid, markAsked })
       });
     } catch {}
     setPendingContact(null);
+    setAskDealMode(false);
     if (answer === "done") { loadBooks(); loadMyBooks(); }
   };
 

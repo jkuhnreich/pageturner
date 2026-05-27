@@ -394,9 +394,9 @@ app.get("/api/contacts/pending/:userId", async (req, res) => {
 });
 
 app.put("/api/contacts/:id", async (req, res) => {
-  const { status, dealStatus, bookId } = req.body;
   try {
-    await pool.query("UPDATE contacts SET status=$1, askedStatus=true WHERE id=$2", [status, req.params.id]);
+    const { status, dealStatus, bookId, markAsked } = req.body;
+    await pool.query("UPDATE contacts SET status=$1, askedStatus=$2 WHERE id=$3", [status, markAsked===true, req.params.id]);
     if (status === "done" && dealStatus && bookId) {
       await pool.query("UPDATE books SET avail=false, dealstatus=$1 WHERE id=$2", [dealStatus, bookId]);
     }
