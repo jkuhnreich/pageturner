@@ -751,6 +751,8 @@ export default function App() {
     ["add",   "➕","הוסף"],
     ["profile","👤","פרופיל"],
   ];
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   return (
     <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",direction:"rtl",background:C.bg}}>
@@ -770,10 +772,11 @@ export default function App() {
             <button onClick={()=>{setTab("search");setSearch("");setModeFilter("all");loadBooks();}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"right",padding:0}}>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
             </button>
-            {!isGuest && <button onClick={()=>setTab("profile")} style={{background:"none",border:"none",cursor:"pointer",textAlign:"left",padding:0}}>
-              <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(()=>{const h=new Date().getHours();return h>=4&&h<12?"☀️ בוקר טוב":h<18?"🌤️ צהריים טובים":h<22?"🌆 ערב טוב":"🌙 לילה טוב";})()} {user?.name||""}</div>
-            </button>}
-            {isGuest && <button onClick={onGuestAction} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"5px 11px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>הצטרף →</button>}
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              {!isGuest && <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(()=>{const h=new Date().getHours();return h>=4&&h<12?"☀️ בוקר טוב":h<18?"🌤️ צהריים טובים":h<22?"🌆 ערב טוב":"🌙 לילה טוב";})()} {user?.name||""}</div>}
+              {isGuest && <button onClick={onGuestAction} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"5px 11px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>הצטרף →</button>}
+              <button onClick={()=>setMenuOpen(true)} style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",color:"#fff",fontSize:20,lineHeight:1}}>☰</button>
+            </div>
           </div>
         </div>
 
@@ -903,6 +906,50 @@ export default function App() {
       </div>
 
       <Toast t={toast}/>
+
+      {/* תפריט המבורגר */}
+      {menuOpen && (
+        <div style={{position:"fixed",inset:0,zIndex:700,direction:"rtl"}} onClick={()=>setMenuOpen(false)}>
+          <div style={{position:"absolute",top:0,right:0,width:260,height:"100%",background:C.white,boxShadow:"-4px 0 24px rgba(0,0,0,.15)",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{background:HDR,padding:"32px 20px 20px"}}>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Pageturner</div>
+            </div>
+            <div style={{flex:1,padding:"12px 0"}}>
+              {[
+                {ic:"🔍",lb:"חיפוש",ac:()=>{setTab("search");setMenuOpen(false);}},
+                {ic:"➕",lb:"הוסף ספר",ac:()=>{setTab("add");setMenuOpen(false);}},
+                {ic:"👤",lb:"פרופיל",ac:()=>{setTab("profile");setMenuOpen(false);}},
+                {ic:"📖",lb:"אודות",ac:()=>{setShowAbout(true);setMenuOpen(false);}},
+              ].map((item,i)=>(
+                <button key={i} onClick={item.ac} style={{width:"100%",padding:"14px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:15,fontWeight:600,color:C.ink,textAlign:"right"}}>
+                  <span style={{fontSize:20}}>{item.ic}</span>{item.lb}
+                </button>
+              ))}
+            </div>
+            {!isGuest && <button onClick={()=>{setUser(null);setScreen("splash");setMenuOpen(false);try{localStorage.removeItem("pt_user");localStorage.removeItem("pt_screen");}catch{}}} style={{padding:"16px 20px",background:"none",border:"none",borderTop:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:C.red,textAlign:"right"}}>
+              <span style={{fontSize:18}}>🚪</span>יציאה
+            </button>}
+          </div>
+        </div>
+      )}
+
+      {/* דף אודות */}
+      {showAbout && (
+        <div style={{position:"fixed",inset:0,zIndex:700,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={()=>setShowAbout(false)}>
+          <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"85vh",overflowY:"auto",padding:"24px 20px 40px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{width:32,height:4,borderRadius:99,background:C.border,margin:"0 auto 20px"}}/>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink,marginBottom:6}}>ספרייה שכונתית | Pageturner</div>
+            <div style={{fontSize:16,fontWeight:700,color:C.ink,marginTop:20,marginBottom:8}}>הסיפור התחיל עם ספר אחד</div>
+            <div style={{fontSize:14,color:C.muted,lineHeight:1.8,marginBottom:16}}>חיפשתי ספר. ידעתי שהוא קיים, ראיתי שיש אותו אצל אנשים, אבל מצוא לא מצאתי. יצרתי קשר, שלחתי הודעות, ואפילו נסעתי רק כדי לגלות שהוא כבר עבר הלאה. המסע הזה עדיין לא נגמר, אבל משהו אחר כן התחיל.</div>
+            <div style={{fontSize:16,fontWeight:700,color:C.ink,marginBottom:8}}>מה זה Pageturner?</div>
+            <div style={{fontSize:14,color:C.muted,lineHeight:1.8,marginBottom:16}}>Page Turner באנגלית זה ספר שאי אפשר להפסיק לקרוא, כזה שאתה הופך דף אחרי דף בלי לעצור. זה גם מה שאנחנו רוצים שתרגיש כאן.</div>
+            <div style={{fontSize:16,fontWeight:700,color:C.ink,marginBottom:8}}>הספרייה השכונתית</div>
+            <div style={{fontSize:14,color:C.muted,lineHeight:1.8,marginBottom:24}}>כולנו מחזיקים ספרים שסיימנו, ספרים שכנראה לא נקרא, וספרים שמישהו אחר ממש עכשיו מחפש. הספרייה השכונתית הופכת את המדפים הביתיים של השכונה למדף אחד משותף, מקום למכור, להחליף, להשאיל או לתת ספרים לשכנים שלך. ואולי גם להכיר אנשים חדשים בדרך.</div>
+            <button onClick={()=>setShowAbout(false)} style={{width:"100%",padding:"13px",borderRadius:12,background:C.ink,color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:"pointer"}}>סגור</button>
+          </div>
+        </div>
+      )}
       {pendingContact && !pendingContact.askdeal && (
         <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:600,padding:"0 16px",direction:"rtl"}}>
           <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
