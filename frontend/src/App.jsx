@@ -634,6 +634,8 @@ export default function App() {
   const [askDealMode, setAskDealMode] = useState(false);
   const [ownerPending, setOwnerPending] = useState(null);
   const [ownerAskDeal, setOwnerAskDeal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   useEffect(() => {
     if (!user?.id || isGuest) return;
@@ -751,8 +753,6 @@ export default function App() {
     ["add",   "➕","הוסף"],
     ["profile","👤","פרופיל"],
   ];
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
 
   return (
     <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",direction:"rtl",background:C.bg}}>
