@@ -122,10 +122,11 @@ function dist(lat1, lng1, lat2, lng2) {
   return +(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))).toFixed(1);
 }
 
-async function gBooks(query, max = 10) {
+async function gBooks(query, max = 10, lang = "") {
   if (!query?.trim()) return [];
   const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
-  const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=${max}&orderBy=relevance${key}`);
+  const langFilter = lang ? `&langRestrict=${lang}` : "";
+  const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=${max}&orderBy=relevance${key}${langFilter}`);
   if (!r.ok) return [];
   const d = await r.json();
   return (d.items || []).map(item => {
@@ -142,15 +143,18 @@ async function gBooks(query, max = 10) {
 
 async function enrich(vision) {
   let results = [];
+  const q = [vision.title, vision.author].filter(Boolean).join(" ");
   // חפש קודם לפי ISBN אם יש
   if (vision.isbn) {
     results = await gBooks(`isbn:${vision.isbn}`, 3);
   }
-  // אם לא נמצא — חפש לפי שם ומחבר
-  if (!results.length) {
-    const q = [vision.title, vision.author].filter(Boolean).join(" ");
-    if (!q.trim()) return { googleResults:[], enriched: vision };
-    results = await gBooks(q, 5);
+  // חפש בעברית קודם
+  if (!results.length && q.trim()) {
+    results = await gBooks(q, 5, "he");
+  }
+  // אם לא נמצא בעברית — חפש בכל שפה
+  if (!results.length && q.trim()) {
+    results = await gBooks(q, 8);
   }
   if (!results.length) return { googleResults:[], enriched: vision };
   // בחר את התוצאה הטובה ביותר — עדיפות לעברית, אחר כך לפי התאמת כותרת
