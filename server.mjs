@@ -212,6 +212,7 @@ app.post("/api/analyze/front", upload.single("image"), async (req,res) => {
     if ((conf.author||0) < 0.7) vision.author = "";
     console.log("VISION:", JSON.stringify(vision));
     const { googleResults, enriched } = await enrich(vision);
+    console.log("GOOGLE_RESULTS:", JSON.stringify(googleResults.map(r=>({t:r.title,p:r.publisher,y:r.year}))));
     console.log("ENRICHED:", JSON.stringify(enriched));
     res.json({ ok:true, data:enriched, googleResults });
   } catch(e) { res.status(500).json({ error:e.message }); }
