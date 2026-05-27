@@ -747,7 +747,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
-      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}}/>}
+      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
       {/* Header */}
       <div style={{background:HDR,flexShrink:0}}>
@@ -955,7 +955,7 @@ export default function App() {
 
 // ── כרטיס ספר ──────────────────────────────────────────────
 
-function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
+function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onContactMade }) {
 
   const [showCloseDeal, setShowCloseDeal] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -972,6 +972,8 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
       });
       const d = await r.json();
       if (d.contact) setContactId(d.contact.id);
+      // בדוק pending אחרי 3 שניות בלי רענון
+      if (onContactMade) onContactMade();
     } catch {}
   };
 
