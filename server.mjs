@@ -153,7 +153,13 @@ async function enrich(vision) {
     results = await gBooks(q, 5);
   }
   if (!results.length) return { googleResults:[], enriched: vision };
-  const best = results.find(r => r.title.toLowerCase().includes((vision.title||"").toLowerCase())) || results[0];
+  // בחר את התוצאה הטובה ביותר — עדיפות לעברית, אחר כך לפי התאמת כותרת
+  const titleLow = (vision.title||"").toLowerCase();
+  const hebrewMatches = results.filter(r => r.language === "he" || r.language === "iw");
+  const pool = hebrewMatches.length ? hebrewMatches : results;
+  const best = pool.find(r => r.title.toLowerCase().includes(titleLow)) ||
+               pool.find(r => titleLow.includes(r.title.toLowerCase())) ||
+               pool[0];
   return {
     googleResults: results,
     enriched: {
