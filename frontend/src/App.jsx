@@ -245,11 +245,11 @@ function AddBook({ user, onDone, toast_, coords }) {
       const location = await getCoords();
       const fd = new FormData();
       Object.entries(form).forEach(([k,v]) => { if(v) fd.append(k, String(v)); });
-      fd.append("ownerName", user.storeName || user.name);
-      fd.append("ownerId", user.id);
-      fd.append("ownerType", user.type);
+      fd.append("ownerName", user.storeName || user?.name);
+      fd.append("ownerId", user?.id);
+      fd.append("ownerType", user?.type);
       if (location) { fd.append("lat", location.lat); fd.append("lng", location.lng); }
-      fd.append("phone", user.phone);
+      fd.append("phone", user?.phone);
       if (frontFile) fd.append("frontImage", frontFile);
 
       const res = await api.upload("/api/books", fd);
@@ -639,11 +639,11 @@ export default function App() {
     if (!user?.id || isGuest) return;
     const checkPending = async () => {
       try {
-        const r = await fetch(BASE + `/api/contacts/pending/${user.id}`);
+        const r = await fetch(BASE + `/api/contacts/pending/${user?.id}`);
         const d = await r.json();
         if (d) setPendingContact(d);
         // בדוק גם שאלות למפרסם
-        const r2 = await fetch(BASE + `/api/contacts/owner-pending/${user.id}`);
+        const r2 = await fetch(BASE + `/api/contacts/owner-pending/${user?.id}`);
         const d2 = await r2.json();
         if (d2) setOwnerPending(d2);
       } catch {}
@@ -675,12 +675,12 @@ export default function App() {
       await fetch(BASE + "/api/contacts", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user.id, toUserId:book.ownerid, type })
+        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user?.id, toUserId:book.ownerid, type })
       });
       // בדוק pending אחרי 3 שניות
       setTimeout(async () => {
         try {
-          const r = await fetch(BASE + `/api/contacts/pending/${user.id}`);
+          const r = await fetch(BASE + `/api/contacts/pending/${user?.id}`);
           const d = await r.json();
           if (d) setPendingContact(d);
         } catch {}
@@ -760,7 +760,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
-      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
+      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
       {/* Header */}
       <div style={{background:HDR,flexShrink:0}}>
@@ -870,7 +870,7 @@ export default function App() {
                   </div>
                   <div style={{fontSize:18,fontWeight:800,color:C.ink,marginBottom:3}}>{user?.storeName||user?.name}</div>
                   <div style={{fontSize:12,color:C.muted,marginBottom:10}}>{user?.email}</div>
-                  {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user.phone}</div>}
+                  {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user?.phone}</div>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>
                 {myBooks.length>0&&<>
@@ -1026,7 +1026,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
       const r = await fetch(BASE + "/api/contacts", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user.id, toUserId:book.ownerid, type })
+        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user?.id, toUserId:book.ownerid, type })
       });
       const d = await r.json();
       if (d.contact) setContactId(d.contact.id);
