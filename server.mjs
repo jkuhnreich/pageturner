@@ -53,6 +53,17 @@ async function initDB() {
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT"); } catch {}
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS city TEXT"); } catch {}
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS dealstatus TEXT"); } catch {}
+  try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
+    id TEXT PRIMARY KEY,
+    bookId TEXT,
+    bookTitle TEXT,
+    fromUserId TEXT,
+    toUserId TEXT,
+    type TEXT,
+    status TEXT DEFAULT 'pending',
+    askedStatus BOOLEAN DEFAULT false,
+    createdAt BIGINT
+  )`); } catch(e) { console.error("contacts table error:", e.message); }
   console.log("✅ DB ready");
 }
 
@@ -355,6 +366,43 @@ app.post("/api/auth/google", async (req, res) => {
 
 // ── OTP ──────────────────────────────────────────────────
 const otps = {};
+
+// ── Contacts ──────────────────────────────────────────────
+app.post("/api/contacts", async (req, res) => {
+  const { bookId, bookTitle, fromUserId, toUserId, type } = req.body;
+  if (!bookId || !fromUserId) return res.status(400).json({ error:"חסרים פרטים" });
+  try {
+    const existing = await pool.query("SELECT * FROM contacts WHERE bookId=$1 AND fromUserId=$2", [bookId, fromUserId]);
+    if (existing.rows.length) return res.json({ ok:true, contact: existing.rows[0] });
+    const id = randomUUID();
+    await pool.query(
+      "INSERT INTO contacts (id,bookId,bookTitle,fromUserId,toUserId,type,status,askedStatus,createdAt) VALUES ($1,$2,$3,$4,$5,$6,'pending',false,$7)",
+      [id, bookId, bookTitle||"", fromUserId, toUserId||"", type||"whatsapp", Date.now()]
+    );
+    res.json({ ok:true });
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+app.get("/api/contacts/pending/:userId", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT c.*, b.title as booktitle FROM contacts c LEFT JOIN books b ON c.bookid=b.id WHERE c.fromuserid=$1 AND c.status='pending' AND c.askedstatus=false ORDER BY c.createdat DESC LIMIT 1",
+      [req.params.userId]
+    );
+    res.json(result.rows[0] || null);
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+app.put("/api/contacts/:id", async (req, res) => {
+  const { status, dealStatus, bookId } = req.body;
+  try {
+    await pool.query("UPDATE contacts SET status=$1, askedStatus=true WHERE id=$2", [status, req.params.id]);
+    if (status === "done" && dealStatus && bookId) {
+      await pool.query("UPDATE books SET avail=false, dealstatus=$1 WHERE id=$2", [dealStatus, bookId]);
+    }
+    res.json({ ok:true });
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
 
 app.post("/api/auth/send-otp", async (req, res) => {
   const { email } = req.body;

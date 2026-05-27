@@ -619,6 +619,35 @@ export default function App() {
     };
   }, []);
 
+  const [pendingContact, setPendingContact] = useState(null);
+  const [askDealMode, setAskDealMode] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id || isGuest) return;
+    const checkPending = async () => {
+      try {
+        const r = await fetch(BASE + `/api/contacts/pending/${user.id}`);
+        const d = await r.json();
+        if (d) setPendingContact(d);
+      } catch {}
+    };
+    const t = setTimeout(checkPending, 3000);
+    return () => clearTimeout(t);
+  }, [user?.id, screen]);
+
+  const handleContactAnswer = async (answer, dealStatus) => {
+    if (!pendingContact) return;
+    try {
+      await fetch(BASE + `/api/contacts/${pendingContact.id}`, {
+        method:"PUT",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ status: answer, dealStatus, bookId: pendingContact.bookid })
+      });
+    } catch {}
+    setPendingContact(null);
+    if (answer === "done") { loadBooks(); loadMyBooks(); }
+  };
+
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); };
 
@@ -810,6 +839,35 @@ export default function App() {
       </div>
 
       <Toast t={toast}/>
+      {pendingContact && !pendingContact.askdeal && (
+        <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:600,padding:"0 16px",direction:"rtl"}}>
+          <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:12}}>
+              דיברת על "{pendingContact.booktitle||pendingContact.bookid}"?
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onClick={()=>setAskDealMode(true)} style={{flex:1,padding:"10px",borderRadius:10,border:"none",background:C.teal,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✅ כן, סגרנו</button>
+              <button onClick={()=>handleContactAnswer("no")} style={{flex:1,padding:"10px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,fontWeight:600,cursor:"pointer",color:C.muted}}>❌ לא</button>
+            </div>
+            <button onClick={()=>handleContactAnswer("skip")} style={{width:"100%",padding:"7px",borderRadius:9,border:"none",background:"none",color:C.muted,fontSize:12,cursor:"pointer"}}>🔕 אל תשאל שוב</button>
+          </div>
+        </div>
+      )}
+      {pendingContact && askDealMode && (
+        <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:600,padding:"0 16px",direction:"rtl"}}>
+          <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:12,textAlign:"center"}}>מה קרה עם הספר?</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[{s:"sold",ic:"🤝",t:"נמכר"},{s:"lent",ic:"📚",t:"הושאל"},{s:"swapped",ic:"🔄",t:"הוחלף"},{s:"given",ic:"🎁",t:"נמסר"}].map(o=>(
+                <button key={o.s} onClick={()=>{handleContactAnswer("done",o.s);setAskDealMode(false);}} style={{padding:"12px 8px",borderRadius:11,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:12,fontWeight:700,color:C.ink}}>
+                  <div style={{fontSize:22,marginBottom:4}}>{o.ic}</div>{o.t}
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>setAskDealMode(false)} style={{width:"100%",marginTop:10,padding:"7px",borderRadius:9,border:"none",background:"none",color:C.muted,fontSize:12,cursor:"pointer"}}>חזרה</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -820,6 +878,21 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
 
   const [showCloseDeal, setShowCloseDeal] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [contactId, setContactId] = useState(null);
+  const [askDeal, setAskDeal] = useState(false);
+
+  const recordContact = async (type) => {
+    if (!user?.id || String(book.ownerid)===String(user?.id)) return;
+    try {
+      const r = await fetch(BASE + "/api/contacts", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user.id, toUserId:book.ownerid, type })
+      });
+      const d = await r.json();
+      if (d.contact) setContactId(d.contact.id);
+    } catch {}
+  };
 
   const closeDeal = async (status) => {
     setClosing(true);
@@ -887,10 +960,10 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
             isGuest
               ? <Btn onClick={onGuest} style={{width:"100%",padding:"14px",fontSize:15}}>הצטרף לפנייה 📱</Btn>
               : book.ownerid!==user?.id&&<div style={{display:"flex",gap:10}}>
-                <a href={`https://wa.me/972${(book.phone||"").replace(/^0/,"")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{flex:1,textDecoration:"none"}}>
+                <a href={`https://wa.me/972${(book.phone||"").replace(/^0/,"")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{flex:1,textDecoration:"none"}} onClick={()=>recordContact("whatsapp")}>
                   <Btn style={{width:"100%",padding:"14px",fontSize:15,background:"#25D366",color:"#fff"}}>📱 וואטסאפ</Btn>
                 </a>
-                {book.phone&&<a href={`tel:${book.phone}`} style={{textDecoration:"none"}}>
+                {book.phone&&<a href={`tel:${book.phone}`} style={{textDecoration:"none"}} onClick={()=>recordContact("phone")}>
                   <Btn style={{padding:"14px 18px",fontSize:18,background:C.bg,color:C.ink,border:`1px solid ${C.border}`}}>📞</Btn>
                 </a>}
               </div>
