@@ -190,6 +190,7 @@ function AddBook({ user, onDone, toast_, coords }) {
         author:    d.author    || f.author,
         publisher: d.publisher || f.publisher,
         year:      d.year      || f.year,
+        thumbnail: d.thumbnail || f.thumbnail,
       }));
       const cnt = [d.title, d.author, d.publisher].filter(Boolean).length;
       toast_(`✓ כריכה קדמית — ${cnt} פרטים חולצו`);
