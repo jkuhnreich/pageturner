@@ -238,6 +238,7 @@ function AddBook({ user, onDone, toast_, coords }) {
 
   const save = async () => {
     if (!form.title.trim()) return toast_("שם ספר הוא שדה חובה", "warn");
+    if (!form.author.trim()) return toast_("שם המחבר הוא שדה חובה", "warn");
     setSaving(true);
     try {
       const location = await getCoords();
@@ -369,7 +370,7 @@ function AddBook({ user, onDone, toast_, coords }) {
         )}
       </div>
 
-      <Btn onClick={save} disabled={!form.title.trim()||saving} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
+      <Btn onClick={save} disabled={!form.title.trim()||!form.author.trim()||saving} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
         {saving ? <><Spinner/> מפרסם...</> : "פרסם ספר ✨"}
       </Btn>
     </div>
@@ -872,7 +873,7 @@ export default function App() {
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הספרים שלי</div>
                   {myBooks.map(b=>(
                     <div key={b.id} onClick={()=>setViewBook(b)} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11,cursor:"pointer"}}>
-                      <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>{(b.frontimg||b.thumbnail)?<img src={b.frontimg||b.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}</div>
+                      <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>{(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}</div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.title}</div>
                         <div style={{fontSize:11,color:C.muted}}>{b.author}</div>
@@ -1021,8 +1022,8 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
           </div>
           <div style={{display:"flex",gap:14,marginBottom:18}}>
             <div style={{width:70,height:100,borderRadius:"4px 10px 10px 4px",flexShrink:0,background:color,overflow:"hidden",boxShadow:`4px 4px 14px ${color}44`}}>
-              {(book.frontimg||book.thumbnail)
-                ? <img src={book.frontimg||book.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              {(book.thumbnail||book.frontimg)
+                ? <img src={book.thumbnail||book.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                 : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
             </div>
             <div style={{flex:1}}>
@@ -1110,8 +1111,8 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
         <div style={{display:"flex",gap:11,marginBottom:10}}>
           {/* ספר thumbnail */}
           <div style={{width:50,height:72,borderRadius:"3px 8px 8px 3px",flexShrink:0,background:book.frontImg?undefined:color,overflow:"hidden",position:"relative",boxShadow:`3px 3px 10px ${color}44`}}>
-            {(book.frontimg||book.thumbnail)
-              ? <img src={book.frontimg||book.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            {(book.thumbnail||book.frontimg)
+              ? <img src={book.thumbnail||book.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               : <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>📖</div>
             }
           </div>
