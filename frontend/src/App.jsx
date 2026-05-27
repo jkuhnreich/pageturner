@@ -589,7 +589,7 @@ export default function App() {
   const loadMyBooks = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await api.get(`/api/books?ownerId=${user.id}&all=true`);
+      const data = await api.get(`/api/books?ownerId=${user?.id}&all=true`);
       setMyBooks(data);
     } catch(e) {}
   }, [user?.id]);
