@@ -53,6 +53,8 @@ async function initDB() {
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT"); } catch {}
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS city TEXT"); } catch {}
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS dealstatus TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerAsked BOOLEAN DEFAULT false"); } catch {}
+  try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerConfirmed BOOLEAN DEFAULT false"); } catch {}
   try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
     bookId TEXT,
@@ -383,6 +385,21 @@ app.post("/api/contacts", async (req, res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+app.get("/api/contacts/owner-pending/:userId", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.*, b.title as booktitle, u.name as interestedname 
+       FROM contacts c 
+       LEFT JOIN books b ON c.bookid=b.id 
+       LEFT JOIN users u ON c.fromuserid=u.id
+       WHERE c.touserid=$1 AND c.status='done' AND c.ownerasked=false 
+       ORDER BY c.createdat DESC LIMIT 1`,
+      [req.params.userId]
+    );
+    res.json(result.rows[0] || null);
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
 app.get("/api/contacts/pending/:userId", async (req, res) => {
   try {
     const result = await pool.query(
@@ -395,11 +412,23 @@ app.get("/api/contacts/pending/:userId", async (req, res) => {
 
 app.put("/api/contacts/:id", async (req, res) => {
   try {
-    const { status, dealStatus, bookId, markAsked } = req.body;
+    const { status, dealStatus, bookId, markAsked, confirmedByOwner } = req.body;
     await pool.query("UPDATE contacts SET status=$1, askedStatus=$2 WHERE id=$3", [status, markAsked===true, req.params.id]);
-    if (status === "done" && dealStatus && bookId) {
-      await pool.query("UPDATE books SET avail=false, dealstatus=$1 WHERE id=$2", [dealStatus, bookId]);
+
+    if (status === "done") {
+      // המתעניין אישר — נשלח שאלה למפרסם
+      await pool.query("UPDATE contacts SET ownerAsked=false WHERE id=$1", [req.params.id]);
     }
+
+    if (confirmedByOwner && bookId) {
+      // המפרסם אישר — בדוק אם גם המתעניין אישר
+      const contact = (await pool.query("SELECT * FROM contacts WHERE id=$1", [req.params.id])).rows[0];
+      if (contact && contact.status === "done") {
+        // שניהם אישרו — הורד מזמינות
+        await pool.query("UPDATE books SET avail=false, dealstatus=$1 WHERE id=$2", [dealStatus||"agreed", bookId]);
+      }
+    }
+
     res.json({ ok:true });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });

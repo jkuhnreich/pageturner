@@ -621,6 +621,8 @@ export default function App() {
 
   const [pendingContact, setPendingContact] = useState(null);
   const [askDealMode, setAskDealMode] = useState(false);
+  const [ownerPending, setOwnerPending] = useState(null);
+  const [ownerAskDeal, setOwnerAskDeal] = useState(false);
 
   useEffect(() => {
     if (!user?.id || isGuest) return;
@@ -629,9 +631,13 @@ export default function App() {
         const r = await fetch(BASE + `/api/contacts/pending/${user.id}`);
         const d = await r.json();
         if (d) setPendingContact(d);
+        // בדוק גם שאלות למפרסם
+        const r2 = await fetch(BASE + `/api/contacts/owner-pending/${user.id}`);
+        const d2 = await r2.json();
+        if (d2) setOwnerPending(d2);
       } catch {}
     };
-    const t = setTimeout(checkPending, 3000);
+    const t = setTimeout(checkPending, 2000);
     return () => clearTimeout(t);
   }, [user?.id, screen]);
 
@@ -650,6 +656,30 @@ export default function App() {
     setPendingContact(null);
     setAskDealMode(false);
     if (answer === "done") { loadBooks(); loadMyBooks(); }
+  };
+
+  const handleOwnerAnswer = async (answer, dealStatus) => {
+    if (!ownerPending) return;
+    try {
+      await fetch(BASE + `/api/contacts/${ownerPending.id}`, {
+        method:"PUT",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ 
+          status: answer === "confirmed" ? "done" : "no",
+          dealStatus, 
+          bookId: ownerPending.bookid,
+          confirmedByOwner: answer === "confirmed",
+          markAsked: true
+        })
+      });
+      if (answer === "confirmed") {
+        toast_("✅ הספר ירד מזמינות — תודה על העדכון!");
+        loadBooks();
+        loadMyBooks();
+      }
+    } catch {}
+    setOwnerPending(null);
+    setOwnerAskDeal(false);
   };
 
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
@@ -869,6 +899,34 @@ export default function App() {
               ))}
             </div>
             <button onClick={()=>setAskDealMode(false)} style={{width:"100%",marginTop:10,padding:"7px",borderRadius:9,border:"none",background:"none",color:C.muted,fontSize:12,cursor:"pointer"}}>חזרה</button>
+          </div>
+        </div>
+      )}
+    {ownerPending && !ownerAskDeal && (
+        <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:600,padding:"0 16px",direction:"rtl"}}>
+          <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:12}}>
+              {ownerPending.interestedname||"מישהו"} יצר איתך קשר לגבי "{ownerPending.booktitle}" — האם סיכמתם משהו?
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onClick={()=>setOwnerAskDeal(true)} style={{flex:1,padding:"10px",borderRadius:10,border:"none",background:C.teal,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✅ כן, סיכמנו</button>
+              <button onClick={()=>handleOwnerAnswer("no")} style={{flex:1,padding:"10px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,fontWeight:600,cursor:"pointer",color:C.muted}}>❌ לא</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {ownerPending && ownerAskDeal && (
+        <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:600,padding:"0 16px",direction:"rtl"}}>
+          <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:12,textAlign:"center"}}>מה סיכמתם?</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[{s:"sold",ic:"🤝",t:"נמכר"},{s:"lent",ic:"📚",t:"הושאל"},{s:"swapped",ic:"🔄",t:"הוחלף"},{s:"given",ic:"🎁",t:"נמסר"}].map(o=>(
+                <button key={o.s} onClick={()=>handleOwnerAnswer("confirmed", o.s)} style={{padding:"12px 8px",borderRadius:11,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:12,fontWeight:700,color:C.ink}}>
+                  <div style={{fontSize:22,marginBottom:4}}>{o.ic}</div>{o.t}
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>setOwnerAskDeal(false)} style={{width:"100%",marginTop:10,padding:"7px",borderRadius:9,border:"none",background:"none",color:C.muted,fontSize:12,cursor:"pointer"}}>חזרה</button>
           </div>
         </div>
       )}
