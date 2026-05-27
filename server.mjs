@@ -374,8 +374,13 @@ app.post("/api/contacts", async (req, res) => {
   const { bookId, bookTitle, fromUserId, toUserId, type } = req.body;
   if (!bookId || !fromUserId) return res.status(400).json({ error:"חסרים פרטים" });
   try {
-    const existing = await pool.query("SELECT * FROM contacts WHERE bookId=$1 AND fromUserId=$2", [bookId, fromUserId]);
-    if (existing.rows.length) return res.json({ ok:true, contact: existing.rows[0] });
+    const existing = await pool.query("SELECT * FROM contacts WHERE bookId=$1 AND fromUserId=$2 ORDER BY createdat DESC LIMIT 1", [bookId, fromUserId]);
+    if (existing.rows.length) {
+      const c = existing.rows[0];
+      // אם הישן הוא pending — החזר אותו
+      if (c.status === "pending" && !c.askedstatus) return res.json({ ok:true, contact: c });
+      // אחרת (no, done, skip) — צור חדש
+    }
     const id = randomUUID();
     await pool.query(
       "INSERT INTO contacts (id,bookId,bookTitle,fromUserId,toUserId,type,status,askedStatus,createdAt) VALUES ($1,$2,$3,$4,$5,$6,'pending',false,$7)",
