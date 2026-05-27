@@ -811,7 +811,7 @@ export default function App() {
             }}
               style={{flex:1,padding:"8px 3px 7px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderBottom:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
               <span style={{fontSize:a?18:16}}>{ic}</span>
-              <span style={{fontSize:13,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
+              <span style={{fontSize:12,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
             </button>
           );
         })}
@@ -899,7 +899,7 @@ export default function App() {
             <button key={id} onClick={()=>setTab(id)}
               style={{flex:1,padding:"10px 3px 8px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderTop:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
               <span style={{fontSize:a?24:21}}>{ic}</span>
-              <span style={{fontSize:13,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
+              <span style={{fontSize:12,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
             </button>
           );
         })}
@@ -1165,8 +1165,8 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
             }
           </div>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:17,fontWeight:800,lineHeight:1.3,marginBottom:2,color:C.ink}}>{book.title}</div>
-            <div style={{fontSize:14,color:C.muted,marginBottom:7}}>
+            <div style={{fontSize:15,fontWeight:800,lineHeight:1.3,marginBottom:2,color:C.ink}}>{book.title}</div>
+            <div style={{fontSize:13,color:C.muted,marginBottom:7}}>
               {book.author}{book.publisher?` · ${book.publisher}`:""}{book.year?` (${book.year})`:""}
             </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
