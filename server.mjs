@@ -122,6 +122,27 @@ function dist(lat1, lng1, lat2, lng2) {
   return +(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))).toFixed(1);
 }
 
+async function openLibrary(isbn) {
+  try {
+    const r = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`, {
+      headers: { "User-Agent": "Pageturner/1.0 (pageturner.co.il)" }
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const book = d[`ISBN:${isbn}`];
+    if (!book) return null;
+    return {
+      title: book.title || "",
+      author: (book.authors||[]).map(a=>a.name).join(", "),
+      publisher: (book.publishers||[]).map(p=>p.name).join(", "),
+      year: book.publish_date ? book.publish_date.match(/\d{4}/)?.[0] || "" : "",
+      isbn,
+      thumbnail: book.cover?.medium || book.cover?.small || "",
+      description: book.excerpts?.[0]?.text || "",
+    };
+  } catch { return null; }
+}
+
 async function gBooks(query, max = 10, lang = "") {
   if (!query?.trim()) return [];
   const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
@@ -144,15 +165,40 @@ async function gBooks(query, max = 10, lang = "") {
 async function enrich(vision) {
   let results = [];
   const q = [vision.title, vision.author].filter(Boolean).join(" ");
-  // חפש קודם לפי ISBN אם יש
+
+  // 1. Open Library לפי ISBN — הכי מדויק
+  if (vision.isbn) {
+    const ol = await openLibrary(vision.isbn);
+    if (ol) {
+      return {
+        googleResults: [],
+        enriched: {
+          title: vision.title || ol.title,
+          author: vision.author || ol.author,
+          publisher: ol.publisher || vision.publisher,
+          year: ol.year || vision.year,
+          language: vision.language || "",
+          series: vision.series || "",
+          volume: vision.volume || "",
+          thumbnail: ol.thumbnail || "",
+          isbn: ol.isbn,
+          description: ol.description,
+          categories: [],
+          googleId: "",
+        }
+      };
+    }
+  }
+
+  // 2. Google Books לפי ISBN
   if (vision.isbn) {
     results = await gBooks(`isbn:${vision.isbn}`, 3);
   }
-  // חפש בעברית קודם
+  // 3. Google Books בעברית
   if (!results.length && q.trim()) {
     results = await gBooks(q, 5, "he");
   }
-  // אם לא נמצא בעברית — חפש בכל שפה
+  // 4. Google Books בכל שפה
   if (!results.length && q.trim()) {
     results = await gBooks(q, 8);
   }
