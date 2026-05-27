@@ -892,7 +892,7 @@ export default function App() {
           <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
             <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:12,textAlign:"center"}}>מה סיכמתם?</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {[{s:"sold",ic:"🤝",t:"נמכר"},{s:"lent",ic:"📚",t:"הושאל"},{s:"swapped",ic:"🔄",t:"הוחלף"},{s:"given",ic:"🎁",t:"נמסר"}].map(o=>(
+              {[{s:"sold",ic:"🤝",t:"מכירה"},{s:"lent",ic:"📚",t:"השאלה"},{s:"swapped",ic:"🔄",t:"החלפה"},{s:"given",ic:"🎁",t:"מסירה"}].map(o=>(
                 <button key={o.s} onClick={()=>{handleContactAnswer("done",o.s);setAskDealMode(false);}} style={{padding:"12px 8px",borderRadius:11,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:12,fontWeight:700,color:C.ink}}>
                   <div style={{fontSize:22,marginBottom:4}}>{o.ic}</div>{o.t}
                 </button>
@@ -920,7 +920,7 @@ export default function App() {
           <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
             <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:12,textAlign:"center"}}>מה סיכמתם?</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {[{s:"sold",ic:"🤝",t:"נמכר"},{s:"lent",ic:"📚",t:"הושאל"},{s:"swapped",ic:"🔄",t:"הוחלף"},{s:"given",ic:"🎁",t:"נמסר"}].map(o=>(
+              {[{s:"sold",ic:"🤝",t:"מכירה"},{s:"lent",ic:"📚",t:"השאלה"},{s:"swapped",ic:"🔄",t:"החלפה"},{s:"given",ic:"🎁",t:"מסירה"}].map(o=>(
                 <button key={o.s} onClick={()=>handleOwnerAnswer("confirmed", o.s)} style={{padding:"12px 8px",borderRadius:11,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:12,fontWeight:700,color:C.ink}}>
                   <div style={{fontSize:22,marginBottom:4}}>{o.ic}</div>{o.t}
                 </button>

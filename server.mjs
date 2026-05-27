@@ -417,9 +417,13 @@ app.put("/api/contacts/:id", async (req, res) => {
 
     if (status === "done") {
       // המתעניין אישר — נשלח שאלה למפרסם
-      await pool.query("UPDATE contacts SET ownerAsked=false WHERE id=$1", [req.params.id]);
+      // המתעניין אישר — סמן שצריך לשאול את המפרסם
     }
 
+    if (confirmedByOwner !== undefined) {
+      // המפרסם ענה (כן או לא) — סמן ownerAsked=true כדי שלא ישאלו שוב
+      await pool.query("UPDATE contacts SET ownerAsked=true WHERE id=$1", [req.params.id]);
+    }
     if (confirmedByOwner && bookId) {
       // המפרסם אישר — בדוק אם גם המתעניין אישר
       const contact = (await pool.query("SELECT * FROM contacts WHERE id=$1", [req.params.id])).rows[0];
