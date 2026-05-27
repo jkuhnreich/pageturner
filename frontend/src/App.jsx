@@ -852,15 +852,6 @@ export default function App() {
         </div>
       )}
 
-      {tab === "search" && (
-        <div style={{display:"flex",gap:6,padding:"7px 13px",background:C.white,borderBottom:`1px solid ${C.border}`,overflowX:"auto",flexShrink:0,scrollbarWidth:"none"}}>
-          <button onClick={()=>setGenreFilter("all")} style={{padding:"5px 11px",borderRadius:99,fontSize:12,fontWeight:genreFilter==="all"?700:500,border:"none",cursor:"pointer",background:genreFilter==="all"?C.teal:C.bg,color:genreFilter==="all"?"#fff":C.muted,whiteSpace:"nowrap",flexShrink:0}}>כל הסוגות</button>
-          {["ספרות ורומנים","מתח","מדע בדיוני ופנטזיה","אהבה ורומנטיקה","היסטוריה","ביוגרפיה","מדע ופילוסופיה","פיתוח אישי","עסקים וכלכלה","ילדים ונוער","בישול ואפייה","שירה","יהדות ורוחניות","אחר"].map(g=>(
-            <button key={g} onClick={()=>setGenreFilter(g)} style={{padding:"5px 11px",borderRadius:99,fontSize:12,fontWeight:genreFilter===g?700:500,border:"none",cursor:"pointer",background:genreFilter===g?C.teal:C.bg,color:genreFilter===g?"#fff":C.muted,whiteSpace:"nowrap",flexShrink:0}}>{g}</button>
-          ))}
-        </div>
-      )}
-
       {/* Content */}
       <div style={{flex:1,overflowY:"auto",padding:"12px 12px 4px"}}>
 
