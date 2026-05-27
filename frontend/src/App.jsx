@@ -206,11 +206,20 @@ function AddBook({ user, onDone, toast_, coords }) {
       fd.append("image", file);
       const res = await api.upload("/api/analyze/back", fd);
       const d = res.data;
-      if (d.summary) {
-        setForm(f => ({ ...f, summary: d.summary }));
-        toast_("✓ תקציר חולץ מהכריכה האחורית");
+      const updates = {};
+      if (d.summary) updates.summary = d.summary;
+      if (d.isbn) updates.isbn = d.isbn;
+      if (d.publisher) updates.publisher = d.publisher;
+      if (d.year) updates.year = d.year;
+      if (d.genre) updates.genre = d.genre;
+      // אם Google Books החזיר נתונים מהISBN — עדיפות גבוהה
+      if (d.googleTitle) updates.title = d.googleTitle;
+      if (d.googleAuthor) updates.author = d.googleAuthor;
+      if (Object.keys(updates).length) {
+        setForm(f => ({ ...f, ...updates }));
+        toast_("✓ פרטי הספר עודכנו מהכריכה האחורית");
       } else {
-        toast_("כריכה נותחה — תקציר לא זוהה", "warn");
+        toast_("כריכה נותחה — לא נמצאו פרטים", "warn");
       }
     } catch (e) {
       toast_("שגיאה בניתוח כריכה אחורית: " + e.message, "err");

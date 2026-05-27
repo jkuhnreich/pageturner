@@ -166,16 +166,27 @@ async function enrich(vision) {
   };
 }
 
-const P_FRONT = `You are an expert OCR system for book covers. Analyze this FRONT COVER.
-Return confidence scores (0-1) for each field.
-RULES: Copy text EXACTLY. Leave "" if not visible or confidence < 0.7.
-Return ONLY this JSON:
+const P_FRONT = `You are an expert OCR and bibliographic system for book covers. Analyze this FRONT COVER image carefully.
+RULES:
+- Copy ALL text EXACTLY as it appears, including subtitles
+- For publisher: look for small text at bottom of cover, spine edge, or logo
+- For year: look for copyright year or edition year anywhere on cover
+- For series/volume: look for series name or number
+- Leave "" if not clearly visible
+- confidence: 0-1 score for each field
+Return ONLY this JSON, no other text:
 {"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","confidence":{"title":0,"author":0,"publisher":0,"year":0}}`;
 
-const P_BACK = `You are an expert OCR system for book back covers.
-Find: summary (blurb), isbn (978/979...), price, genre.
-Leave "" if not visible. Return ONLY this JSON:
-{"summary":"","isbn":"","price":"","genre":""}`;
+const P_BACK = `You are an expert OCR and bibliographic system for book back covers.
+RULES:
+- isbn: look for barcode area, find 13-digit number starting with 978 or 979
+- publisher: look for publisher name/logo anywhere
+- year: look for copyright symbol © followed by year
+- summary: the main descriptive text/blurb about the book
+- price: any price in any currency
+- genre: category of the book
+Leave "" if not clearly visible. Return ONLY this JSON:
+{"summary":"","isbn":"","publisher":"","year":"","price":"","genre":""}`;
 
 const P_SHELF = `You are an expert at reading book spines on a bookshelf.
 Spines are narrow vertical strips — text is ROTATED 90°.
@@ -211,7 +222,15 @@ app.post("/api/analyze/back", upload.single("image"), async (req,res) => {
     let data = {};
     try { data = parseJ(raw); } catch { data = { summary: raw.trim() }; }
     Object.keys(data).forEach(k => { if (typeof data[k]==="string") data[k]=data[k].trim(); });
-    res.json({ ok:true, data: { summary:data.summary||"", isbn:data.isbn||"", price:data.price||"", genre:data.genre||"" } });
+    // אם יש ISBN — חפש ב-Google Books לנתונים מדויקים
+    let googleData = {};
+    if (data.isbn && data.isbn.match(/^97[89]/)) {
+      const results = await gBooks(`isbn:${data.isbn}`, 1);
+      if (results.length) {
+        googleData = { publisher: results[0].publisher, year: results[0].year, title: results[0].title, author: results[0].author, thumbnail: results[0].thumbnail };
+      }
+    }
+    res.json({ ok:true, data: { summary:data.summary||"", isbn:data.isbn||"", price:data.price||"", genre:data.genre||"", publisher:googleData.publisher||data.publisher||"", year:googleData.year||data.year||"", googleTitle:googleData.title||"", googleAuthor:googleData.author||"", thumbnail:googleData.thumbnail||"" } });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
