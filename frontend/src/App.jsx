@@ -877,7 +877,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
           <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
             {book.condition&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>⭐ {book.condition}</div>}
             {book.city&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>📍 {book.city}</div>}
-            {book.km!=null&&!isNaN(book.km)&&!isGuest&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>{book.km<0.1?"פחות מ-100 מטר":`${book.km} ק"מ`}</div>}
+            {book.km!=null&&!isNaN(book.km)&&!isGuest&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>{book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`}</div>}
           </div>
           <div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:16}}>
             <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:4}}>המפרסם</div>
@@ -979,7 +979,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
             <div style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11}}>{(book.ownername||book.ownerName||"?")[0]}</div>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownername||book.ownerName}</div>
-              <div style={{fontSize:11,color:C.muted}}>📍 {!isGuest&&book.km!=null&&!isNaN(book.km)?(book.km<0.1?"פחות מ-100 מטר":`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
+              <div style={{fontSize:11,color:C.muted}}>📍 {!isGuest&&book.km!=null&&!isNaN(book.km)?(book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
