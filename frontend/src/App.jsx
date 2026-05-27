@@ -658,6 +658,25 @@ export default function App() {
     if (answer === "done") { loadBooks(); loadMyBooks(); }
   };
 
+  const recordContactApp = async (book, type) => {
+    if (!user?.id || String(book.ownerid)===String(user?.id)) return;
+    try {
+      await fetch(BASE + "/api/contacts", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user.id, toUserId:book.ownerid, type })
+      });
+      // בדוק pending אחרי 3 שניות
+      setTimeout(async () => {
+        try {
+          const r = await fetch(BASE + `/api/contacts/pending/${user.id}`);
+          const d = await r.json();
+          if (d) setPendingContact(d);
+        } catch {}
+      }, 3000);
+    } catch {}
+  };
+
   const handleOwnerAnswer = async (answer, dealStatus) => {
     if (!ownerPending) return;
     try {
@@ -808,7 +827,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={setViewBook}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={setViewBook} onContact={recordContactApp}/>)
         )}
 
         {/* הוספה */}
@@ -1068,7 +1087,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated }) {
   );
 }
 
-function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
+function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
   const [exp, setExp] = useState(false);
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
@@ -1123,7 +1142,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
                   <button onClick={e=>{e.stopPropagation();onEdit(book);}} style={{padding:"6px 10px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️</button>
                 </div>
               : book.avail && <>
-              <a href={`tel:${book.phone}`} onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}}} style={{padding:"7px 10px",background:C.tealL,border:`1px solid ${C.teal}30`,borderRadius:9,color:C.teal,fontSize:12,fontWeight:700,textDecoration:"none"}}>📞</a>
+              <a href={`tel:${book.phone}`} onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}else{onContact&&onContact(book,"phone");}}} style={{padding:"7px 10px",background:C.tealL,border:`1px solid ${C.teal}30`,borderRadius:9,color:C.teal,fontSize:12,fontWeight:700,textDecoration:"none"}}>📞</a>
               {book.phone && <a
                 href={`https://wa.me/972${(book.phone||"").replace(/^0/,"").replace(/-/g,"")}?text=${encodeURIComponent(
                   book.mode==="sell"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין לרכישה?`:
@@ -1131,7 +1150,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView }) {
                   book.mode==="swap"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם תהיה מעוניין להחליף?`:
                   `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין למסירה?`
                 )}`}
-                onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}}}
+                onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}else{onContact&&onContact(book,"whatsapp");}}}
                 target="_blank"
                 style={{padding:"7px 10px",background:"#dcfce7",border:"1px solid #16a34a30",borderRadius:9,color:"#16a34a",fontSize:12,fontWeight:700,textDecoration:"none"}}><svg viewBox="0 0 24 24" width="16" height="16" fill="#16a34a"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.528 5.855L.057 23.882l6.186-1.438A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.658-.511-5.18-1.401l-.36-.214-3.795.881.925-3.701-.236-.375A9.932 9.932 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg></a>}
             </>}
