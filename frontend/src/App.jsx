@@ -1565,7 +1565,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onV
 
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:9,borderTop:`1px solid ${C.border}`,marginTop:9}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}>
-            <div onClick={e=>{e.stopPropagation();if(book.ownerid&&onViewUser)onViewUser(book.ownerid);}} style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden",cursor:"pointer"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
+            <div onClick={e=>{e.stopPropagation();e.preventDefault();alert("click! "+book.ownerid);if(book.ownerid&&onViewUser)onViewUser(book.ownerid);}} style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden",cursor:"pointer"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownername||book.ownerName}</div>
               <div style={{fontSize:12,color:C.muted}}>📍 {!isGuest&&book.km!=null&&!isNaN(book.km)?(book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
