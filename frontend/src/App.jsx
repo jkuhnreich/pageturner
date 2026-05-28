@@ -928,8 +928,25 @@ export default function App() {
               </div>
             : <div style={{animation:"fadeUp .2s ease"}}>
                 <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"22px 16px",marginBottom:12,textAlign:"center"}}>
-                  <div style={{width:68,height:68,borderRadius:"50%",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px"}}>
-                    {user?.type==="store"?"🏪":"👤"}
+                  <div style={{position:"relative",width:68,height:68,margin:"0 auto 12px"}}>
+                    <div style={{width:68,height:68,borderRadius:"50%",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,overflow:"hidden"}}>
+                      {user?.avatar ? <img src={user.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : (user?.type==="store"?"🏪":"👤")}
+                    </div>
+                    <label style={{position:"absolute",bottom:0,right:0,width:22,height:22,borderRadius:"50%",background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}>
+                      📷
+                      <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = async ev => {
+                          const avatar = ev.target.result;
+                          const r = await fetch(BASE+"/api/users/"+user.id+"/avatar", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({avatar})});
+                          const d = await r.json();
+                          if (d.ok) { setUser(u=>({...u,avatar})); try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,avatar}));}catch{} toast_("תמונה עודכנה ✓"); }
+                        };
+                        reader.readAsDataURL(file);
+                      }}/>
+                    </label>
                   </div>
                   <div style={{fontSize:18,fontWeight:800,color:C.ink,marginBottom:3}}>{user?.storeName||user?.name}</div>
                   <div style={{fontSize:12,color:C.muted,marginBottom:10}}>{user?.email}</div>

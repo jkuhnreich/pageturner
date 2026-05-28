@@ -56,6 +56,7 @@ async function initDB() {
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS dealstatus TEXT"); } catch {}
   try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerAsked BOOLEAN DEFAULT false"); } catch {}
   try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerConfirmed BOOLEAN DEFAULT false"); } catch {}
+  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT"); } catch {}
   try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
     bookId TEXT,
@@ -467,6 +468,15 @@ app.get("/api/users/:id", async (req,res) => {
     if (!result.rows.length) return res.status(404).json({ error:"לא נמצא" });
     res.json(result.rows[0]);
   } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+app.post("/api/users/:id/avatar", async (req, res) => {
+  try {
+    const { avatar } = req.body;
+    if (!avatar) return res.status(400).json({ error: "no avatar" });
+    await pool.query("UPDATE users SET avatar=$1 WHERE id=$2", [avatar, req.params.id]);
+    res.json({ ok: true, avatar });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/auth/google", async (req, res) => {
