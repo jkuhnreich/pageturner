@@ -3,6 +3,7 @@ import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
 import { randomUUID } from "crypto";
+import cron from "node-cron";
 import pg from "pg";
 
 dotenv.config();
@@ -662,6 +663,109 @@ app.post("/api/auth/verify-otp", async (req, res) => {
   
   res.json({ ok: true, user: null, isNew: true });
 });
+
+
+import cron from 'node-cron';
+
+// ── פונקציית שליחת דוח ──────────────────────────────────
+async function sendReport(type) {
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (!adminEmail) return;
+
+  const now = Date.now();
+  const day = 86400000;
+  const week = day * 7;
+  const month = day * 30;
+  const period = type === "daily" ? day : type === "weekly" ? week : month;
+
+  try {
+    const [users, books, deals, newUsers, newBooks, newDeals,
+           logins, guestLogins, views, searches, contacts, cities, hours] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM users"),
+      pool.query("SELECT COUNT(*) FROM books WHERE avail=true"),
+      pool.query("SELECT COUNT(*) FROM contacts WHERE status='done'"),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-period]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-period]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event IN ('book_deal') AND createdat>$1", [now-period]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='login' AND createdat>$1", [now-period]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='guest_login' AND createdat>$1", [now-period]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_view' AND createdat>$1", [now-period]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='search' AND createdat>$1", [now-period]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_contact' AND createdat>$1", [now-period]),
+      pool.query("SELECT city, COUNT(*) as cnt FROM books WHERE city IS NOT NULL AND city!='' GROUP BY city ORDER BY cnt DESC LIMIT 5"),
+      pool.query("SELECT EXTRACT(HOUR FROM to_timestamp(createdat/1000)) as hour, COUNT(*) as cnt FROM analytics WHERE createdat>$1 GROUP BY hour ORDER BY cnt DESC LIMIT 5", [now-period]),
+    ]);
+
+    const periodHe = type === "daily" ? "יומי" : type === "weekly" ? "שבועי" : "חודשי";
+    const peakHours = hours.rows.map(h => `${h.hour}:00 (${h.cnt} אירועים)`).join(", ");
+    const topCities = cities.rows.map(c => `${c.city}: ${c.cnt}`).join(", ");
+
+    const html = `
+<div dir="rtl" style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#fef8ec">
+  <h1 style="color:#0e0c08;font-size:24px;border-bottom:2px solid #b5390e;padding-bottom:12px">
+    📚 Pageturner — דוח ${periodHe}
+  </h1>
+  <p style="color:#888;font-size:13px">${new Date().toLocaleDateString("he-IL", {weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
+
+  <h2 style="color:#b5390e;font-size:16px">📊 סיכום כולל</h2>
+  <table style="width:100%;border-collapse:collapse">
+    <tr style="background:#f0ebe0">
+      <td style="padding:10px;border:1px solid #ddd">👥 סה"כ משתמשים</td>
+      <td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${users.rows[0].count}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px;border:1px solid #ddd">📚 ספרים פעילים</td>
+      <td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${books.rows[0].count}</td>
+    </tr>
+    <tr style="background:#f0ebe0">
+      <td style="padding:10px;border:1px solid #ddd">🤝 עסקאות שבוצעו</td>
+      <td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${deals.rows[0].count}</td>
+    </tr>
+  </table>
+
+  <h2 style="color:#b5390e;font-size:16px;margin-top:20px">📈 פעילות ב${periodHe === "יומי" ? "24 שעות האחרונות" : periodHe === "שבועי" ? "שבוע האחרון" : "חודש האחרון"}</h2>
+  <table style="width:100%;border-collapse:collapse">
+    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">✅ הרשמות חדשות</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${newUsers.rows[0].count}</td></tr>
+    <tr><td style="padding:10px;border:1px solid #ddd">🔑 כניסות משתמשים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${logins.rows[0].count}</td></tr>
+    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">👀 כניסות כאורח</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${guestLogins.rows[0].count}</td></tr>
+    <tr><td style="padding:10px;border:1px solid #ddd">📖 ספרים חדשים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${newBooks.rows[0].count}</td></tr>
+    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">👁️ צפיות בספרים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${views.rows[0].count}</td></tr>
+    <tr><td style="padding:10px;border:1px solid #ddd">🔍 חיפושים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${searches.rows[0].count}</td></tr>
+    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">📱 יצירות קשר</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${contacts.rows[0].count}</td></tr>
+    <tr><td style="padding:10px;border:1px solid #ddd">🤝 עסקאות חדשות</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${newDeals.rows[0].count}</td></tr>
+  </table>
+
+  ${topCities ? `<h2 style="color:#b5390e;font-size:16px;margin-top:20px">📍 ערים פעילות</h2><p style="color:#444">${topCities}</p>` : ""}
+  ${peakHours ? `<h2 style="color:#b5390e;font-size:16px;margin-top:20px">⏰ שעות שיא</h2><p style="color:#444">${peakHours}</p>` : ""}
+
+  <p style="color:#aaa;font-size:11px;margin-top:30px;border-top:1px solid #ddd;padding-top:12px">
+    Pageturner — ספרייה שכונתית | דוח אוטומטי
+  </p>
+</div>`;
+
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: "Pageturner Reports <noreply@pageturner.co.il>",
+        to: [adminEmail],
+        subject: `📊 Pageturner — דוח ${periodHe} | ${new Date().toLocaleDateString("he-IL")}`,
+        html
+      })
+    });
+    console.log(`✅ דוח ${periodHe} נשלח`);
+  } catch(e) { console.error("Report error:", e.message); }
+}
+
+// ── Cron Jobs ────────────────────────────────────────────
+// יומי — כל יום ב-8:00 בבוקר
+cron.schedule("0 8 * * *", () => sendReport("daily"), { timezone: "Asia/Jerusalem" });
+// שבועי — כל יום ראשון ב-9:00
+cron.schedule("0 9 * * 0", () => sendReport("weekly"), { timezone: "Asia/Jerusalem" });
+// חודשי — ראשון בחודש ב-10:00
+cron.schedule("0 10 1 * *", () => sendReport("monthly"), { timezone: "Asia/Jerusalem" });
+
+console.log("✅ Cron jobs registered");
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`\n📚 ספרייה שכונתית v4 — port ${PORT}`);
