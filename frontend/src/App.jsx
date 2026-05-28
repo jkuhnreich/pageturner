@@ -1219,7 +1219,7 @@ function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
 
   return (
     <div style={{animation:"fadeUp .2s ease"}}>
-      <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#fff",padding:"4px 8px"}}>←</button>
+      <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#333",padding:"4px 8px"}}>←</button>
       <div style={{background:"#fff",borderRadius:18,border:`1px solid ${C.border}`,padding:"22px 16px",marginBottom:12,textAlign:"center"}}>
         <div style={{width:68,height:68,borderRadius:"50%",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px",overflow:"hidden"}}>
           {profile?.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : (profile?.type==="store"?"🏪":"👤")}
