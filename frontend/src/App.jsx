@@ -826,6 +826,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
+      {viewUserId && <div style={{position:"fixed",inset:0,zIndex:500,background:C.bg,overflowY:"auto",direction:"rtl"}}><UserProfile userId={viewUserId} onBack={()=>setViewUserId(null)} BASE={BASE} C={C} HDR={HDR} SPINES={SPINES} onViewBook={b=>{setViewUserId(null);setViewBook(b);}}/></div>}
       {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
       {/* Header */}
@@ -907,7 +908,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>{setViewUserId(id);setTab("userprofile");}}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>setViewUserId(id)}/>)
         )}
 
         {/* הוספה */}
@@ -922,9 +923,6 @@ export default function App() {
         )}
 
         {/* פרופיל */}
-        {tab === "userprofile" && viewUserId && (
-          <UserProfile userId={viewUserId} onBack={()=>{setTab("search");setViewUserId(null);}} BASE={BASE} C={C} HDR={HDR} SPINES={SPINES} onViewBook={b=>{setTab("search");setViewBook(b);}}/>
-        )}
         {tab === "profile" && (
           isGuest
             ? <div style={{textAlign:"center",padding:"56px 20px"}}>
