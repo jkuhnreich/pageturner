@@ -580,6 +580,7 @@ export default function App() {
   const [books, setBooks] = useState([]);
   const [myBooks, setMyBooks] = useState([]);
   const [tab, setTab] = useState("search");
+  const [viewUserId, setViewUserId] = useState(null);
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
   const [genreFilter, setGenreFilter] = useState("all");
@@ -904,7 +905,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>{setViewUserId(id);setTab("userprofile");}}/>)
         )}
 
         {/* הוספה */}
@@ -919,6 +920,9 @@ export default function App() {
         )}
 
         {/* פרופיל */}
+        {tab === "userprofile" && viewUserId && (
+          <UserProfile userId={viewUserId} onBack={()=>{setTab("search");setViewUserId(null);}} BASE={BASE} C={C} HDR={HDR} SPINES={SPINES} onViewBook={b=>{setTab("search");setViewBook(b);}}/>
+        )}
         {tab === "profile" && (
           isGuest
             ? <div style={{textAlign:"center",padding:"56px 20px"}}>
@@ -1194,6 +1198,56 @@ function AdminPage({ onBack }) {
   );
 }
 
+function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
+  const [profile, setProfile] = React.useState(null);
+  const [books, setBooks] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    setLoading(true);
+    setProfile(null);
+    setBooks([]);
+    Promise.all([
+      fetch(BASE+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
+      fetch(BASE+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
+    ]).then(([u,b])=>{
+      setProfile(u||{});
+      setBooks(Array.isArray(b)?b.filter(x=>x.avail):[]);
+      setLoading(false);
+    });
+  }, [userId]);
+
+  return (
+    <div style={{animation:"fadeUp .2s ease"}}>
+      <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#fff",padding:"4px 8px"}}>←</button>
+      <div style={{background:"#fff",borderRadius:18,border:`1px solid ${C.border}`,padding:"22px 16px",marginBottom:12,textAlign:"center"}}>
+        <div style={{width:68,height:68,borderRadius:"50%",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px",overflow:"hidden"}}>
+          {profile?.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : (profile?.type==="store"?"🏪":"👤")}
+        </div>
+        <div style={{fontSize:18,fontWeight:800,marginBottom:3}}>{profile?.storeName||profile?.name||"..."}</div>
+      </div>
+      {loading
+        ? <div style={{textAlign:"center",padding:40,color:"#999"}}>⏳ טוען...</div>
+        : books.length===0
+        ? <div style={{textAlign:"center",padding:40,color:"#999"}}>אין ספרים</div>
+        : <>
+          <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>ספרים ({books.length})</div>
+          {books.map(b=>(
+            <div key={b.id} onClick={()=>onViewBook(b)} style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11,cursor:"pointer"}}>
+              <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>
+                {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.title}</div>
+                <div style={{fontSize:11,color:C.muted}}>{b.author}</div>
+              </div>
+            </div>
+          ))}
+        </>}
+    </div>
+  );
+}
+
 function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onContactMade }) {
 
   const [showCloseDeal, setShowCloseDeal] = useState(false);
@@ -1328,7 +1382,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   );
 }
 
-function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
+function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onViewUser }) {
   const [exp, setExp] = useState(false);
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
@@ -1371,7 +1425,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
 
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:9,borderTop:`1px solid ${C.border}`,marginTop:9}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}>
-            <div style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
+            <div onClick={e=>{e.stopPropagation();if(book.ownerid&&onViewUser)onViewUser(book.ownerid);}} style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden",cursor:"pointer"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownername||book.ownerName}</div>
               <div style={{fontSize:12,color:C.muted}}>📍 {!isGuest&&book.km!=null&&!isNaN(book.km)?(book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
