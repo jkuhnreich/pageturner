@@ -666,6 +666,8 @@ export default function App() {
   const [ownerAskDeal, setOwnerAskDeal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [editBio, setEditBio] = useState(false);
+  const [bioText, setBioText] = useState("");
 
   useEffect(() => {
     if (!user?.id || isGuest) return;
@@ -963,7 +965,7 @@ export default function App() {
                   <div style={{fontSize:18,fontWeight:800,color:C.ink,marginBottom:3}}>{user?.storeName||user?.name}</div>
                   <div style={{fontSize:12,color:C.muted,marginBottom:6}}>{user?.email}</div>
                   {user?.bio && <div style={{fontSize:12,color:C.muted,fontStyle:"italic",marginBottom:4}}>"{user.bio}"</div>}
-                  <button onClick={()=>{const bio=prompt("ביו קצרה (עד 100 תווים):",user?.bio||"");if(bio===null)return;const trimmed=bio.slice(0,100);fetch(BASE+"/api/users/"+user.id+"/profile",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({bio:trimmed,featuredBooks:user?.featuredBooks||[]})}).then(r=>r.json()).then(d=>{if(d.ok){setUser(u=>({...u,bio:trimmed}));try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,bio:trimmed}));}catch{}toast_("פרופיל עודכן ✓");}});}} style={{fontSize:11,color:C.indigo,background:"none",border:"none",cursor:"pointer",padding:"2px 0"}}>✏️ {user?.bio?"ערוך ביו":"הוסף ביו"}</button>
+                  <button onClick={()=>{setBioText(user?.bio||"");setEditBio(true);}} style={{fontSize:11,color:C.indigo,background:"none",border:"none",cursor:"pointer",padding:"2px 0",fontStyle:"italic"}}>✏️ כמה מילים עלי</button>
                   {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user?.phone}</div>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>
@@ -984,6 +986,22 @@ export default function App() {
               </div>
         )}
       </div>
+
+      {/* Bio Modal */}
+      {editBio && (
+        <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setEditBio(false)}>
+          <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>כמה מילים עלי ✏️</div>
+            <div style={{fontSize:12,color:C.muted,marginBottom:12,fontStyle:"italic"}}>ספר לקהילה שלך קצת על עצמך כקורא</div>
+            <textarea value={bioText} onChange={e=>setBioText(e.target.value.slice(0,150))} placeholder="אוהב מתח וביוגרפיות, תמיד מחפש המלצה טובה..." style={{width:"100%",minHeight:80,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"none",direction:"rtl",boxSizing:"border-box"}}/>
+            <div style={{fontSize:11,color:C.muted,textAlign:"left",marginBottom:12}}>{bioText.length}/150</div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn onClick={async()=>{const r=await fetch(BASE+"/api/users/"+user.id+"/profile",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({bio:bioText,featuredBooks:user?.featuredBooks||[]})});const d=await r.json();if(d.ok){setUser(u=>({...u,bio:bioText}));try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,bio:bioText}));}catch{}toast_("פרופיל עודכן ✓");setEditBio(false);}}} style={{flex:1}}>שמור</Btn>
+              <Btn variant="outline" onClick={()=>setEditBio(false)} style={{flex:1}}>ביטול</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bottom nav */}
       <div style={{display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,boxShadow:"0 -2px 12px rgba(0,0,0,.07)",flexShrink:0}}>
