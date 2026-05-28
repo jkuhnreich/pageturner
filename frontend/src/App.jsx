@@ -1208,8 +1208,8 @@ function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
     setProfile(null);
     setBooks([]);
     Promise.all([
-      fetch(BASE+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
-      fetch(BASE+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
+      fetch((BASE||"https://pageturner-production-5baf.up.railway.app")+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
+      fetch((BASE||"https://pageturner-production-5baf.up.railway.app")+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
     ]).then(([u,b])=>{
       setProfile(u||{});
       setBooks(Array.isArray(b)?b.filter(x=>x.avail):[]);
