@@ -1223,14 +1223,17 @@ function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
   const [profile, setProfile] = React.useState(null);
   const [books, setBooks] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [showAll, setShowAll] = React.useState(false);
+  const API = BASE||"https://pageturner-production-5baf.up.railway.app";
 
   React.useEffect(() => {
     setLoading(true);
     setProfile(null);
     setBooks([]);
+    setShowAll(false);
     Promise.all([
-      fetch((BASE||"https://pageturner-production-5baf.up.railway.app")+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
-      fetch((BASE||"https://pageturner-production-5baf.up.railway.app")+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
+      fetch(API+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
+      fetch(API+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
     ]).then(([u,b])=>{
       setProfile(u||{});
       setBooks(Array.isArray(b)?b.filter(x=>x.avail):[]);
@@ -1238,33 +1241,53 @@ function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
     });
   }, [userId]);
 
+  const displayed = showAll ? books : books.slice(0,6);
+
   return (
-    <div style={{animation:"fadeUp .2s ease"}}>
-      <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#333",padding:"4px 8px"}}>←</button>
-      <div style={{background:"#fff",borderRadius:18,border:`1px solid ${C.border}`,padding:"22px 16px",marginBottom:12,textAlign:"center"}}>
-        <div style={{width:68,height:68,borderRadius:"50%",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px",overflow:"hidden"}}>
-          {profile?.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : (profile?.type==="store"?"🏪":"👤")}
+    <div style={{animation:"fadeUp .2s ease",minHeight:"100%"}}>
+      {/* Header */}
+      <div style={{background:HDR,padding:"16px 16px 24px",marginBottom:0,position:"relative"}}>
+        <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"none",cursor:"pointer",fontSize:16,color:"#fff",padding:"6px 12px",borderRadius:20,marginBottom:16,display:"flex",alignItems:"center",gap:4}}>← חזרה</button>
+        <div style={{textAlign:"center"}}>
+          <div style={{width:90,height:90,borderRadius:"50%",background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,margin:"0 auto 12px",overflow:"hidden",border:"3px solid rgba(255,255,255,.3)"}}>
+            {profile?.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : (profile?.type==="store"?"🏪":"👤")}
+          </div>
+          <div style={{fontSize:20,fontWeight:800,color:"#fff",marginBottom:4}}>{profile?.storeName||profile?.name||"..."}</div>
+          {profile?.bio && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",fontStyle:"italic",marginBottom:4}}>"{profile.bio}"</div>}
+          {profile?.address && <div style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>📍 {profile.address}</div>}
         </div>
-        <div style={{fontSize:18,fontWeight:800,marginBottom:3}}>{profile?.storeName||profile?.name||"..."}</div>
+        {/* Stats */}
+        <div style={{display:"flex",justifyContent:"center",gap:32,marginTop:16}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#fff"}}>{books.length}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.5)"}}>ספרים</div>
+          </div>
+        </div>
       </div>
-      {loading
-        ? <div style={{textAlign:"center",padding:40,color:"#999"}}>⏳ טוען...</div>
-        : books.length===0
-        ? <div style={{textAlign:"center",padding:40,color:"#999"}}>אין ספרים</div>
-        : <>
-          <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>ספרים ({books.length})</div>
-          {books.map(b=>(
-            <div key={b.id} onClick={()=>onViewBook(b)} style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11,cursor:"pointer"}}>
-              <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>
-                {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}
-              </div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.title}</div>
-                <div style={{fontSize:11,color:C.muted}}>{b.author}</div>
-              </div>
+
+      {/* Grid */}
+      <div style={{padding:"16px"}}>
+        {loading
+          ? <div style={{textAlign:"center",padding:40,color:"#999"}}>⏳ טוען...</div>
+          : books.length===0
+          ? <div style={{textAlign:"center",padding:40,color:"#999",fontSize:14}}>אין ספרים זמינים</div>
+          : <>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:12}}>
+              {displayed.map(b=>(
+                <div key={b.id} onClick={()=>onViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",position:"relative"}}>
+                  {(b.thumbnail||b.frontimg)
+                    ? <img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                </div>
+              ))}
             </div>
-          ))}
-        </>}
+            {books.length>6 && !showAll && (
+              <button onClick={()=>setShowAll(true)} style={{width:"100%",padding:"10px",background:"none",border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",color:C.ink}}>
+                ראה את כל {books.length} הספרים
+              </button>
+            )}
+          </>}
+      </div>
     </div>
   );
 }
