@@ -961,7 +961,9 @@ export default function App() {
                     </label>
                   </div>
                   <div style={{fontSize:18,fontWeight:800,color:C.ink,marginBottom:3}}>{user?.storeName||user?.name}</div>
-                  <div style={{fontSize:12,color:C.muted,marginBottom:10}}>{user?.email}</div>
+                  <div style={{fontSize:12,color:C.muted,marginBottom:6}}>{user?.email}</div>
+                  {user?.bio && <div style={{fontSize:12,color:C.muted,fontStyle:"italic",marginBottom:4}}>"{user.bio}"</div>}
+                  <button onClick={()=>{const bio=prompt("ביו קצרה (עד 100 תווים):",user?.bio||"");if(bio===null)return;const trimmed=bio.slice(0,100);fetch(BASE+"/api/users/"+user.id+"/profile",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({bio:trimmed,featuredBooks:user?.featuredBooks||[]})}).then(r=>r.json()).then(d=>{if(d.ok){setUser(u=>({...u,bio:trimmed}));try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,bio:trimmed}));}catch{}toast_("פרופיל עודכן ✓");}});}} style={{fontSize:11,color:C.indigo,background:"none",border:"none",cursor:"pointer",padding:"2px 0"}}>✏️ {user?.bio?"ערוך ביו":"הוסף ביו"}</button>
                   {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user?.phone}</div>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>

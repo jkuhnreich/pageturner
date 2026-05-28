@@ -57,6 +57,8 @@ async function initDB() {
   try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerAsked BOOLEAN DEFAULT false"); } catch {}
   try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerConfirmed BOOLEAN DEFAULT false"); } catch {}
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT"); } catch {}
   try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
     bookId TEXT,
@@ -479,6 +481,15 @@ app.post("/api/users/:id/avatar", async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+app.put("/api/users/:id/profile", async (req, res) => {
+  try {
+    const { bio, featuredBooks } = req.body;
+    await pool.query("UPDATE users SET bio=$1, featuredBooks=$2 WHERE id=$3", [bio||"", JSON.stringify(featuredBooks||[]), req.params.id]);
+    const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.params.id])).rows[0];
+    res.json({ ok: true, user });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 app.post("/api/auth/google", async (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ error:"no token" });
