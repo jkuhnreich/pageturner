@@ -621,7 +621,7 @@ export default function App() {
     if (tab === "profile") loadMyBooks();
   }, [tab, loadMyBooks]);
 
-  const lastSearch = React.useRef("");
+  const lastSearch = useRef("");
   const loadBooks = useCallback(async () => {
     setLoading(true);
     try {
