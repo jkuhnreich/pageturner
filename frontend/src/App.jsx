@@ -994,7 +994,7 @@ export default function App() {
           <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>כמה מילים עלי ✏️</div>
             <div style={{fontSize:12,color:C.muted,marginBottom:12}}></div>
-            <textarea value={bioText} onChange={e=>setBioText(e.target.value.slice(0,150))} placeholder="אוהב מתח וביוגרפיות, תמיד מחפש המלצה טובה..." style={{width:"100%",minHeight:80,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"none",direction:"rtl",boxSizing:"border-box"}}/>
+            <textarea value={bioText} onChange={e=>setBioText(e.target.value.slice(0,150))} placeholder="" style={{width:"100%",minHeight:80,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"none",direction:"rtl",boxSizing:"border-box"}}/>
             <div style={{fontSize:11,color:C.muted,textAlign:"left",marginBottom:12}}>{bioText.length}/150</div>
             <div style={{display:"flex",gap:10}}>
               <Btn onClick={async()=>{const r=await fetch(BASE+"/api/users/"+user.id+"/profile",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({bio:bioText,featuredBooks:user?.featuredBooks||[]})});const d=await r.json();if(d.ok){setUser(u=>({...u,bio:bioText}));try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,bio:bioText}));}catch{}toast_("פרופיל עודכן ✓");setEditBio(false);}}} style={{flex:1}}>שמור</Btn>
