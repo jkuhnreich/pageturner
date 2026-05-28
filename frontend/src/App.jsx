@@ -580,7 +580,6 @@ export default function App() {
   const [books, setBooks] = useState([]);
   const [myBooks, setMyBooks] = useState([]);
   const [tab, setTab] = useState("search");
-  const [viewUserId, setViewUserId] = useState(null);
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
   const [genreFilter, setGenreFilter] = useState("all");
@@ -826,7 +825,6 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
-      {viewUserId && <div style={{position:"fixed",inset:0,zIndex:500,background:C.bg,overflowY:"auto",direction:"rtl"}}><UserProfile userId={viewUserId} onBack={()=>setViewUserId(null)} BASE={BASE} C={C} HDR={HDR} SPINES={SPINES} onViewBook={b=>{setViewUserId(null);setViewBook(b);}}/></div>}
       {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
       {/* Header */}
@@ -908,7 +906,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>setViewUserId(id)}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp}/>)
         )}
 
         {/* הוספה */}
@@ -1424,7 +1422,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   );
 }
 
-function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onViewUser }) {
+function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
   const [exp, setExp] = useState(false);
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
@@ -1467,7 +1465,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onV
 
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:9,borderTop:`1px solid ${C.border}`,marginTop:9}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}>
-            <div onClick={e=>{e.stopPropagation();if(book.ownerid&&onViewUser)onViewUser(book.ownerid);}} style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden",cursor:"pointer"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
+            <div style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownername||book.ownerName}</div>
               <div style={{fontSize:12,color:C.muted}}>📍 {!isGuest&&book.km!=null&&!isNaN(book.km)?(book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
