@@ -761,15 +761,19 @@ export default function App() {
 
   // כפתור חזרה של הטלפון
   useEffect(() => {
+    const hasState = viewBook || editBook || showAbout || menuOpen || tab !== "search";
+    if (hasState) {
+      window.history.pushState(null, "", window.location.href);
+    }
     const handleBack = () => {
-      if (viewBook) { setViewBook(null); return; }
-      if (editBook) { setEditBook(null); return; }
-      if (showAbout) { setShowAbout(false); return; }
-      if (menuOpen) { setMenuOpen(false); return; }
-      if (tab !== "search") { setTab("search"); return; }
+      if (menuOpen) { setMenuOpen(false); }
+      else if (showAbout) { setShowAbout(false); }
+      else if (viewBook) { setViewBook(null); }
+      else if (editBook) { setEditBook(null); }
+      else if (tab !== "search") { setTab("search"); }
     };
-    document.addEventListener("backbutton", handleBack);
-    return () => document.removeEventListener("backbutton", handleBack);
+    window.addEventListener("popstate", handleBack);
+    return () => window.removeEventListener("popstate", handleBack);
   }, [tab, viewBook, editBook, showAbout, menuOpen]);
 
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
