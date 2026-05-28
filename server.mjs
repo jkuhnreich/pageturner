@@ -353,7 +353,7 @@ app.get("/api/books/search", async (req,res) => {
 app.get("/api/books", async (req,res) => {
   const { q, mode, lat, lng, ownerId, all, genre } = req.query;
   try {
-    let query = ownerId && all ? "SELECT * FROM books WHERE ownerid=$1" : "SELECT * FROM books WHERE avail=true";
+    let query = ownerId && all ? "SELECT b.*, u.avatar as owneravatar FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.ownerid=$1" : "SELECT b.*, u.avatar as owneravatar FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.avail=true";
     if (ownerId && all) {
       const result = await pool.query(query, [ownerId]);
       return res.json(result.rows);
