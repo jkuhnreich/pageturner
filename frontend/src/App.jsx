@@ -836,7 +836,7 @@ export default function App() {
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
             </button>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              {!isGuest && <button onClick={()=>setTab("profile")} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:0}}>{user?.avatar ? <div style={{width:26,height:26,borderRadius:"50%",overflow:"hidden",border:"2px solid rgba(255,255,255,.4)"}}><img src={user.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div> : null}<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(()=>{const h=new Date().getHours();return h>=4&&h<12?"☀️ בוקר טוב":h<18?"🌤️ צהריים טובים":h<22?"🌆 ערב טוב":"🌙 לילה טוב";})()} {user?.name||""}</div></button>}
+              {!isGuest && <button onClick={()=>setTab("profile")} style={{background:"none",border:"none",cursor:"pointer",padding:0}}><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(()=>{const h=new Date().getHours();return h>=4&&h<12?"☀️ בוקר טוב":h<18?"🌤️ צהריים טובים":h<22?"🌆 ערב טוב":"🌙 לילה טוב";})()} {user?.name||""}</div></button>}
               {isGuest && <button onClick={onGuestAction} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"5px 11px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>הצטרף →</button>}
               <button onClick={()=>setMenuOpen(true)} style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",color:"#fff",fontSize:20,lineHeight:1}}>☰</button>
             </div>
