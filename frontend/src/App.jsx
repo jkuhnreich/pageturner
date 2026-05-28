@@ -759,6 +759,19 @@ export default function App() {
     }
   }, [screen]);
 
+  // טיפול בכפתור חזרה של הטלפון
+  useEffect(() => {
+    const handleBack = (e) => {
+      if (viewBook) { e.preventDefault(); setViewBook(null); return; }
+      if (editBook) { e.preventDefault(); setEditBook(null); return; }
+      if (showAbout) { e.preventDefault(); setShowAbout(false); return; }
+      if (menuOpen) { e.preventDefault(); setMenuOpen(false); return; }
+      if (screen === "app" && tab !== "search") { e.preventDefault(); setTab("search"); return; }
+    };
+    window.addEventListener("popstate", handleBack);
+    return () => window.removeEventListener("popstate", handleBack);
+  }, [screen, tab, viewBook, editBook, showAbout, menuOpen]);
+
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"guest_login",data:{}})}); };
 
