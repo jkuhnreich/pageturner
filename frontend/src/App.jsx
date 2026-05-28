@@ -549,7 +549,7 @@ function Register({ onBack, onDone }) {
 }
 
 // ── מסך פתיחה ──────────────────────────────────────────────
-function Splash({ onReg, onGuest, onLogin }) {
+function Splash({ onReg, onGuest, onLogin, onAdmin }) {
   return (
     <div style={{minHeight:"100vh",background:HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
       <div style={{display:"flex",gap:5,marginBottom:34}}>
@@ -563,6 +563,7 @@ function Splash({ onReg, onGuest, onLogin }) {
         <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13}}>הרשמה →</Btn>
               <Btn onClick={onLogin} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13,background:"rgba(255,255,255,.15)"}}>התחבר →</Btn>
         <button onClick={onGuest} style={{width:"100%",padding:"13px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:13,color:"rgba(255,255,255,.75)",fontSize:14,cursor:"pointer"}}>כניסה כאורח 👀</button>
+        <button onClick={onAdmin} style={{marginTop:8,background:"none",border:"none",color:"rgba(255,255,255,.25)",fontSize:11,cursor:"pointer",width:"100%"}}>⚙️</button>
       </div>
     </div>
   );
@@ -767,7 +768,8 @@ export default function App() {
   };
 
   // ── screens ──────────────────────────────────────────────
-  if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")}/></>;
+  if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>setScreen("splash")}/></>
+  if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onAdmin={()=>setScreen("admin")}/></>;
   if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app");try{localStorage.setItem("pt_user",JSON.stringify(u));localStorage.setItem("pt_screen","app");}catch{}}}/></>; 
   if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
 
@@ -1035,6 +1037,95 @@ export default function App() {
 }
 
 // ── כרטיס ספר ──────────────────────────────────────────────
+
+
+function AdminPage({ onBack }) {
+  const [key, setKey] = useState("");
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const r = await fetch(BASE + `/api/admin/stats?key=${encodeURIComponent(key)}`);
+      const d = await r.json();
+      if (!r.ok) { setError("סיסמה שגויה"); return; }
+      setStats(d);
+    } catch(e) { setError("שגיאה: " + e.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0e0c08",padding:20,direction:"rtl",color:"#fff"}}>
+      <button onClick={onBack} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:14,marginBottom:20}}>← חזרה</button>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,fontWeight:900,marginBottom:20}}>📊 Admin Panel</div>
+      
+      {!stats ? (
+        <div>
+          <input value={key} onChange={e=>setKey(e.target.value)} placeholder="הכנס סיסמת Admin" type="password"
+            style={{width:"100%",padding:12,borderRadius:10,border:"1px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:14,marginBottom:10,boxSizing:"border-box"}}/>
+          <button onClick={load} disabled={loading} style={{width:"100%",padding:12,borderRadius:10,background:"#b5390e",color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:"pointer"}}>
+            {loading ? "טוען..." : "כניסה"}
+          </button>
+          {error && <div style={{color:"#f87171",marginTop:10,fontSize:13}}>{error}</div>}
+        </div>
+      ) : (
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
+            {[
+              {l:"משתמשים",v:stats.totals.users,ic:"👥"},
+              {l:"ספרים פעילים",v:stats.totals.books,ic:"📚"},
+              {l:"עסקאות",v:stats.totals.deals,ic:"🤝"},
+            ].map(s=>(
+              <div key={s.l} style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,textAlign:"center"}}>
+                <div style={{fontSize:24}}>{s.ic}</div>
+                <div style={{fontSize:22,fontWeight:900,marginTop:4}}>{s.v}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:2}}>{s.l}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📅 היום</div>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span>הרשמות חדשות: <b>{stats.today.users}</b></span>
+              <span>ספרים חדשים: <b>{stats.today.books}</b></span>
+            </div>
+          </div>
+
+          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📆 שבוע אחרון</div>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span>הרשמות: <b>{stats.week.users}</b></span>
+              <span>ספרים: <b>{stats.week.books}</b></span>
+            </div>
+          </div>
+
+          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🗓️ חודש אחרון</div>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span>הרשמות: <b>{stats.month.users}</b></span>
+              <span>ספרים: <b>{stats.month.books}</b></span>
+            </div>
+          </div>
+
+          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📍 ערים פעילות</div>
+            {stats.cities.map(c=>(
+              <div key={c.city} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+                <span>{c.city}</span><span style={{fontWeight:700}}>{c.cnt}</span>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={load} style={{width:"100%",padding:10,borderRadius:10,background:"rgba(255,255,255,.1)",color:"#fff",border:"none",fontSize:13,cursor:"pointer",marginBottom:10}}>🔄 רענן</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onContactMade }) {
 

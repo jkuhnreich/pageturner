@@ -66,10 +66,29 @@ async function initDB() {
     askedStatus BOOLEAN DEFAULT false,
     createdAt BIGINT
   )`); } catch(e) { console.error("contacts table error:", e.message); }
+  try { await pool.query(`CREATE TABLE IF NOT EXISTS analytics (
+    id TEXT PRIMARY KEY,
+    event TEXT,
+    userId TEXT,
+    data JSONB,
+    city TEXT,
+    createdAt BIGINT
+  )`); } catch(e) { console.error("analytics table error:", e.message); }
   console.log("✅ DB ready");
 }
 
 initDB().catch(e => console.error("DB init error:", e.message));
+
+// ── Analytics ────────────────────────────────────────────
+async function track(event, userId, data, city) {
+  try {
+    const id = randomUUID();
+    await pool.query(
+      "INSERT INTO analytics (id,event,userId,data,city,createdAt) VALUES ($1,$2,$3,$4,$5,$6)",
+      [id, event, userId||null, JSON.stringify(data||{}), city||null, Date.now()]
+    );
+  } catch {}
+}
 
 async function claudeVision(buf, mime, prompt, maxTok = 600) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -375,6 +394,7 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
        b.lat?parseFloat(b.lat):null, b.lng?parseFloat(b.lng):null, city, frontImg, b.thumbnail||null, Date.now()]
     );
     const book = (await pool.query("SELECT * FROM books WHERE id=$1", [id])).rows[0];
+    track("book_publish", b.ownerId, { bookId: id, title: b.title, mode: b.mode, city });
     res.json({ ok:true, book });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
@@ -440,6 +460,7 @@ app.post("/api/users/login", async (req,res) => {
   try {
     const result = await pool.query("SELECT * FROM users WHERE email=$1", [email.trim().toLowerCase()]);
     if (!result.rows.length) return res.status(404).json({ error:"משתמש לא נמצא" });
+    track("login", result.rows[0].id, { email: email.trim().toLowerCase() });
     res.json({ ok:true, user:result.rows[0] });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
@@ -545,6 +566,43 @@ app.put("/api/contacts/:id", async (req, res) => {
     }
 
     res.json({ ok:true });
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+// ── Admin ────────────────────────────────────────────────
+app.get("/api/admin/stats", async (req, res) => {
+  const { key } = req.query;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error:"unauthorized" });
+  try {
+    const now = Date.now();
+    const day = 86400000;
+    const week = day * 7;
+    const month = day * 30;
+
+    const [users, books, contacts, todayUsers, weekUsers, monthUsers,
+           todayBooks, weekBooks, monthBooks, todayContacts, cities, hourly] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM users"),
+      pool.query("SELECT COUNT(*) FROM books WHERE avail=true"),
+      pool.query("SELECT COUNT(*) FROM contacts WHERE status='done'"),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-day]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-week]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-month]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-day]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-week]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-month]),
+      pool.query("SELECT COUNT(*) FROM analytics WHERE event IN ('login','register') AND createdat>$1", [now-day]),
+      pool.query("SELECT city, COUNT(*) as cnt FROM books WHERE city IS NOT NULL AND city!='' GROUP BY city ORDER BY cnt DESC LIMIT 10"),
+      pool.query("SELECT EXTRACT(HOUR FROM to_timestamp(createdat/1000)) as hour, COUNT(*) as cnt FROM analytics WHERE createdat>$1 GROUP BY hour ORDER BY hour", [now-week]),
+    ]);
+
+    res.json({
+      totals: { users: +users.rows[0].count, books: +books.rows[0].count, deals: +contacts.rows[0].count },
+      today: { users: +todayUsers.rows[0].count, books: +todayBooks.rows[0].count, logins: +todayContacts.rows[0].count },
+      week: { users: +weekUsers.rows[0].count, books: +weekBooks.rows[0].count },
+      month: { users: +monthUsers.rows[0].count, books: +monthBooks.rows[0].count },
+      cities: cities.rows,
+      hourly: hourly.rows,
+    });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
