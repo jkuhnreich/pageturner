@@ -824,7 +824,6 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
-      {viewUser && <div style={{position:"fixed",inset:0,zIndex:999,background:"red",color:"white",fontSize:20,padding:20}}>userId: {viewUser}<br/><button onClick={()=>setViewUser(null)}>סגור</button></div>}
       {viewUser && <UserProfilePage userId={viewUser} onClose={()=>setViewUser(null)} onViewBook={b=>{setViewUser(null);setViewBook(b);}} C={C} HDR={HDR} SPINES={SPINES}/>}
       {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
@@ -1200,10 +1199,18 @@ function AdminPage({ onBack }) {
 function UserProfilePage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
   const [profile, setProfile] = React.useState(null);
   const [books, setBooks] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    fetch("/api/users/"+userId).then(r=>r.json()).then(d=>{setProfile(d);}).catch(()=>{});
-    fetch("/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).then(b=>{setBooks(Array.isArray(b)?b:[]);}).catch(()=>{});
+    setLoading(true);
+    Promise.all([
+      fetch(BASE+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
+      fetch(BASE+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
+    ]).then(([u, b]) => {
+      setProfile(u);
+      setBooks(Array.isArray(b)?b:[]);
+      setLoading(false);
+    });
   }, [userId]);
 
   return (
