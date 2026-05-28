@@ -665,7 +665,6 @@ app.post("/api/auth/verify-otp", async (req, res) => {
 });
 
 
-import cron from 'node-cron';
 
 // ── פונקציית שליחת דוח ──────────────────────────────────
 async function sendReport(type) {
