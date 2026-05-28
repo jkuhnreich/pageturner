@@ -305,10 +305,7 @@ app.post("/api/analyze/front", upload.single("image"), async (req,res) => {
     if ((conf.publisher||0) < 0.7) vision.publisher = "";
     if ((conf.year||0) < 0.7) vision.year = "";
     if ((conf.author||0) < 0.7) vision.author = "";
-    console.log("VISION:", JSON.stringify(vision));
     const { googleResults, enriched } = await enrich(vision);
-    console.log("GOOGLE_RESULTS:", JSON.stringify(googleResults.map(r=>({t:r.title,p:r.publisher,y:r.year}))));
-    console.log("ENRICHED:", JSON.stringify(enriched));
     res.json({ ok:true, data:enriched, googleResults });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
@@ -382,9 +379,7 @@ app.post("/api/books", upload.single("frontImage"), async (req,res) => {
   try {
     const id = randomUUID();
     const frontImg = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}` : (b.thumbnail||null);
-    console.log("UPLOAD lat/lng:", b.lat, b.lng);
       const city = (b.lat && b.lng) ? await reverseGeocode(parseFloat(b.lat), parseFloat(b.lng)) : null;
-      console.log("CITY:", city);
     await pool.query(
       `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
