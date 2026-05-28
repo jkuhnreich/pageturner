@@ -1201,8 +1201,8 @@ function UserProfilePage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
   const [books, setBooks] = React.useState([]);
 
   React.useEffect(() => {
-    fetch(BASE+"/api/users/"+userId).then(r=>r.json()).then(setProfile).catch(()=>{});
-    fetch(BASE+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).then(b=>setBooks(Array.isArray(b)?b:[])).catch(()=>{});
+    fetch(BASE+"/api/users/"+userId).then(r=>r.json()).then(d=>{setProfile(d);}).catch(e=>{alert("profile error: "+e);});
+    fetch(BASE+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).then(b=>{setBooks(Array.isArray(b)?b:[]);}).catch(e=>{alert("books error: "+e);});
   }, [userId]);
 
   return (
