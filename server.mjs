@@ -771,8 +771,8 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Anthropic:    ${process.env.ANTHROPIC_API_KEY?"✓":"✗ חסר!"}`);
   console.log(`   Database:     ${process.env.DATABASE_URL?"✓ PostgreSQL":"⚠ in-memory"}`);
 });
-app.get("/api/admin/send-report", async (req, res) => {
-  const { key, type } = req.query;
+app.post("/api/admin/send-report", async (req, res) => {
+  const { key, type } = req.body;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error:"unauthorized" });
   await sendReport(type || "daily");
   res.json({ ok: true });
