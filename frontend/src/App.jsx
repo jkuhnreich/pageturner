@@ -1225,10 +1225,12 @@ function UserProfilePage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
         </div>
       </div>
       <div style={{padding:"16px"}}>
-        {books.length===0
+        {loading
+          ? <div style={{textAlign:"center",color:"#999",marginTop:40,fontSize:14}}>⏳ טוען...</div>
+          : books.filter(b=>b.avail).length===0
           ? <div style={{textAlign:"center",color:"#999",marginTop:40,fontSize:14}}>אין ספרים עדיין</div>
           : <>
-            <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>ספרים ({books.length})</div>
+            <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>ספרים ({books.filter(b=>b.avail).length})</div>
             {books.filter(b=>b.avail).map(b=>(
               <div key={b.id} onClick={()=>onViewBook(b)} style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11,cursor:"pointer"}}>
                 <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>
