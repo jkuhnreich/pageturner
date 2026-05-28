@@ -937,14 +937,22 @@ export default function App() {
                       <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
                         const file = e.target.files[0];
                         if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = async ev => {
-                          const avatar = ev.target.result;
+                        const canvas = document.createElement("canvas");
+                        const img = new Image();
+                        const objectUrl = URL.createObjectURL(file);
+                        img.onload = async () => {
+                          const MAX = 300;
+                          const ratio = Math.min(MAX/img.width, MAX/img.height, 1);
+                          canvas.width = img.width * ratio;
+                          canvas.height = img.height * ratio;
+                          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+                          const avatar = canvas.toDataURL("image/jpeg", 0.7);
+                          URL.revokeObjectURL(objectUrl);
                           const r = await fetch(BASE+"/api/users/"+user.id+"/avatar", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({avatar})});
                           const d = await r.json();
                           if (d.ok) { setUser(u=>({...u,avatar})); try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,avatar}));}catch{} toast_("תמונה עודכנה ✓"); }
                         };
-                        reader.readAsDataURL(file);
+                        img.src = objectUrl;
                       }}/>
                     </label>
                   </div>
