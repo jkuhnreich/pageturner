@@ -580,6 +580,7 @@ export default function App() {
   const [books, setBooks] = useState([]);
   const [myBooks, setMyBooks] = useState([]);
   const [tab, setTab] = useState("search");
+  const [viewUserId, setViewUserId] = useState(null);
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
   const [genreFilter, setGenreFilter] = useState("all");
@@ -825,6 +826,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
+      {viewUserId && <UserPage userId={viewUserId} onClose={()=>setViewUserId(null)} onViewBook={b=>{setViewUserId(null);setViewBook(b);}} C={C} HDR={HDR} SPINES={SPINES}/>}
       {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
       {/* Header */}
@@ -906,7 +908,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>setViewUserId(id)}/>)
         )}
 
         {/* הוספה */}
@@ -1288,6 +1290,104 @@ function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
   );
 }
 
+function UserPage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
+  const API = "https://pageturner-production-5baf.up.railway.app";
+  const [profile, setProfile] = React.useState(null);
+  const [books, setBooks] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [showAll, setShowAll] = React.useState(false);
+
+  React.useEffect(() => {
+    setLoading(true);
+    setProfile(null);
+    setBooks([]);
+    setShowAll(false);
+    Promise.all([
+      fetch(API+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
+      fetch(API+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
+    ]).then(([u,b])=>{
+      setProfile(u||{});
+      setBooks(Array.isArray(b)?b.filter(x=>x.avail):[]);
+      setLoading(false);
+    });
+  }, [userId]);
+
+  const displayed = showAll ? books : books.slice(0,6);
+  const gray = "#e0ddd8";
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:550,background:C.bg,overflowY:"auto",direction:"rtl"}}>
+      {/* Header */}
+      <div style={{background:HDR,padding:"0 0 20px"}}>
+        <div style={{padding:"14px 16px 0",display:"flex",alignItems:"center"}}>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",cursor:"pointer",color:"#fff",padding:"6px 14px",borderRadius:20,fontSize:14,fontWeight:600}}>← חזרה</button>
+        </div>
+        <div style={{textAlign:"center",padding:"16px 16px 0"}}>
+          {/* Avatar */}
+          <div style={{width:90,height:90,borderRadius:"50%",background:loading?"rgba(255,255,255,.2)":HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,margin:"0 auto 12px",overflow:"hidden",border:"3px solid rgba(255,255,255,.4)",transition:"all .3s"}}>
+            {loading
+              ? <div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.15)"}}/>
+              : profile?.avatar
+              ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              : <span>{profile?.type==="store"?"🏪":"👤"}</span>}
+          </div>
+          {/* Name */}
+          {loading
+            ? <div style={{width:120,height:20,background:"rgba(255,255,255,.2)",borderRadius:6,margin:"0 auto 8px"}}/>
+            : <div style={{fontSize:20,fontWeight:800,color:"#fff",marginBottom:4}}>{profile?.storeName||profile?.name||"משתמש"}</div>}
+          {/* Bio */}
+          {!loading && profile?.bio && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",fontStyle:"italic",marginBottom:4,padding:"0 20px"}}>"{profile.bio}"</div>}
+          {/* City */}
+          {!loading && profile?.address && <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginBottom:8}}>📍 {profile.address}</div>}
+          {/* Stats */}
+          <div style={{display:"flex",justifyContent:"center",gap:40,marginTop:12}}>
+            <div style={{textAlign:"center"}}>
+              {loading
+                ? <div style={{width:30,height:20,background:"rgba(255,255,255,.2)",borderRadius:4,margin:"0 auto 4px"}}/>
+                : <div style={{fontSize:20,fontWeight:800,color:"#fff"}}>{books.length}</div>}
+              <div style={{fontSize:11,color:"rgba(255,255,255,.5)"}}>ספרים</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Grid */}
+      <div style={{padding:"12px"}}>
+        {loading ? (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
+            {[1,2,3,4,5,6].map(i=>(
+              <div key={i} style={{aspectRatio:"2/3",borderRadius:8,background:gray,animation:"pulse 1.5s ease-in-out infinite"}}/>
+            ))}
+          </div>
+        ) : books.length===0 ? (
+          <div style={{textAlign:"center",padding:"40px 20px",color:C.muted}}>
+            <div style={{fontSize:40,marginBottom:8}}>📚</div>
+            <div style={{fontSize:14}}>אין ספרים זמינים כרגע</div>
+          </div>
+        ) : (
+          <>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
+              {displayed.map(b=>(
+                <div key={b.id} onClick={()=>onViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer"}}>
+                  {(b.thumbnail||b.frontimg)
+                    ? <img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                </div>
+              ))}
+            </div>
+            {books.length>6 && !showAll && (
+              <button onClick={()=>setShowAll(true)} style={{width:"100%",marginTop:12,padding:"12px",background:"none",border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",color:C.ink}}>
+                ראה את כל {books.length} הספרים ▼
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
+    </div>
+  );
+}
+
 function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onContactMade }) {
 
   const [showCloseDeal, setShowCloseDeal] = useState(false);
@@ -1422,7 +1522,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   );
 }
 
-function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
+function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onViewUser }) {
   const [exp, setExp] = useState(false);
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
@@ -1465,7 +1565,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact }) {
 
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:9,borderTop:`1px solid ${C.border}`,marginTop:9}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}>
-            <div style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
+            <div onClick={e=>{e.stopPropagation();if(book.ownerid&&onViewUser)onViewUser(book.ownerid);}} style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden",cursor:"pointer"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownername||book.ownerName}</div>
               <div style={{fontSize:12,color:C.muted}}>📍 {!isGuest&&book.km!=null&&!isNaN(book.km)?(book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
