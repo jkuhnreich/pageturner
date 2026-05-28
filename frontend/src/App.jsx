@@ -759,6 +759,19 @@ export default function App() {
     }
   }, [screen]);
 
+  // כפתור חזרה של הטלפון
+  useEffect(() => {
+    const handleBack = () => {
+      if (viewBook) { setViewBook(null); return; }
+      if (editBook) { setEditBook(null); return; }
+      if (showAbout) { setShowAbout(false); return; }
+      if (menuOpen) { setMenuOpen(false); return; }
+      if (tab !== "search") { setTab("search"); return; }
+    };
+    document.addEventListener("backbutton", handleBack);
+    return () => document.removeEventListener("backbutton", handleBack);
+  }, [tab, viewBook, editBook, showAbout, menuOpen]);
+
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"guest_login",data:{}})}); };
 
