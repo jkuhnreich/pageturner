@@ -932,7 +932,7 @@ export default function App() {
                 <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:7}}>כניסה כאורח — צפייה בלבד</div>
                 <Btn onClick={onGuestAction} style={{padding:"11px 26px"}}>הצטרף →</Btn>
               </div>
-            : <div style={{animation:"fadeUp .2s ease"}}>
+            : <div key="profile-content" style={{animation:"fadeUp .2s ease"}}>
                 <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"22px 16px",marginBottom:12,textAlign:"center"}}>
                   <div style={{position:"relative",width:68,height:68,margin:"0 auto 12px"}}>
                     <div style={{width:68,height:68,borderRadius:"50%",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,overflow:"hidden"}}>
