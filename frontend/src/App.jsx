@@ -986,7 +986,9 @@ export default function App() {
           return (
             <button key={id} onClick={()=>setTab(id)}
               style={{flex:1,padding:"10px 3px 8px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderTop:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
-              <span style={{fontSize:a?24:21}}>{ic}</span>
+              {id==="profile" && user?.avatar
+                ? <div style={{width:a?24:21,height:a?24:21,borderRadius:"50%",overflow:"hidden",border:a?`2px solid ${C.ink}`:"2px solid transparent"}}><img src={user.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+                : <span style={{fontSize:a?24:21}}>{ic}</span>}
               <span style={{fontSize:13,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
             </button>
           );
