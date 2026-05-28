@@ -570,6 +570,15 @@ app.put("/api/contacts/:id", async (req, res) => {
 });
 
 // ── Admin ────────────────────────────────────────────────
+app.post("/api/analytics", async (req, res) => {
+  const { event, data, userId } = req.body;
+  if (!event) return res.status(400).json({ error:"event חסר" });
+  try {
+    await track(event, userId||null, data||{});
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/admin/stats", async (req, res) => {
   const { key } = req.query;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error:"unauthorized" });

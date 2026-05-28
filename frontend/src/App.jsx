@@ -621,6 +621,7 @@ export default function App() {
     if (tab === "profile") loadMyBooks();
   }, [tab, loadMyBooks]);
 
+  const lastSearch = React.useRef("");
   const loadBooks = useCallback(async () => {
     setLoading(true);
     try {
@@ -631,6 +632,10 @@ export default function App() {
       if (userCoords) { params.set("lat", userCoords.lat); params.set("lng", userCoords.lng); }
       const data = await api.get(`/api/books?${params}`);
       setBooks(data);
+      if (search && search !== lastSearch.current) {
+        lastSearch.current = search;
+        fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"search",data:{q:search},userId:user?.id})});
+      }
     } catch(e) {
       toast_("שגיאה בטעינת ספרים: " + e.message, "err");
     } finally { setLoading(false); }
@@ -738,8 +743,24 @@ export default function App() {
     setOwnerAskDeal(false);
   };
 
+  const trackEvent = async (event, data) => {
+    try {
+      await fetch(BASE + "/api/analytics", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ event, data, userId: user?.id })
+      });
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (screen === "app") {
+      fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"page_load",data:{},userId:user?.id})});
+    }
+  }, [screen]);
+
   const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
-  const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); };
+  const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"guest_login",data:{}})}); };
 
   const saveEdit = async (id, fields) => {
     try {
@@ -866,7 +887,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={setViewBook} onContact={recordContactApp}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp}/>)
         )}
 
         {/* הוספה */}
