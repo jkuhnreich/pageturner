@@ -1376,7 +1376,7 @@ function UserPage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
               ))}
             </div>
             {books.length>6 && !showAll && (
-              <button onClick={()=>setShowAll(true)} style={{width:"100%",marginTop:12,padding:"12px",background:"none",border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",color:C.ink}}>
+              <button onClick={()=>setShowAll(true)} style={{width:"100%",marginTop:12,padding:"12px",background:"none",border:`1px solid ${"#ede8de"}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",color:"#2c2416"}}>
                 ראה את כל {books.length} הספרים ▼
               </button>
             )}
