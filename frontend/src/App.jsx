@@ -826,7 +826,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
-      {viewUserId && <UserPage userId={viewUserId} onClose={()=>setViewUserId(null)} onViewBook={b=>{setViewUserId(null);setViewBook(b);}} C={C} HDR={HDR} SPINES={SPINES}/>}
+      {viewUserId && <UserPage userId={viewUserId} onClose={()=>setViewUserId(null)} onViewBook={b=>{setViewUserId(null);setViewBook(b);}} HDR={HDR} SPINES={SPINES}/>}
       {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
       {/* Header */}
@@ -1290,7 +1290,7 @@ function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
   );
 }
 
-function UserPage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
+function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
   const API = "https://pageturner-production-5baf.up.railway.app";
   const [profile, setProfile] = React.useState(null);
   const [books, setBooks] = React.useState([]);
