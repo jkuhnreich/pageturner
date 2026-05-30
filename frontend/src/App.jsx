@@ -575,15 +575,6 @@ export default function App() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (viewUserId) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => { document.body.style.overflow = ""; };
-  }, [viewUserId]);
-
-  useEffect(() => {
     const handlePop = () => {
       const p = new URLSearchParams(window.location.search);
       const uid = p.get("user");
