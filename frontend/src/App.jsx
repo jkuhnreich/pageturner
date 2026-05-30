@@ -1292,12 +1292,12 @@ function UserProfile({ userId, onBack, BASE, C, HDR, SPINES, onViewBook }) {
 
 function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
   const API = "https://pageturner-production-5baf.up.railway.app";
-  const [profile, setProfile] = React.useState(null);
-  const [books, setBooks] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [showAll, setShowAll] = React.useState(false);
+  const [profile, setProfile] = useState(null);
+  const [books, setBooks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setLoading(true);
     setProfile(null);
     setBooks([]);
