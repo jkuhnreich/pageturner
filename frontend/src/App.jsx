@@ -601,14 +601,14 @@ export default function App() {
   const [userCoords, setUserCoords] = useState(null);
 
   useEffect(() => {
-    if (navigator.geolocation) {
+    if (navigator.geolocation && user && screen === "app") {
       navigator.geolocation.getCurrentPosition(
         pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         () => {},
         { enableHighAccuracy: false, timeout: 10000 }
       );
     }
-  }, []);
+  }, [user, screen]);
 
   const loadMyBooks = useCallback(async () => {
     if (!user?.id) return;
