@@ -1307,56 +1307,53 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
       fetch(API+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
     ]).then(([u,b])=>{
       setProfile(u||{});
-      setBooks(Array.isArray(b)?b.filter(x=>x.avail):[]);
+      const avail = Array.isArray(b)?b.filter(x=>x.avail):[];
+      setBooks(avail);
       setLoading(false);
     });
   }, [userId]);
 
-  const displayed = showAll ? books : books.slice(0,6);
-  const gray = "#e0ddd8";
+  // עיר נפוצה מהספרים
+  const city = books.length > 0
+    ? books.reduce((acc,b)=>{
+        if(b.city){acc[b.city]=(acc[b.city]||0)+1;}
+        return acc;
+      }, {})
+    : {};
+  const topCity = Object.keys(city).sort((a,b)=>city[b]-city[a])[0] || profile?.address || null;
+
+  const displayed = showAll ? books : books.slice(0,3);
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:550,background:"#f5f0e8",overflowY:"auto",direction:"rtl"}}>
       {/* Header */}
-      <div style={{background:HDR,padding:"0 0 20px"}}>
+      <div style={{background:HDR,padding:"0 0 24px"}}>
         <div style={{padding:"14px 16px 0",display:"flex",alignItems:"center"}}>
           <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",cursor:"pointer",color:"#fff",padding:"6px 14px",borderRadius:20,fontSize:14,fontWeight:600}}>← חזרה</button>
         </div>
         <div style={{textAlign:"center",padding:"16px 16px 0"}}>
-          {/* Avatar */}
-          <div style={{width:90,height:90,borderRadius:"50%",background:loading?"rgba(255,255,255,.2)":HDR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,margin:"0 auto 12px",overflow:"hidden",border:"3px solid rgba(255,255,255,.4)",transition:"all .3s"}}>
+          <div style={{width:90,height:90,borderRadius:"50%",background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,margin:"0 auto 12px",overflow:"hidden",border:"3px solid rgba(255,255,255,.4)"}}>
             {loading
               ? <div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.15)"}}/>
               : profile?.avatar
               ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               : <span>{profile?.type==="store"?"🏪":"👤"}</span>}
           </div>
-          {/* Name */}
           {loading
-            ? <div style={{width:120,height:20,background:"rgba(255,255,255,.2)",borderRadius:6,margin:"0 auto 8px"}}/>
+            ? <div style={{width:120,height:22,background:"rgba(255,255,255,.2)",borderRadius:6,margin:"0 auto 8px"}}/>
             : <div style={{fontSize:20,fontWeight:800,color:"#fff",marginBottom:4}}>{profile?.storeName||profile?.name||"משתמש"}</div>}
-          {/* Bio */}
-          {!loading && profile?.bio && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",fontStyle:"italic",marginBottom:4,padding:"0 20px"}}>"{profile.bio}"</div>}
-          {/* City */}
-          {!loading && profile?.address && <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginBottom:8}}>📍 {profile.address}</div>}
-          {/* Stats */}
-          <div style={{display:"flex",justifyContent:"center",gap:40,marginTop:12}}>
-            <div style={{textAlign:"center"}}>
-              {loading
-                ? <div style={{width:30,height:20,background:"rgba(255,255,255,.2)",borderRadius:4,margin:"0 auto 4px"}}/>
-                : <div style={{fontSize:20,fontWeight:800,color:"#fff"}}>{books.length}</div>}
-              <div style={{fontSize:11,color:"rgba(255,255,255,.5)"}}>ספרים</div>
-            </div>
-          </div>
+          {!loading && profile?.bio && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",fontStyle:"italic",marginBottom:6,padding:"0 24px"}}>"{profile.bio}"</div>}
+          {!loading && topCity && <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginBottom:8}}>📍 {topCity}</div>}
+          <div style={{fontSize:16,fontWeight:700,color:"rgba(255,255,255,.8)",marginTop:8}}>{loading?"...":books.length} ספרים</div>
         </div>
       </div>
 
       {/* Grid */}
-      <div style={{padding:"12px"}}>
+      <div style={{padding:"16px"}}>
         {loading ? (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
-            {[1,2,3,4,5,6].map(i=>(
-              <div key={i} style={{aspectRatio:"2/3",borderRadius:8,background:gray,animation:"pulse 1.5s ease-in-out infinite"}}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+            {[1,2,3].map(i=>(
+              <div key={i} style={{aspectRatio:"2/3",borderRadius:8,background:"#e0ddd8",animation:"pulse 1.5s ease-in-out infinite"}}/>
             ))}
           </div>
         ) : books.length===0 ? (
@@ -1366,7 +1363,7 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
           </div>
         ) : (
           <>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
               {displayed.map(b=>(
                 <div key={b.id} onClick={()=>onViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer"}}>
                   {(b.thumbnail||b.frontimg)
@@ -1375,9 +1372,9 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
                 </div>
               ))}
             </div>
-            {books.length>6 && !showAll && (
-              <button onClick={()=>setShowAll(true)} style={{width:"100%",marginTop:12,padding:"12px",background:"none",border:`1px solid ${"#ede8de"}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",color:"#2c2416"}}>
-                ראה את כל {books.length} הספרים ▼
+            {!showAll && books.length>3 && (
+              <button onClick={()=>setShowAll(true)} style={{width:"100%",marginTop:12,padding:"12px",background:"none",border:"1px solid #ede8de",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",color:"#2c2416"}}>
+                טען עוד ({books.length-3} ספרים נוספים)
               </button>
             )}
           </>
