@@ -1,6 +1,7 @@
 const BASE = import.meta.env.VITE_API_URL || "";
 // frontend/src/App.jsx
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate, useParams, Routes, Route } from "react-router-dom";
 
 // ── כל קריאות ה-API עוברות דרך /api (proxy ל-3001) ─────────
 const api = {
@@ -571,6 +572,18 @@ function Splash({ onReg, onGuest, onLogin, onAdmin }) {
 
 // ── App ראשי ────────────────────────────────────────────────
 export default function App() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handlePop = () => {
+      const p = new URLSearchParams(window.location.search);
+      const uid = p.get("user");
+      setViewUserId(uid || null);
+    };
+    window.addEventListener("popstate", handlePop);
+    return () => window.removeEventListener("popstate", handlePop);
+  }, []);
+
   const [screen, setScreen] = useState(() => {
     try { return localStorage.getItem("pt_screen") || "splash"; } catch { return "splash"; }
   });
@@ -580,7 +593,10 @@ export default function App() {
   const [books, setBooks] = useState([]);
   const [myBooks, setMyBooks] = useState([]);
   const [tab, setTab] = useState("search");
-  const [viewUserId, setViewUserId] = useState(null);
+  const [viewUserId, setViewUserId] = useState(()=>{
+    const p = new URLSearchParams(window.location.search);
+    return p.get("user") || null;
+  });
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
   const [genreFilter, setGenreFilter] = useState("all");
@@ -826,7 +842,7 @@ export default function App() {
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
-      {viewUserId && <UserPage userId={viewUserId} onClose={()=>setViewUserId(null)} onViewBook={b=>{setViewUserId(null);setViewBook(b);}} HDR={HDR} SPINES={SPINES}/>}
+      {viewUserId && <UserPage userId={viewUserId} onClose={()=>{setViewUserId(null);navigate("/");}} onViewBook={b=>{setViewUserId(null);setViewBook(b);}} HDR={HDR} SPINES={SPINES}/>}
       {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
 
       {/* Header */}
@@ -908,7 +924,7 @@ export default function App() {
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
                   <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>setViewUserId(id)}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>{setViewUserId(id);navigate(`?user=${id}`);}}/>)
         )}
 
         {/* הוספה */}
