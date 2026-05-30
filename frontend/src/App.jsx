@@ -1316,7 +1316,7 @@ function UserPage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
   const gray = "#e0ddd8";
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:550,background:C.bg,overflowY:"auto",direction:"rtl"}}>
+    <div style={{position:"fixed",inset:0,zIndex:550,background:"#f5f0e8",overflowY:"auto",direction:"rtl"}}>
       {/* Header */}
       <div style={{background:HDR,padding:"0 0 20px"}}>
         <div style={{padding:"14px 16px 0",display:"flex",alignItems:"center"}}>
