@@ -1360,7 +1360,7 @@ function UserPage({ userId, onClose, onViewBook, C, HDR, SPINES }) {
             ))}
           </div>
         ) : books.length===0 ? (
-          <div style={{textAlign:"center",padding:"40px 20px",color:C.muted}}>
+          <div style={{textAlign:"center",padding:"40px 20px",color:"#9c8f7a"}}>
             <div style={{fontSize:40,marginBottom:8}}>📚</div>
             <div style={{fontSize:14}}>אין ספרים זמינים כרגע</div>
           </div>
