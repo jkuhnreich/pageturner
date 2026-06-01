@@ -1019,7 +1019,7 @@ export default function App() {
                     ))}
                   </div>
                 </>}
-        <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setEditBio(false)}>
+        {editBio && <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setEditBio(false)}>
           <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>כמה מילים עלי ✏️</div>
             <div style={{fontSize:12,color:C.muted,marginBottom:12}}></div>
