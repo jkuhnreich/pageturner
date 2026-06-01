@@ -551,30 +551,20 @@ function Register({ onBack, onDone }) {
 
 // ── מסך פתיחה ──────────────────────────────────────────────
 function Splash({ onReg, onGuest, onLogin, onAdmin }) {
-  const [videoEnded, setVideoEnded] = React.useState(false);
   return (
-    <div style={{minHeight:"100vh",background:"#f5f0e8",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:0,direction:"rtl",overflow:"hidden"}}>
-      {/* וידאו לוגו - מלא מסך */}
-      {!videoEnded && (
-        <video autoPlay muted playsInline onEnded={()=>setVideoEnded(true)}
-          style={{width:"100vw",height:"100vh",objectFit:"cover",position:"fixed",top:0,left:0,zIndex:10}}
-          src="/splash.mp4"/>
-      )}
-      {videoEnded && (
-        <div style={{textAlign:"center",padding:"0 28px",width:"100%",maxWidth:400}}>
-          <div style={{fontSize:32,fontWeight:800,color:"#1E2D3D",marginBottom:6}}>
-            <span>page</span><span style={{color:"#6B8F47"}}>turner</span>
-          </div>
-          <div style={{fontSize:13,color:"#6B8F47",marginBottom:4,letterSpacing:"1px"}}>— הספרייה השכונתית —</div>
-          <div style={{color:"#9aaa9a",fontSize:12,marginBottom:40}}>השאל · קנה · החלף · גלה</div>
-        </div>
-      )}
-      {videoEnded && <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10,padding:"0 28px"}}>
+    <div style={{minHeight:"100vh",background:HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
+      {/* וידאו לוגו */}
+      <div style={{marginBottom:16,textAlign:"center"}}>
+        <video autoPlay muted playsInline onEnded={e=>e.target.pause()} style={{width:200,height:"auto"}} src="/splash.mp4"/>
+      </div>
+      <div style={{fontSize:13,color:"rgba(255,255,255,.6)",marginBottom:6,letterSpacing:"1px"}}>— הספרייה השכונתית —</div>
+      <div style={{color:"rgba(255,255,255,.35)",fontSize:12,marginBottom:40}}>השאל · קנה · החלף · גלה</div>
+      <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
         <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13}}>הרשמה →</Btn>
               <Btn onClick={onLogin} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13,background:"rgba(255,255,255,.15)"}}>התחבר →</Btn>
         <button onClick={onGuest} style={{width:"100%",padding:"13px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:13,color:"rgba(255,255,255,.75)",fontSize:14,cursor:"pointer"}}>כניסה כאורח 👀</button>
-        <button onClick={onAdmin} style={{marginTop:8,background:"none",border:"none",color:"rgba(0,0,0,.2)",fontSize:11,cursor:"pointer",width:"100%"}}>⚙️</button>
-      </div>}
+        <button onClick={onAdmin} style={{marginTop:8,background:"none",border:"none",color:"rgba(255,255,255,.25)",fontSize:11,cursor:"pointer",width:"100%"}}>⚙️</button>
+      </div>
     </div>
   );
 }
