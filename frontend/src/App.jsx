@@ -189,6 +189,7 @@ function AddBook({ user, onDone, toast_, coords }) {
     summary:"", condition:"", genre:"", mode:"sell", price:"", lendUntil:"", swapFor:""
   });
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState(false);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
   const scanFront = async file => {
@@ -408,12 +409,46 @@ function AddBook({ user, onDone, toast_, coords }) {
         )}
       </div>
 
-      <Btn onClick={save} disabled={!form.title.trim()||!form.author.trim()||saving} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
-        {saving ? <><Spinner/> מפרסם...</> : "פרסם ספר ✨"}
+      <Btn onClick={()=>{if(!form.title.trim()||!form.author.trim())return toast_("שם ספר ומחבר הם שדות חובה","warn");setPreview(true);}} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
+        לתצוגה מקדימה ←
       </Btn>
     </div>
   );
 }
+
+  if (preview) return (
+    <div style={{padding:"20px 16px",direction:"rtl",animation:"fadeUp .2s ease"}}>
+      <div style={{fontSize:18,fontWeight:800,color:"#1E2D3D",marginBottom:16,textAlign:"center"}}>תצוגה מקדימה</div>
+      <div style={{background:"#fff",borderRadius:16,border:"1px solid #dde5d8",overflow:"hidden",marginBottom:16}}>
+        {(form.thumbnail||fp) && <img src={form.thumbnail||fp} alt="" style={{width:"100%",maxHeight:200,objectFit:"contain",background:"#f5f0e8"}}/>}
+        <div style={{padding:"16px"}}>
+          <div style={{fontSize:18,fontWeight:800,color:"#1E2D3D",marginBottom:4}}>{form.title}</div>
+          <div style={{fontSize:14,color:"#7a8a7a",marginBottom:8}}>{form.author}{form.publisher?` · ${form.publisher}`:""}{form.year?` (${form.year})`:""}</div>
+          {form.summary && <div style={{fontSize:13,color:"#7a8a7a",marginBottom:8,fontStyle:"italic"}}>"{form.summary}"</div>}
+          <div style={{fontSize:13,fontWeight:600,color:"#6B8F47"}}>{MODES[form.mode]?.icon} {MODES[form.mode]?.label}</div>
+        </div>
+      </div>
+      {/* אפשרות להחליף תמונה */}
+      <label style={{display:"block",textAlign:"center",marginBottom:12,cursor:"pointer",color:"#6B8F47",fontSize:14,fontWeight:600}}>
+        📷 החלף תמונה
+        <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
+          const file = e.target.files[0];
+          if(!file) return;
+          setFp(URL.createObjectURL(file));
+          setFrontFile(file);
+          setForm(f=>({...f,thumbnail:""}));
+        }}/>
+      </label>
+      <div style={{display:"flex",gap:10}}>
+        <Btn onClick={save} disabled={saving} style={{flex:1,padding:"13px",borderRadius:13}}>
+          {saving ? <><Spinner/> מפרסם...</> : "פרסם ✨"}
+        </Btn>
+        <Btn variant="outline" onClick={()=>setPreview(false)} style={{flex:1,padding:"13px",borderRadius:13}}>
+          ← ערוך
+        </Btn>
+      </div>
+    </div>
+  );
 
 function Login({ onBack, onDone }) {
   const [email, setEmail] = useState("");
