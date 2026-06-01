@@ -578,7 +578,11 @@ export default function App() {
     const handlePop = () => {
       const p = new URLSearchParams(window.location.search);
       const uid = p.get("user");
+      const t = p.get("tab") || "search";
+      const bid = p.get("book");
       setViewUserId(uid || null);
+      setTab(t);
+      if (!bid) setViewBook(null);
     };
     window.addEventListener("popstate", handlePop);
     return () => window.removeEventListener("popstate", handlePop);
@@ -592,7 +596,10 @@ export default function App() {
   });
   const [books, setBooks] = useState([]);
   const [myBooks, setMyBooks] = useState([]);
-  const [tab, setTab] = useState("search");
+  const [tab, setTab] = useState(()=>{
+    const p = new URLSearchParams(window.location.search);
+    return p.get("tab") || "search";
+  });
   const [viewUserId, setViewUserId] = useState(()=>{
     const p = new URLSearchParams(window.location.search);
     return p.get("user") || null;
@@ -604,6 +611,10 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [editBook, setEditBook] = useState(null);
   const [viewBook, setViewBook] = useState(null);
+  const [viewBookId, setViewBookId] = useState(()=>{
+    const p = new URLSearchParams(window.location.search);
+    return p.get("book") || null;
+  });
 
   const toast_ = useCallback((msg, type="ok") => {
     setToast({msg, type});
@@ -884,6 +895,7 @@ export default function App() {
           return (
             <button key={id} onClick={()=>{
               setTab(id);
+              navigate(`?tab=${id}`);
               if (id === "add" && navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                   pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -1023,7 +1035,7 @@ export default function App() {
         {TABS.map(([id,ic,lb])=>{
           const a = tab===id;
           return (
-            <button key={id} onClick={()=>setTab(id)}
+            <button key={id} onClick={()=>{setTab(id);navigate(`?tab=${id}`);}}
               style={{flex:1,padding:"10px 3px 8px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderTop:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
               {id==="profile"
                 ? (user?.avatar
