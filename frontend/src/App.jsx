@@ -868,7 +868,7 @@ export default function App() {
             </button>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               {!isGuest && <button onClick={()=>setTab("profile")} style={{background:"none",border:"none",cursor:"pointer",padding:0}}><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(()=>{const h=new Date().getHours();return h>=4&&h<12?"☀️ בוקר טוב":h<18?"🌤️ צהריים טובים":h<22?"🌆 ערב טוב":"🌙 לילה טוב";})()} {user?.name||""}</div></button>}
-              {isGuest && <button onClick={onGuestAction} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"5px 11px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>הצטרף →</button>}
+              {isGuest && <button onClick={onGuestAction} style={{background:"#6B8F47",border:"none",borderRadius:9,padding:"5px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>הצטרף →</button>}
               <button onClick={()=>setMenuOpen(true)} style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",color:"#fff",fontSize:20,lineHeight:1}}>☰</button>
             </div>
           </div>
