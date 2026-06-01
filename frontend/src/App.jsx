@@ -60,22 +60,23 @@ input::placeholder,textarea::placeholder{color:#9a9080}
 `;
 
 // ── קומפוננטים קטנים ────────────────────────────────────────
-function Spinner() {
+function Spinner({ size="small" }) {
+  const isLarge = size === "large";
+  const scale = isLarge ? 80 : 24;
   return (
-    <span style={{display:"inline-block",width:24,height:24,position:"relative"}}>
-      <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
-        <rect x="2" y="6" width="20" height="14" rx="2" fill="none" stroke="#6B8F47" strokeWidth="1.5"/>
-        <line x1="12" y1="6" x2="12" y2="20" stroke="#6B8F47" strokeWidth="1.5"/>
-        <g style={{transformOrigin:"12px 6px"}}>
-          <animateTransform attributeName="transform" type="rotate" from="0 12 6" to="-30 12 6" dur="0.4s" repeatCount="indefinite" direction="alternate" additive="sum"/>
-          <rect x="2" y="2" width="10" height="6" rx="1" fill="#f5f0e8" stroke="#6B8F47" strokeWidth="1.5"/>
-        </g>
-        <g style={{transformOrigin:"12px 6px"}}>
-          <animateTransform attributeName="transform" type="rotate" from="0 12 6" to="30 12 6" dur="0.4s" repeatCount="indefinite" direction="alternate" additive="sum"/>
-          <rect x="12" y="2" width="10" height="6" rx="1" fill="#f5f0e8" stroke="#6B8F47" strokeWidth="1.5"/>
-        </g>
-      </svg>
-    </span>
+    <>
+      <style>{`@keyframes spinnerPageFlip{0%{transform:rotateY(0deg);opacity:1}55%{transform:rotateY(-150deg);opacity:1}100%{transform:rotateY(-180deg);opacity:0}}`}</style>
+      <span aria-label="Loading" role="status" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:`${scale}px`,height:`${scale*.75}px`,perspective:`${scale*6}px`,verticalAlign:"middle"}}>
+        <span style={{position:"relative",width:`${scale}px`,height:`${scale*.65}px`,transformStyle:"preserve-3d"}}>
+          <span style={{position:"absolute",left:0,top:0,width:"50%",height:"100%",background:"#1E2D3D",borderRadius:`${scale*.08}px 0 0 ${scale*.08}px`,transform:"rotateY(18deg)",transformOrigin:"right center"}}/>
+          <span style={{position:"absolute",right:0,top:0,width:"50%",height:"100%",background:"#6B8F47",borderRadius:`0 ${scale*.08}px ${scale*.08}px 0`,transform:"rotateY(-18deg)",transformOrigin:"left center"}}/>
+          {[0,1,2].map(i=>(
+            <span key={i} style={{position:"absolute",right:`${scale*.06}px`,top:`${scale*.06}px`,width:`${scale*.42}px`,height:`${scale*.53}px`,background:"#f5f0e8",borderRadius:`${scale*.04}px`,transformOrigin:"left center",animation:"spinnerPageFlip 1.4s ease-in-out infinite",animationDelay:`${i*.22}s`,boxShadow:isLarge?"0 2px 6px rgba(0,0,0,.18)":"0 1px 2px rgba(0,0,0,.18)"}}/>
+          ))}
+          <span style={{position:"absolute",left:"50%",top:"5%",width:`${Math.max(1,scale*.025)}px`,height:"90%",background:"rgba(0,0,0,.18)",transform:"translateX(-50%)",borderRadius:"999px"}}/>
+        </span>
+      </span>
+    </>
   );
 }
 
