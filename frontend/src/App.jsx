@@ -30,12 +30,12 @@ const api = {
 
 // ── עיצוב בסיסי ────────────────────────────────────────────
 const C = {
-  bg: "#f5f0e8", white: "#fff", ink: "#0e0c08", muted: "#8a8070",
-  border: "#e8e2d8", accent: "#b5390e", gold: "#c4841a",
-  teal: "#0f766e", tealL: "#f0fdf9", indigo: "#4338ca", indigoL: "#eef2ff",
-  green: "#15803d", greenL: "#f0fdf4", red: "#dc2626", redL: "#fef2f2",
+  bg: "#f5f0e8", white: "#fff", ink: "#1E2D3D", muted: "#7a8a7a",
+  border: "#dde5d8", accent: "#6B8F47", gold: "#6B8F47",
+  teal: "#6B8F47", tealL: "#f0f4ec", indigo: "#1E2D3D", indigoL: "#eef2ff",
+  green: "#6B8F47", greenL: "#f0f4ec", red: "#dc2626", redL: "#fef2f2",
 };
-const HDR = "linear-gradient(150deg,#0e0c08,#1e1a10)";
+const HDR = "#1E2D3D";
 const SPINES = ["#c0392b","#2980b9","#8e44ad","#16a085","#e67e22","#d35400","#27ae60","#7f3fbf"];
 const MODES = {
   sell:  { label:"מכירה",  icon:"₪",  bg:"#fef8ec", fg:"#c4841a" },
