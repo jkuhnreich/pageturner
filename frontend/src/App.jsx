@@ -997,7 +997,7 @@ export default function App() {
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>
                 {myBooks.filter(b=>b.avail).length>0&&<>
-                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>ספרים זמינים</div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>על המדף</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
                     {myBooks.filter(b=>b.avail).map(b=>(
                       <div key={b.id} style={{position:"relative"}}>
@@ -1010,7 +1010,7 @@ export default function App() {
                   </div>
                 </>}
                 {myBooks.filter(b=>!b.avail&&b.dealstatus&&b.dealstatus!==null).length>0&&<>
-                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>עבר דרכי</div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>עבר לספרייה אחרת</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
                     {myBooks.filter(b=>!b.avail&&b.dealstatus&&b.dealstatus!==null).map(b=>(
                       <div key={b.id} onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",filter:"grayscale(100%)",opacity:0.7}}>
@@ -1020,7 +1020,7 @@ export default function App() {
                   </div>
                 </>}
                 {myBooks.filter(b=>!b.avail&&(!b.dealstatus||b.dealstatus===null)).length>0&&<>
-                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>לא זמין כרגע</div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הורד מהמדף</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
                     {myBooks.filter(b=>!b.avail&&(!b.dealstatus||b.dealstatus===null)).map(b=>(
                       <div key={b.id} style={{position:"relative"}}>
@@ -1359,13 +1359,13 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
           <>
             {availBooks.length>0 && (
               <div style={{marginBottom:24}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#9c8f7a",marginBottom:10,letterSpacing:".5px",textTransform:"uppercase"}}>ספרים זמינים</div>
+                <div style={{fontSize:12,fontWeight:700,color:"#9c8f7a",marginBottom:10,letterSpacing:".5px",textTransform:"uppercase"}}>על המדף</div>
                 <BookGrid books={availBooks} showAll={showAllAvail} onShowAll={()=>setShowAllAvail(true)} isPast={false}/>
               </div>
             )}
             {pastBooks.length>0 && (
               <div>
-                <div style={{fontSize:12,fontWeight:700,color:"#9c8f7a",marginBottom:10,letterSpacing:".5px",textTransform:"uppercase"}}>עבר דרכי</div>
+                <div style={{fontSize:12,fontWeight:700,color:"#9c8f7a",marginBottom:10,letterSpacing:".5px",textTransform:"uppercase"}}>עבר לספרייה אחרת</div>
                 <BookGrid books={pastBooks} showAll={showAllPast} onShowAll={()=>setShowAllPast(true)} isPast={true}/>
               </div>
             )}
