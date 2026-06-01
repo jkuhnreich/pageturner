@@ -557,7 +557,7 @@ function Splash({ onReg, onGuest, onLogin, onAdmin }) {
     <div style={{minHeight:"100vh",background:videoEnded?"#f5f0e8":HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl",position:"relative"}}>
       {!videoEnded && (
         <video autoPlay muted playsInline onEnded={()=>setVideoEnded(true)}
-          style={{position:"fixed",top:0,left:0,width:"100vw",height:"100vh",objectFit:"cover",zIndex:5}}
+          style={{position:"fixed",inset:0,width:"100%",height:"100%",objectFit:"fill",zIndex:5,margin:0,padding:0,display:"block"}}
           src="/splash.mp4"/>
       )}
       <div style={{position:"relative",zIndex:10,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
