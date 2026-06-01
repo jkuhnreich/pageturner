@@ -996,26 +996,29 @@ export default function App() {
                   {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user?.phone}</div>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
                 </div>
-                {myBooks.length>0&&<>
-                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>הספרים שלי</div>
-                  {myBooks.map(b=>(
-                    <div key={b.id} onClick={()=>setViewBook(b)} style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:11,cursor:"pointer"}}>
-                      <div style={{width:38,height:55,borderRadius:"3px 7px 7px 3px",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",flexShrink:0,overflow:"hidden"}}>{(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:18}}>📖</div>}</div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.title}</div>
-                        <div style={{fontSize:11,color:C.muted}}>{b.author}</div>
+                {myBooks.filter(b=>b.avail).length>0&&<>
+                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>ספרים זמינים</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
+                    {myBooks.filter(b=>b.avail).map(b=>(
+                      <div key={b.id} style={{position:"relative"}}>
+                        <div onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer"}}>
+                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                        </div>
+                        <button onClick={e=>{e.stopPropagation();setEditBook(b);}} style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,.5)",border:"none",borderRadius:6,padding:"3px 6px",fontSize:10,color:"#fff",cursor:"pointer"}}>✏️</button>
                       </div>
-                      <button onClick={e=>{e.stopPropagation();setEditBook(b);}} style={{padding:"7px 11px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️ ערוך</button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </>}
-                <Btn variant="outline" onClick={()=>{setUser(null);setScreen("splash");try{localStorage.removeItem("pt_user");localStorage.removeItem("pt_screen");}catch{}}} style={{width:"100%",marginTop:4}}>יציאה</Btn>
-              </div>
-        )}
-      </div>
-
-      {/* Bio Modal */}
-      {editBio && (
+                {myBooks.filter(b=>!b.avail).length>0&&<>
+                  <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>עבר דרכי</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
+                    {myBooks.filter(b=>!b.avail).map(b=>(
+                      <div key={b.id} onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",filter:"grayscale(100%)",opacity:0.7}}>
+                        {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                      </div>
+                    ))}
+                  </div>
+                </>}
         <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setEditBio(false)}>
           <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>כמה מילים עלי ✏️</div>
