@@ -1031,7 +1031,7 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
+          }
 
       {/* Bottom nav */}
       <div style={{display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,boxShadow:"0 -2px 12px rgba(0,0,0,.07)",flexShrink:0}}>
