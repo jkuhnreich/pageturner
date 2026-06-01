@@ -59,6 +59,8 @@ async function initDB() {
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT"); } catch {}
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT"); } catch {}
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT"); } catch {}
+  try { await pool.query("CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)"); } catch {}
+  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS prevownerid TEXT"); } catch {}
   try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
     bookId TEXT,
@@ -578,7 +580,14 @@ app.put("/api/contacts/:id", async (req, res) => {
       const contact = (await pool.query("SELECT * FROM contacts WHERE id=$1", [req.params.id])).rows[0];
       if (contact && contact.status === "done") {
         // שניהם אישרו — הורד מזמינות
-        await pool.query("UPDATE books SET avail=false, dealstatus=$1 WHERE id=$2", [dealStatus||"agreed", bookId]);
+        const newOwnerId = contact.fromuserid;
+        const bookRow = (await pool.query("SELECT * FROM books WHERE id=$1", [bookId])).rows[0];
+        if (bookRow) {
+          const {randomUUID} = await import("crypto");
+          await pool.query("INSERT INTO book_history (id,bookid,fromuserid,touserid,type,createdat) VALUES ($1,$2,$3,$4,$5,$6)",[randomUUID(),bookId,bookRow.ownerid,newOwnerId,dealStatus||"agreed",Date.now()]);
+          const newOwner = (await pool.query("SELECT name,storename FROM users WHERE id=$1",[newOwnerId])).rows[0];
+          await pool.query("UPDATE books SET avail=false,dealstatus=null,prevownerid=$1,ownerid=$2,ownername=$3 WHERE id=$4",[bookRow.ownerid,newOwnerId,newOwner?.storename||newOwner?.name||"",bookId]);
+        }
       }
     }
 
