@@ -554,24 +554,13 @@ function Splash({ onReg, onGuest, onLogin, onAdmin }) {
   return (
     <div style={{minHeight:"100vh",background:HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
       <div style={{display:"flex",gap:5,marginBottom:34}}>
-            {/* לוגו */}
-            <div style={{marginBottom:8,textAlign:"center"}}>
-              <svg width="100" height="120" viewBox="0 0 100 130" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="6" y="18" width="20" height="85" rx="3" fill="#2d3f52"/>
-                <rect x="8" y="14" width="16" height="5" rx="2" fill="#f5f0e8" opacity="0.7"/>
-                <rect x="8" y="18" width="16" height="4" rx="2" fill="#f5f0e8" opacity="0.5"/>
-                <rect x="8" y="22" width="16" height="3" rx="2" fill="#f5f0e8" opacity="0.3"/>
-                <path d="M24 20 L24 103 L42 103 C58 103 72 95 72 78 C72 61 58 52 42 52 L24 52" fill="none" stroke="#6B8F47" strokeWidth="20" strokeLinejoin="round"/>
-                <circle cx="46" cy="48" r="12" fill="#2d3f52"/>
-                <circle cx="46" cy="48" r="7" fill="#6B8F47"/>
-                <path d="M40 60 L46 74 L52 60" fill="#6B8F47"/>
-              </svg>
-            </div>
-            <div style={{fontSize:26,fontWeight:800,color:"#fff",textAlign:"center",marginBottom:4}}>
-              <span>page</span><span style={{color:"#6B8F47"}}>turner</span>
-            </div>
-            <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginBottom:6,letterSpacing:"1px"}}>— הספרייה השכונתית —</div>
-            <div style={{color:"rgba(255,255,255,.35)",fontSize:12,marginBottom:40}}>השאל · קנה · החלף · גלה</div>
+        {SPINES.map((c,i)=>(
+          <div key={i} style={{width:14,height:52+Math.sin(i*.9)*9,borderRadius:"3px 5px 5px 3px",background:c,boxShadow:`2px 2px 10px ${c}66`,animation:`spineRise .5s ${i*.07}s both ease`}}/>
+        ))}
+      </div>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:"#fff",textAlign:"center",lineHeight:1.15,marginBottom:9}}>ספרייה<br/>שכונתית</div>
+      <div style={{color:"rgba(255,255,255,.4)",fontSize:14,marginBottom:44}}>השאל · קנה · החלף · גלה</div>
+      <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
         <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13}}>הרשמה →</Btn>
               <Btn onClick={onLogin} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13,background:"rgba(255,255,255,.15)"}}>התחבר →</Btn>
         <button onClick={onGuest} style={{width:"100%",padding:"13px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:13,color:"rgba(255,255,255,.75)",fontSize:14,cursor:"pointer"}}>כניסה כאורח 👀</button>
