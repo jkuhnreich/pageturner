@@ -554,10 +554,10 @@ function Register({ onBack, onDone }) {
 function Splash({ onReg, onGuest, onLogin, onAdmin }) {
   const [videoEnded, setVideoEnded] = useState(false);
   return (
-    <div style={{minHeight:"100vh",background:videoEnded?"#f5f0e8":HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:videoEnded?28:0,direction:"rtl",position:"relative",overflow:"hidden"}}>
+    <div style={{width:"100vw",height:"100vh",background:videoEnded?"#f5f0e8":HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:videoEnded?28:0,direction:"rtl",position:"fixed",inset:0,overflow:"hidden"}}>
       {!videoEnded && (
         <video autoPlay muted playsInline onEnded={()=>setVideoEnded(true)}
-          style={{position:"fixed",inset:0,width:"100%",height:"100%",objectFit:"fill",zIndex:5,margin:0,padding:0,display:"block"}}
+          style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"fill",zIndex:5,margin:0,padding:0,display:"block"}}
           src="/splash.mp4"/>
       )}
       <div style={{position:"relative",zIndex:10,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
