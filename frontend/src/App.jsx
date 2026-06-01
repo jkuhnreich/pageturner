@@ -837,7 +837,7 @@ export default function App() {
   ];
 
   return (
-    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",direction:"rtl",background:C.bg,position:"relative"}}>
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",direction:"rtl",background:C.bg,position:"relative",overflow:viewUserId?"hidden":"visible"}}>
       <style>{CSS}</style>
 
       {/* Edit drawer */}
