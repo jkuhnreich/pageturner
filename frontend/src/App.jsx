@@ -447,7 +447,6 @@ function Login({ onBack, onDone }) {
         </>}
       </div>
     </div>
-    </div>
   );
 }
 
@@ -552,21 +551,15 @@ function Register({ onBack, onDone }) {
 
 // ── מסך פתיחה ──────────────────────────────────────────────
 function Splash({ onReg, onGuest, onLogin, onAdmin }) {
-  const [videoEnded, setVideoEnded] = useState(false);
   return (
-    <div style={{width:"100vw",height:"100vh",background:videoEnded?"#f5f0e8":HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:videoEnded?28:0,direction:"rtl",position:"fixed",inset:0,overflow:"hidden"}}>
-      {!videoEnded && (
-        <video autoPlay muted playsInline onEnded={()=>setVideoEnded(true)}
-          style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"fill",zIndex:5,margin:0,padding:0,display:"block"}}
-          src="/splash.mp4"/>
-      )}
-      <div style={{position:"relative",zIndex:10,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
-      {/* וידאו לוגו */}
-      <div style={{marginBottom:16,textAlign:"center"}}>
-        <video autoPlay muted playsInline onEnded={e=>e.target.pause()} style={{width:200,height:"auto"}} src="/splash.mp4"/>
+    <div style={{minHeight:"100vh",background:HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
+      <div style={{display:"flex",gap:5,marginBottom:34}}>
+        {SPINES.map((c,i)=>(
+          <div key={i} style={{width:14,height:52+Math.sin(i*.9)*9,borderRadius:"3px 5px 5px 3px",background:c,boxShadow:`2px 2px 10px ${c}66`,animation:`spineRise .5s ${i*.07}s both ease`}}/>
+        ))}
       </div>
-      <div style={{fontSize:13,color:"rgba(255,255,255,.6)",marginBottom:6,letterSpacing:"1px"}}>— הספרייה השכונתית —</div>
-      <div style={{color:"rgba(255,255,255,.35)",fontSize:12,marginBottom:40}}>השאל · קנה · החלף · גלה</div>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:"#fff",textAlign:"center",lineHeight:1.15,marginBottom:9}}>ספרייה<br/>שכונתית</div>
+      <div style={{color:"rgba(255,255,255,.4)",fontSize:14,marginBottom:44}}>השאל · קנה · החלף · גלה</div>
       <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
         <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13}}>הרשמה →</Btn>
               <Btn onClick={onLogin} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13,background:"rgba(255,255,255,.15)"}}>התחבר →</Btn>
