@@ -447,6 +447,7 @@ function Login({ onBack, onDone }) {
         </>}
       </div>
     </div>
+    </div>
   );
 }
 
@@ -551,8 +552,15 @@ function Register({ onBack, onDone }) {
 
 // ── מסך פתיחה ──────────────────────────────────────────────
 function Splash({ onReg, onGuest, onLogin, onAdmin }) {
+  const [videoEnded, setVideoEnded] = useState(false);
   return (
-    <div style={{minHeight:"100vh",background:HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
+    <div style={{minHeight:"100vh",background:videoEnded?"#f5f0e8":HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl",position:"relative"}}>
+      {!videoEnded && (
+        <video autoPlay muted playsInline onEnded={()=>setVideoEnded(true)}
+          style={{position:"fixed",top:0,left:0,width:"100vw",height:"100vh",objectFit:"cover",zIndex:5}}
+          src="/splash.mp4"/>
+      )}
+      <div style={{position:"relative",zIndex:10,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
       {/* וידאו לוגו */}
       <div style={{marginBottom:16,textAlign:"center"}}>
         <video autoPlay muted playsInline onEnded={e=>e.target.pause()} style={{width:200,height:"auto"}} src="/splash.mp4"/>
