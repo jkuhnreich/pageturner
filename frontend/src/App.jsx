@@ -1002,7 +1002,7 @@ export default function App() {
                     {myBooks.filter(b=>b.avail).map(b=>(
                       <div key={b.id} style={{position:"relative"}}>
                         <div onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer"}}>
-                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
                         </div>
                         <button onClick={e=>{e.stopPropagation();setEditBook(b);}} style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,.5)",border:"none",borderRadius:6,padding:"3px 6px",fontSize:10,color:"#fff",cursor:"pointer"}}>✏️</button>
                       </div>
@@ -1014,7 +1014,7 @@ export default function App() {
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
                     {myBooks.filter(b=>!b.avail&&b.dealstatus&&b.dealstatus!==null).map(b=>(
                       <div key={b.id} onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",filter:"grayscale(100%)",opacity:0.7}}>
-                        {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                        {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
                       </div>
                     ))}
                   </div>
@@ -1025,7 +1025,7 @@ export default function App() {
                     {myBooks.filter(b=>!b.avail&&(!b.dealstatus||b.dealstatus===null)).map(b=>(
                       <div key={b.id} style={{position:"relative"}}>
                         <div onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",opacity:0.6}}>
-                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
                         </div>
                         <button onClick={e=>{e.stopPropagation();setEditBook(b);}} style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,.5)",border:"none",borderRadius:6,padding:"3px 6px",fontSize:10,color:"#fff",cursor:"pointer"}}>✏️</button>
                       </div>
@@ -1301,7 +1301,7 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
         {(showAll?books:books.slice(0,3)).map(b=>(
           <div key={b.id} onClick={()=>onViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",position:"relative",filter:isPast?"grayscale(100%)":"none",opacity:isPast?0.7:1}}>
             {(b.thumbnail||b.frontimg)
-              ? <img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              ? <img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>
               : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
           </div>
         ))}
