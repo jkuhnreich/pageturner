@@ -1391,6 +1391,7 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
           </div>
         ) : (
           <>
+                    <div style={{fontSize:12,fontWeight:700,color:"#9c8f7a",marginBottom:8,letterSpacing:".5px",textTransform:"uppercase"}}>ספרים זמינים</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
               {displayed.map(b=>(
                 <div key={b.id} onClick={()=>onViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer"}}>
