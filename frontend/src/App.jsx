@@ -553,13 +553,15 @@ function Register({ onBack, onDone }) {
 // ── מסך פתיחה ──────────────────────────────────────────────
 function Splash({ onReg, onGuest, onLogin, onAdmin }) {
   const [videoEnded, setVideoEnded] = useState(false);
+  if (!videoEnded) return (
+    <div style={{width:"100vw",height:"100vh",margin:0,padding:0,overflow:"hidden",background:"#f5f0e8"}}>
+      <video autoPlay muted playsInline onEnded={()=>setVideoEnded(true)}
+        style={{width:"100vw",height:"100vh",objectFit:"cover",display:"block"}}
+        src="/splash.mp4"/>
+    </div>
+  );
   return (
-    <div style={{width:"100vw",height:"100vh",background:videoEnded?"#f5f0e8":HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:videoEnded?28:0,direction:"rtl",position:"fixed",inset:0,overflow:"hidden"}}>
-      {!videoEnded && (
-        <video autoPlay muted playsInline onEnded={()=>setVideoEnded(true)}
-          style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"fill",zIndex:5,margin:0,padding:0,display:"block"}}
-          src="/splash.mp4"/>
-      )}
+    <div style={{minHeight:"100vh",background:"#f5f0e8",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
       <div style={{position:"relative",zIndex:10,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
       {/* וידאו לוגו */}
       <div style={{marginBottom:16,textAlign:"center"}}>
