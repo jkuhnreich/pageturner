@@ -859,7 +859,7 @@ export default function App() {
       {/* Header */}
       <div style={{background:HDR,flexShrink:0}}>
         <div style={{padding:"14px 17px 0"}}>
-          <div style={{display:"flex",gap:3,marginBottom:10,opacity:.25}}>
+          <div style={{display:"flex",gap:3,marginBottom:10,opacity:.6}}>
             {SPINES.map((c,i)=><div key={i} style={{flex:1,height:3,borderRadius:3,background:c}}/>)}
           </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
