@@ -1009,20 +1009,20 @@ export default function App() {
                     ))}
                   </div>
                 </>}
-                {myBooks.filter(b=>!b.avail&&b.dealstatus==="agreed").length>0&&<>
+                {myBooks.filter(b=>!b.avail&&b.dealstatus&&b.dealstatus!==null).length>0&&<>
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>עבר דרכי</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
-                    {myBooks.filter(b=>!b.avail&&b.dealstatus==="agreed").map(b=>(
+                    {myBooks.filter(b=>!b.avail&&b.dealstatus&&b.dealstatus!==null).map(b=>(
                       <div key={b.id} onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",filter:"grayscale(100%)",opacity:0.7}}>
                         {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
                       </div>
                     ))}
                   </div>
                 </>}
-                {myBooks.filter(b=>!b.avail&&b.dealstatus!=="agreed").length>0&&<>
+                {myBooks.filter(b=>!b.avail&&!b.dealstatus||b.dealstatus===null).length>0&&<>
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>לא זמין כרגע</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
-                    {myBooks.filter(b=>!b.avail&&b.dealstatus!=="agreed").map(b=>(
+                    {myBooks.filter(b=>!b.avail&&!b.dealstatus||b.dealstatus===null).map(b=>(
                       <div key={b.id} style={{position:"relative"}}>
                         <div onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",opacity:0.6}}>
                           {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
@@ -1287,7 +1287,7 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
   }, [userId]);
 
   const availBooks = allBooks.filter(b=>b.avail);
-  const pastBooks = allBooks.filter(b=>!b.avail&&b.dealstatus==="agreed");
+  const pastBooks = allBooks.filter(b=>!b.avail&&b.dealstatus&&b.dealstatus!==null);
 
   const city = allBooks.reduce((acc,b)=>{
     if(b.city){acc[b.city]=(acc[b.city]||0)+1;}
