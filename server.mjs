@@ -61,7 +61,6 @@ async function initDB() {
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT"); } catch {}
   try { await pool.query("CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)"); } catch {}
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS prevownerid TEXT"); } catch {}
-  try { await pool.query("CREATE TABLE IF NOT EXISTS wishlist (id TEXT PRIMARY KEY, userid TEXT, query TEXT, createdat BIGINT)"); } catch {}
   try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
     bookId TEXT,
@@ -802,40 +801,4 @@ app.post("/api/admin/send-report", async (req, res) => {
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error:"unauthorized" });
   await sendReport(type || "daily");
   res.json({ ok: true });
-});
-
-// Wishlist endpoints
-app.post("/api/wishlist", async (req, res) => {
-  try {
-    const { userId, query } = req.body;
-    if (!userId || !query) return res.status(400).json({ error: "missing fields" });
-    const { randomUUID } = await import("crypto");
-    await pool.query(
-      "INSERT INTO wishlist (id,userid,query,createdat) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-      [randomUUID(), userId, query.toLowerCase().trim(), Date.now()]
-    );
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get("/api/wishlist/matches/:userId", async (req, res) => {
-  try {
-    const wishes = (await pool.query("SELECT * FROM wishlist WHERE userid=$1", [req.params.userId])).rows;
-    const matches = [];
-    for (const w of wishes) {
-      const books = (await pool.query(
-        "SELECT * FROM books WHERE avail=true AND (LOWER(title) LIKE $1 OR LOWER(author) LIKE $1) LIMIT 3",
-        [`%${w.query}%`]
-      )).rows;
-      if (books.length > 0) matches.push({ wish: w, books });
-    }
-    res.json(matches);
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete("/api/wishlist/:id", async (req, res) => {
-  try {
-    await pool.query("DELETE FROM wishlist WHERE id=$1", [req.params.id]);
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
 });
