@@ -60,6 +60,37 @@ input::placeholder,textarea::placeholder{color:#9a9080}
 `;
 
 // ── קומפוננטים קטנים ────────────────────────────────────────
+
+const IconSearch = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="2" y="4" width="14" height="18" rx="2" fill="#1E2D3D" opacity="0.15"/>
+    <rect x="2" y="4" width="14" height="18" rx="2" stroke="#1E2D3D" strokeWidth="1.5"/>
+    <path d="M6 8h6M6 11h4" stroke="#1E2D3D" strokeWidth="1.5" strokeLinecap="round"/>
+    <circle cx="17" cy="17" r="4" fill="#6B8F47" opacity="0.9"/>
+    <path d="M20 20l2 2" stroke="#6B8F47" strokeWidth="2" strokeLinecap="round"/>
+    <circle cx="17" cy="17" r="2" fill="none" stroke="white" strokeWidth="1.2"/>
+  </svg>
+);
+
+const IconAdd = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="2" y="4" width="14" height="18" rx="2" fill="#1E2D3D" opacity="0.15"/>
+    <rect x="2" y="4" width="14" height="18" rx="2" stroke="#1E2D3D" strokeWidth="1.5"/>
+    <circle cx="17" cy="17" r="5" fill="#6B8F47"/>
+    <path d="M17 14v6M14 17h6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+
+const IconProfile = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="2" y="4" width="14" height="18" rx="2" fill="#1E2D3D" opacity="0.15"/>
+    <rect x="2" y="4" width="14" height="18" rx="2" stroke="#1E2D3D" strokeWidth="1.5"/>
+    <circle cx="17" cy="13" r="5" fill="#6B8F47"/>
+    <circle cx="17" cy="12" r="2" fill="white"/>
+    <path d="M13 19c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="white" strokeWidth="1.2" strokeLinecap="round"/>
+  </svg>
+);
+
 function Spinner({ size="small" }) {
   const isLarge = size === "large";
   const scale = isLarge ? 80 : 24;
@@ -893,9 +924,9 @@ export default function App() {
   if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
 
   const TABS = [
-    ["search","🔍","חיפוש"],
-    ["add",   "➕","הוסף"],
-    ["profile","👤","פרופיל"],
+    ["search", <IconSearch/>, "חיפוש"],
+    ["add",    <IconAdd/>,    "הוסף"],
+    ["profile",<IconProfile/>,"פרופיל"],
   ];
 
   return (
