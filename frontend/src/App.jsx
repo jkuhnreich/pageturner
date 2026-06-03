@@ -732,6 +732,15 @@ export default function App() {
   }, [tab, loadMyBooks]);
 
   const lastSearch = useRef("");
+  const checkWishlist = async (uid) => {
+    if (!uid) return;
+    try {
+      const r = await fetch(BASE+"/api/wishlist/matches/"+uid);
+      const d = await r.json();
+      if (Array.isArray(d) && d.length > 0) setWishMatches(d);
+    } catch {}
+  };
+
   const loadBooks = useCallback(async () => {
     setLoading(true);
     try {
@@ -969,6 +978,21 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* Wishlist matches banner */}
+      {wishMatches.length > 0 && (
+        <div style={{background:"#f0f4ec",borderBottom:"1px solid #c8d8b8",padding:"10px 14px",direction:"rtl"}}>
+          {wishMatches.map((m,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:i<wishMatches.length-1?6:0}}>
+              <div style={{fontSize:13,color:"#1E2D3D"}}>🔔 נמצא ספר שחיפשת: <strong>{m.wish.query}</strong></div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{setSearch(m.wish.query);setWishMatches(p=>p.filter((_,j)=>j!==i));}} style={{fontSize:11,padding:"4px 8px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:6,cursor:"pointer"}}>הצג</button>
+                <button onClick={async()=>{await fetch(BASE+"/api/wishlist/"+m.wish.id,{method:"DELETE"});setWishMatches(p=>p.filter((_,j)=>j!==i));}} style={{fontSize:11,padding:"4px 8px",background:"none",border:"1px solid #aaa",borderRadius:6,cursor:"pointer",color:"#666"}}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Top nav */}
       <div style={{background:C.white,borderBottom:`1px solid ${C.border}`,display:"flex",flexShrink:0}}>
