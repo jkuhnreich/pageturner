@@ -987,7 +987,7 @@ export default function App() {
               }
             }}
               style={{flex:1,padding:"8px 3px 7px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderBottom:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
-              <span style={{fontSize:a?18:16}}>{ic}</span>
+              <span style={{fontSize:a?18:16}}>{id==="profile"&&user?.avatar ? <img src={user.avatar} alt="" style={{width:22,height:22,borderRadius:"50%",objectFit:"cover",border:a?"2px solid "+C.ink:"2px solid transparent"}}/> : ic}</span>
               <span style={{fontSize:13,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
             </button>
           );
