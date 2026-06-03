@@ -1016,7 +1016,17 @@ export default function App() {
             : books.length === 0
               ? <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
-                  <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:8}}>לא נמצאו ספרים</div>
+                  {search.trim() && user && !isGuest && (
+                    <button onClick={async()=>{
+                      try {
+                        await fetch("https://pageturner-production-5baf.up.railway.app/api/wishlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:user.id,query:search.trim()})});
+                        toast_("🔔 נודיע לך כשיתווסף ספר כזה!");
+                      } catch(e) { toast_("שגיאה","err"); }
+                    }} style={{padding:"10px 20px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                      🔔 הודע לי כשיתווסף
+                    </button>
+                  )}
                 </div>
               : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)&&!b.dealstatus?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>{setViewUserId(id);navigate(`?user=${id}`);}}/>)
         )}
