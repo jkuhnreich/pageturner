@@ -847,12 +847,23 @@ app.get("/api/books/search-google", async (req, res) => {
     if (!q) return res.status(400).json({ error: "missing q" });
     const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,cover_i,first_publish_year`);
     const data = await r.json();
-    const results = (data.docs||[]).map(item => ({
-      googleId: item.key,
-      title: item.title || "",
-      author: (item.author_name||[]).slice(0,2).join(", "),
-      thumbnail: item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : "",
-      year: item.first_publish_year ? String(item.first_publish_year) : ""
+    const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
+    const results = await Promise.all((data.docs||[]).map(async item => {
+      let thumbnail = item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : "";
+      if (!thumbnail && item.title) {
+        try {
+          const gr = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(item.title)}&maxResults=1${key}`);
+          const gd = await gr.json();
+          thumbnail = gd.items?.[0]?.volumeInfo?.imageLinks?.thumbnail || "";
+        } catch {}
+      }
+      return {
+        googleId: item.key,
+        title: item.title || "",
+        author: (item.author_name||[]).slice(0,2).join(", "),
+        thumbnail,
+        year: item.first_publish_year ? String(item.first_publish_year) : ""
+      };
     }));
     res.json(results);
   } catch(e) { res.status(500).json({ error: e.message }); }
