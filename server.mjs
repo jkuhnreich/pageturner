@@ -846,7 +846,7 @@ app.get("/api/books/search-google", async (req, res) => {
     const q = req.query.q;
     if (!q) return res.status(400).json({ error: "missing q" });
     const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
-    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5&langRestrict=iw${key}`);
+    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8${key}`);
     const data = await r.json();
     const results = (data.items||[]).map(item => ({
       googleId: item.id,
