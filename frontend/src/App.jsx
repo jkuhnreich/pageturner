@@ -780,6 +780,7 @@ export default function App() {
   const [showWishModal, setShowWishModal] = useState(false);
   const [wishResults, setWishResults] = useState([]);
   const [wishLoading, setWishLoading] = useState(false);
+  const [wishQuery, setWishQuery] = useState("");
 
   useEffect(() => {
     if (!user?.id || isGuest) return;
@@ -1125,7 +1126,11 @@ export default function App() {
           <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setShowWishModal(false)}>
             <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"20px",width:"100%",maxHeight:"70vh",overflowY:"auto",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
               <div style={{fontSize:16,fontWeight:800,marginBottom:4,color:"#1E2D3D"}}>בחר את הספר שחיפשת</div>
-              <div style={{fontSize:12,color:"#7a8a7a",marginBottom:14}}>נודיע לך כשהספר יתווסף לפלטפורמה</div>
+              <div style={{fontSize:12,color:"#7a8a7a",marginBottom:10}}>נודיע לך כשהספר יתווסף לפלטפורמה</div>
+              <div style={{display:"flex",gap:8,marginBottom:14}}>
+                <input value={wishQuery} onChange={e=>setWishQuery(e.target.value)} placeholder="שם ספר, מחבר..." style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #dde5d8",fontSize:13,direction:"rtl"}}/>
+                <button onClick={async()=>{setWishLoading(true);setWishResults([]);try{const r=await fetch("https://pageturner-production-5baf.up.railway.app/api/books/search-google?q="+encodeURIComponent(wishQuery));const d=await r.json();setWishResults(Array.isArray(d)?d:[]);}catch{}setWishLoading(false);}} style={{padding:"8px 14px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:8,fontSize:13,cursor:"pointer"}}>חפש</button>
+              </div>
               {wishLoading && <div style={{textAlign:"center",padding:30,color:"#7a8a7a"}}>טוען...</div>}
               {!wishLoading && wishResults.length===0 && <div style={{textAlign:"center",padding:30,color:"#7a8a7a"}}>לא נמצאו תוצאות</div>}
               {!wishLoading && wishResults.map(b=>(
