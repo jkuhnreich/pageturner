@@ -536,6 +536,7 @@ function Login({ onBack, onDone }) {
 function Register({ onBack, onDone }) {
   const [type, setType] = useState(null);
   const [form, setForm] = useState({ name:"", phone:"", email:"", storeName:"", address:"" });
+  const [emailConsent, setEmailConsent] = useState(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
@@ -548,7 +549,7 @@ function Register({ onBack, onDone }) {
   const submit = async () => {
     setLoading(true); setErr("");
     try {
-      const res = await api.post("/api/users/register", { ...form, type });
+      const res = await api.post("/api/users/register", { ...form, type, email_consent: emailConsent });
       await api.post("/api/auth/send-otp", { email: form.email });
       setPendingUser(res.user);
       setOtpStep(true);
@@ -621,8 +622,15 @@ function Register({ onBack, onDone }) {
             <p style={{fontSize:13,color:C.muted,marginBottom:12}}>הכנס את הקוד שנשלח ל-{form.email}</p>
             <input type="number" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="קוד בן 6 ספרות" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:22,textAlign:"center",letterSpacing:8}} />
             <Btn onClick={verifyOtp} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:13}}>{loading?"מאמת...":"אמת וכנס →"}</Btn>
-          </> : <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"14px",borderRadius:13}}>
+          </> : <>
+          <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:12,direction:"rtl"}}>
+            <input type="checkbox" id="emailConsent" checked={emailConsent} onChange={e=>setEmailConsent(e.target.checked)} style={{marginTop:3,accentColor:"#6B8F47",width:16,height:16,flexShrink:0}}/>
+            <label htmlFor="emailConsent" style={{fontSize:12,color:"#7a8a7a",lineHeight:1.4,cursor:"pointer"}}>אני מסכים לקבל עדכונים אישיים על ספרים שחיפשתי — רק עבורי, רק כשיש חדש</label>
+          </div>
+          <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"14px",borderRadius:13}}>
             {loading ? <><Spinner/> שולח קוד...</> : type==="store" ? "🏪 פתח חנות" : "📖 מדפדפים →"}
+          </Btn>
+          </>
           </Btn>}
             </>
         }

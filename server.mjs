@@ -59,6 +59,7 @@ async function initDB() {
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT"); } catch {}
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT"); } catch {}
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false"); } catch {}
   try { await pool.query("CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)"); } catch {}
   try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS prevownerid TEXT"); } catch {}
   try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
