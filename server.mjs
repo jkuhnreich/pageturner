@@ -845,26 +845,33 @@ app.get("/api/books/search-google", async (req, res) => {
   try {
     const q = req.query.q;
     if (!q) return res.status(400).json({ error: "missing q" });
-    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,cover_i,first_publish_year`);
-    const data = await r.json();
     const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
-    const results = await Promise.all((data.docs||[]).map(async item => {
-      let thumbnail = item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : "";
-      if (!thumbnail && item.title) {
-        try {
-          const gr = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(item.title)}&maxResults=1${key}`);
-          const gd = await gr.json();
-          thumbnail = gd.items?.[0]?.volumeInfo?.imageLinks?.thumbnail || "";
-        } catch {}
-      }
-      return {
-        googleId: item.key,
-        title: item.title || "",
-        author: (item.author_name||[]).slice(0,2).join(", "),
-        thumbnail,
-        year: item.first_publish_year ? String(item.first_publish_year) : ""
-      };
+    
+    // חיפוש מקביל ב-Open Library ו-Google Books
+    const [olRes, gbRes] = await Promise.all([
+      fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=key,title,author_name,cover_i,first_publish_year`).then(r=>r.json()).catch(()=>({docs:[]})),
+      fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5${key}`).then(r=>r.json()).catch(()=>({items:[]}))
+    ]);
+
+    const olResults = (olRes.docs||[]).map(item => ({
+      googleId: item.key,
+      title: item.title || "",
+      author: (item.author_name||[]).slice(0,2).join(", "),
+      thumbnail: item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : "",
+      year: item.first_publish_year ? String(item.first_publish_year) : ""
     }));
-    res.json(results);
+
+    const gbResults = (gbRes.items||[]).map(item => ({
+      googleId: item.id,
+      title: item.volumeInfo?.title || "",
+      author: (item.volumeInfo?.authors||[]).join(", "),
+      thumbnail: item.volumeInfo?.imageLinks?.thumbnail?.replace("http://","https://") || "",
+      year: item.volumeInfo?.publishedDate?.substring(0,4) || ""
+    }));
+
+    // מזג - קודם Open Library, אחר כך Google Books ללא כפילויות
+    const seen = new Set(olResults.map(x=>x.title.toLowerCase()));
+    const merged = [...olResults, ...gbResults.filter(x=>!seen.has(x.title.toLowerCase()))].slice(0,8);
+    res.json(merged);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
