@@ -896,7 +896,17 @@ export default function App() {
     return () => window.removeEventListener("popstate", handleBack);
   }, [tab, viewBook, editBook, showAbout, menuOpen]);
 
-  const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
+  const [wishMatches, setWishMatches] = useState([]);
+
+  const checkWishMatches = async (userId) => {
+    try {
+      const r = await fetch("https://pageturner-production-5baf.up.railway.app/api/wishlist/matches/"+userId);
+      const d = await r.json();
+      if (Array.isArray(d) && d.length > 0) setWishMatches(d);
+    } catch {}
+  };
+
+  const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); checkWishMatches(u?.id); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"guest_login",data:{}})}); };
 
   const saveEdit = async (id, fields) => {
@@ -928,7 +938,7 @@ export default function App() {
   // ── screens ──────────────────────────────────────────────
   if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>setScreen("splash")}/></>
   if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onAdmin={()=>setScreen("admin")}/></>;
-  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app");try{localStorage.setItem("pt_user",JSON.stringify(u));localStorage.setItem("pt_screen","app");}catch{}}}/></>; 
+  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app");try{localStorage.setItem("pt_user",JSON.stringify(u));localStorage.setItem("pt_screen","app");}catch{}checkWishMatches(u?.id);}}/></>; 
   if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
 
   const TABS = [
@@ -978,6 +988,19 @@ export default function App() {
         )}
       </div>
 
+      {wishMatches.length > 0 && (
+        <div style={{background:"#f0f4ec",borderBottom:"1px solid #c8d8b8",padding:"10px 14px",direction:"rtl"}}>
+          {wishMatches.map((m,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:i<wishMatches.length-1?8:0}}>
+              <div style={{fontSize:13,color:"#1E2D3D",flex:1}}>🔔 נמצא ספר שחיפשת: <strong>{m.wish.query}</strong></div>
+              <div style={{display:"flex",gap:6,marginRight:8}}>
+                <button onClick={()=>{setSearch(m.wish.query);setTab("search");setWishMatches(p=>p.filter((_,j)=>j!==i));}} style={{fontSize:11,padding:"4px 8px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:6,cursor:"pointer"}}>הצג</button>
+                <button onClick={async()=>{await fetch("https://pageturner-production-5baf.up.railway.app/api/wishlist/"+m.wish.id,{method:"DELETE"});setWishMatches(p=>p.filter((_,j)=>j!==i));}} style={{fontSize:11,padding:"4px 8px",background:"none",border:"1px solid #aaa",borderRadius:6,cursor:"pointer",color:"#666"}}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {/* Top nav */}
       <div style={{background:C.white,borderBottom:`1px solid ${C.border}`,display:"flex",flexShrink:0}}>
         {TABS.map(([id,ic,lb])=>{
