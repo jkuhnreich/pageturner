@@ -1,7 +1,6 @@
 const BASE = import.meta.env.VITE_API_URL || "";
 // frontend/src/App.jsx
 import { useState, useRef, useEffect, useCallback } from "react";
-import WishlistModal from "./WishlistModal";
 import { useNavigate, useParams, Routes, Route } from "react-router-dom";
 
 // ── כל קריאות ה-API עוברות דרך /api (proxy ל-3001) ─────────
@@ -1017,8 +1016,7 @@ export default function App() {
             : books.length === 0
               ? <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
-                  <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:12}}>לא נמצאו ספרים</div>
-                  {search.trim()&&user&&!isGuest&&<button onClick={()=>setShowWishModal(true)} style={{padding:"10px 20px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>🔔 הודע לי כשיתווסף</button>}
+                  <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
               : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)&&!b.dealstatus?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>{setViewUserId(id);navigate(`?user=${id}`);}}/>)
         )}
@@ -1133,7 +1131,6 @@ export default function App() {
         </div>
           }
 
-      {showWishModal&&<WishlistModal search={search} userId={user?.id} onClose={()=>setShowWishModal(false)} toast_={toast_}/>}
       {/* Bottom nav */}
       <div style={{display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,boxShadow:"0 -2px 12px rgba(0,0,0,.07)",flexShrink:0}}>
         {TABS.map(([id,ic,lb])=>{
