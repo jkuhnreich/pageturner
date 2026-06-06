@@ -845,25 +845,15 @@ app.get("/api/books/search-google", async (req, res) => {
   try {
     const q = req.query.q;
     if (!q) return res.status(400).json({ error: "missing q" });
-    const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
-    const toResult = item => ({
-      googleId: item.id,
-      title: item.volumeInfo?.title || "",
-      author: (item.volumeInfo?.authors||[]).join(", "),
-      thumbnail: item.volumeInfo?.imageLinks?.thumbnail || "",
-      year: item.volumeInfo?.publishedDate?.substring(0,4) || ""
-    });
-    // חיפוש בעברית
-    const r1 = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5&langRestrict=iw${key}`);
-    const d1 = await r1.json();
-    const heResults = (d1.items||[]).map(toResult);
-    // חיפוש כללי
-    const r2 = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5${key}`);
-    const d2 = await r2.json();
-    const allResults = (d2.items||[]).map(toResult);
-    // מזג ללא כפילויות
-    const seen = new Set(heResults.map(x=>x.googleId));
-    const merged = [...heResults, ...allResults.filter(x=>!seen.has(x.googleId))].slice(0,8);
-    res.json(merged);
+    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,cover_i,first_publish_year`);
+    const data = await r.json();
+    const results = (data.docs||[]).map(item => ({
+      googleId: item.key,
+      title: item.title || "",
+      author: (item.author_name||[]).slice(0,2).join(", "),
+      thumbnail: item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : "",
+      year: item.first_publish_year ? String(item.first_publish_year) : ""
+    }));
+    res.json(results);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
