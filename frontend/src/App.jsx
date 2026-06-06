@@ -1,7 +1,7 @@
 const BASE = import.meta.env.VITE_API_URL || "";
 // frontend/src/App.jsx
 import { useState, useRef, useEffect, useCallback } from "react";
-import WishlistModal from "./WishlistModal";
+import WishlistModal from "./WishlistModal.jsx";
 import { useNavigate, useParams, Routes, Route } from "react-router-dom";
 
 // ── כל קריאות ה-API עוברות דרך /api (proxy ל-3001) ─────────
