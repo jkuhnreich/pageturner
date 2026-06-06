@@ -839,3 +839,22 @@ app.delete("/api/wishlist/:id", async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// חיפוש ספרים לwishlist
+app.get("/api/books/search-google", async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.status(400).json({ error: "missing q" });
+    const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
+    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5&langRestrict=iw${key}`);
+    const data = await r.json();
+    const results = (data.items||[]).map(item => ({
+      googleId: item.id,
+      title: item.volumeInfo?.title || "",
+      author: (item.volumeInfo?.authors||[]).join(", "),
+      thumbnail: item.volumeInfo?.imageLinks?.thumbnail || "",
+      year: item.volumeInfo?.publishedDate?.substring(0,4) || ""
+    }));
+    res.json(results);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
