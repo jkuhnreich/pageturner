@@ -536,7 +536,6 @@ function Login({ onBack, onDone }) {
 function Register({ onBack, onDone }) {
   const [type, setType] = useState(null);
   const [form, setForm] = useState({ name:"", phone:"", email:"", storeName:"", address:"" });
-  const [emailConsent, setEmailConsent] = useState(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
@@ -549,7 +548,7 @@ function Register({ onBack, onDone }) {
   const submit = async () => {
     setLoading(true); setErr("");
     try {
-      const res = await api.post("/api/users/register", { ...form, type, email_consent: emailConsent });
+      const res = await api.post("/api/users/register", { ...form, type });
       await api.post("/api/auth/send-otp", { email: form.email });
       setPendingUser(res.user);
       setOtpStep(true);
@@ -622,15 +621,8 @@ function Register({ onBack, onDone }) {
             <p style={{fontSize:13,color:C.muted,marginBottom:12}}>הכנס את הקוד שנשלח ל-{form.email}</p>
             <input type="number" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="קוד בן 6 ספרות" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:22,textAlign:"center",letterSpacing:8}} />
             <Btn onClick={verifyOtp} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:13}}>{loading?"מאמת...":"אמת וכנס →"}</Btn>
-          </> : <>
-          <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:12,direction:"rtl"}}>
-            <input type="checkbox" id="emailConsent" checked={emailConsent} onChange={e=>setEmailConsent(e.target.checked)} style={{marginTop:3,accentColor:"#6B8F47",width:16,height:16,flexShrink:0}}/>
-            <label htmlFor="emailConsent" style={{fontSize:12,color:"#7a8a7a",lineHeight:1.4,cursor:"pointer"}}>אני מסכים לקבל עדכונים אישיים על ספרים שחיפשתי — רק עבורי, רק כשיש חדש</label>
-          </div>
-          <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"14px",borderRadius:13}}>
+          </> : <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"14px",borderRadius:13}}>
             {loading ? <><Spinner/> שולח קוד...</> : type==="store" ? "🏪 פתח חנות" : "📖 מדפדפים →"}
-          </Btn>
-          </>
           </Btn>}
             </>
         }
@@ -896,20 +888,7 @@ export default function App() {
     return () => window.removeEventListener("popstate", handleBack);
   }, [tab, viewBook, editBook, showAbout, menuOpen]);
 
-  const [wishMatches, setWishMatches] = useState([]);
-  const [showWishModal, setShowWishModal] = useState(false);
-  const [wishSearchResults, setWishSearchResults] = useState([]);
-  const [wishSearching, setWishSearching] = useState(false);
-
-  const checkWishMatches = async (userId) => {
-    try {
-      const r = await fetch("https://pageturner-production-5baf.up.railway.app/api/wishlist/matches/"+userId);
-      const d = await r.json();
-      if (Array.isArray(d) && d.length > 0) setWishMatches(d);
-    } catch {}
-  };
-
-  const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); checkWishMatches(u?.id); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
+  const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
   const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"guest_login",data:{}})}); };
 
   const saveEdit = async (id, fields) => {
@@ -941,7 +920,7 @@ export default function App() {
   // ── screens ──────────────────────────────────────────────
   if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>setScreen("splash")}/></>
   if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onAdmin={()=>setScreen("admin")}/></>;
-  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app");try{localStorage.setItem("pt_user",JSON.stringify(u));localStorage.setItem("pt_screen","app");}catch{}checkWishMatches(u?.id);}}/></>; 
+  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app");try{localStorage.setItem("pt_user",JSON.stringify(u));localStorage.setItem("pt_screen","app");}catch{}}}/></>; 
   if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
 
   const TABS = [
@@ -991,19 +970,6 @@ export default function App() {
         )}
       </div>
 
-      {wishMatches.length > 0 && (
-        <div style={{background:"#f0f4ec",borderBottom:"1px solid #c8d8b8",padding:"10px 14px",direction:"rtl"}}>
-          {wishMatches.map((m,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:i<wishMatches.length-1?8:0}}>
-              <div style={{fontSize:13,color:"#1E2D3D",flex:1}}>🔔 נמצא ספר שחיפשת: <strong>{m.wish.query}</strong></div>
-              <div style={{display:"flex",gap:6,marginRight:8}}>
-                <button onClick={()=>{setSearch(m.wish.query);setTab("search");setWishMatches(p=>p.filter((_,j)=>j!==i));}} style={{fontSize:11,padding:"4px 8px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:6,cursor:"pointer"}}>הצג</button>
-                <button onClick={async()=>{await fetch("https://pageturner-production-5baf.up.railway.app/api/wishlist/"+m.wish.id,{method:"DELETE"});setWishMatches(p=>p.filter((_,j)=>j!==i));}} style={{fontSize:11,padding:"4px 8px",background:"none",border:"1px solid #aaa",borderRadius:6,cursor:"pointer",color:"#666"}}>✕</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
       {/* Top nav */}
       <div style={{background:C.white,borderBottom:`1px solid ${C.border}`,display:"flex",flexShrink:0}}>
         {TABS.map(([id,ic,lb])=>{
@@ -1050,22 +1016,7 @@ export default function App() {
             : books.length === 0
               ? <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
-                  <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:8}}>לא נמצאו ספרים</div>
-                  {search.trim() && user && !isGuest && (
-                    <button onClick={async()=>{
-                      setShowWishModal(true);
-                      setWishSearching(true);
-                      setWishSearchResults([]);
-                      try {
-                        const r = await fetch("https://pageturner-production-5baf.up.railway.app/api/books/search-google?q="+encodeURIComponent(search));
-                        const d = await r.json();
-                        setWishSearchResults(Array.isArray(d)?d:[]);
-                      } catch {}
-                      setWishSearching(false);
-                    }} style={{padding:"10px 20px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                      🔔 הודע לי כשיתווסף
-                    </button>
-                  )}
+                  <div style={{fontSize:15,fontWeight:700,color:C.ink}}>לא נמצאו ספרים</div>
                 </div>
               : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)&&!b.dealstatus?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>{setViewUserId(id);navigate(`?user=${id}`);}}/>)
         )}
@@ -1180,32 +1131,6 @@ export default function App() {
         </div>
           }
 
-      {/* Wishlist Modal */}
-      {showWishModal && (
-        <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setShowWishModal(false)}>
-          <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"20px",width:"100%",maxHeight:"70vh",overflowY:"auto",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontSize:16,fontWeight:800,marginBottom:4,color:"#1E2D3D"}}>בחר את הספר שחיפשת</div>
-            <div style={{fontSize:12,color:"#7a8a7a",marginBottom:14}}>נודיע לך כשהספר יתווסף לפלטפורמה</div>
-            {wishSearching ? <div style={{textAlign:"center",padding:20}}><Spinner size="large"/></div> :
-            wishSearchResults.length === 0 ? <div style={{textAlign:"center",padding:20,color:"#7a8a7a"}}>לא נמצאו תוצאות</div> :
-            wishSearchResults.map(b=>(
-              <div key={b.googleId} onClick={async()=>{
-                try {
-                  await fetch("https://pageturner-production-5baf.up.railway.app/api/wishlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:user.id,query:b.title,googleId:b.googleId,title:b.title,author:b.author,thumbnail:b.thumbnail})});
-                  toast_("🔔 נודיע לך כש-"+b.title+" יתווסף!");
-                  setShowWishModal(false);
-                } catch { toast_("שגיאה","err"); }
-              }} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",cursor:"pointer",alignItems:"center"}}>
-                {b.thumbnail ? <img src={b.thumbnail} alt="" style={{width:40,height:56,objectFit:"cover",borderRadius:4}}/> : <div style={{width:40,height:56,background:"#e0ddd8",borderRadius:4}}/>}
-                <div>
-                  <div style={{fontSize:14,fontWeight:700,color:"#1E2D3D"}}>{b.title}</div>
-                  <div style={{fontSize:12,color:"#7a8a7a"}}>{b.author}{b.year?` (${b.year})`:""}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
       {/* Bottom nav */}
       <div style={{display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,boxShadow:"0 -2px 12px rgba(0,0,0,.07)",flexShrink:0}}>
         {TABS.map(([id,ic,lb])=>{
