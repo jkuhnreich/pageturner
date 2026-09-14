@@ -235,9 +235,11 @@ async function enrich(vision) {
     }
   }
 
-  // 2. Google Books לפי ISBN
+  // 2. Google Books לפי ISBN — התאמה ודאית
+  let isbnSearch = false;
   if (vision.isbn) {
     results = await gBooks(`isbn:${vision.isbn}`, 3);
+    if (results.length) isbnSearch = true;
   }
   // 3. Google Books בעברית
   if (!results.length && q.trim()) {
@@ -249,19 +251,22 @@ async function enrich(vision) {
   }
   if (!results.length) return { googleResults:[], enriched: vision };
   // בחר את התוצאה הטובה ביותר — עדיפות לעברית, אחר כך לפי התאמת כותרת
-  const titleLow = (vision.title||"").toLowerCase();
+  const titleLow = (vision.title||"").toLowerCase().trim();
+  const authorLow = (vision.author||"").toLowerCase().trim();
   const hebrewMatches = results.filter(r => r.language === "he" || r.language === "iw");
   const pool = hebrewMatches.length ? hebrewMatches : results;
-  const best = pool.find(r => r.title.toLowerCase().includes(titleLow)) ||
-               pool.find(r => titleLow.includes(r.title.toLowerCase())) ||
-               pool[0];
+  const titleMatch = pool.find(r => titleLow && (r.title.toLowerCase().includes(titleLow) || titleLow.includes(r.title.toLowerCase())));
+  const best = titleMatch || pool[0];
+  const authorMatches = Boolean(authorLow && best.author && (best.author.toLowerCase().includes(authorLow) || authorLow.includes(best.author.toLowerCase())));
+  // רק אם יש התאמה אמיתית (ISBN / כותרת / מחבר) נשתמש בתמונה מהאינטרנט — אחרת נשאיר ריק כדי שהתמונה שצולמה תוצג
+  const confidentMatch = isbnSearch || Boolean(titleMatch) || authorMatches;
   return {
     googleResults: results,
     enriched: {
       title: vision.title || best.title, author: vision.author || best.author,
       publisher: best.publisher || vision.publisher, year: best.year || vision.year,
       language: vision.language || best.language, series: vision.series || "",
-      volume: vision.volume || "", thumbnail: best.thumbnail, isbn: best.isbn,
+      volume: vision.volume || "", thumbnail: confidentMatch ? best.thumbnail : "", isbn: best.isbn,
       description: best.description, categories: best.categories, googleId: best.googleId, genre: mapGenre(best.categories),
     }
   };
