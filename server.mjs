@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { randomUUID } from "crypto";
 import cron from "node-cron";
 import pg from "pg";
+import { Jimp } from "jimp";
 
 dotenv.config();
 
@@ -95,6 +96,25 @@ async function track(event, userId, data, city) {
       [id, event, userId||null, JSON.stringify(data||{}), city||null, Date.now()]
     );
   } catch {}
+}
+
+async function cropBookImage(buf, crop) {
+  try {
+    if (!crop) return null;
+    const image = await Jimp.read(buf);
+    const W = image.bitmap.width, H = image.bitmap.height;
+    const x = Math.max(0, Math.round((crop.x||0)/100 * W));
+    const y = Math.max(0, Math.round((crop.y||0)/100 * H));
+    const w = Math.min(W - x, Math.round((crop.width||100)/100 * W));
+    const h = Math.min(H - y, Math.round((crop.height||100)/100 * H));
+    if (w < 20 || h < 20) return null;
+    image.crop({ x, y, w, h });
+    const base64 = await image.getBase64("image/jpeg");
+    return base64;
+  } catch (e) {
+    console.log("Crop error:", e.message);
+    return null;
+  }
 }
 
 async function claudeVision(buf, mime, prompt, maxTok = 600) {
@@ -280,8 +300,9 @@ RULES:
 - For series/volume: look for series name or number
 - Leave "" if not clearly visible
 - confidence: 0-1 score for each field
+- crop: find the tightest bounding box containing ONLY the physical book cover, excluding any background (table, couch, hands, etc). Give coordinates as PERCENTAGES of the full image (0-100), where x,y is the top-left corner.
 Return ONLY this JSON, no other text:
-{"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","confidence":{"title":0,"author":0,"publisher":0,"year":0}}`;
+{"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","confidence":{"title":0,"author":0,"publisher":0,"year":0},"crop":{"x":0,"y":0,"width":100,"height":100}}`;
 
 const P_BACK = `You are an expert OCR and bibliographic system for book back covers.
 RULES:
@@ -317,7 +338,8 @@ app.post("/api/analyze/front", upload.single("image"), async (req,res) => {
     if ((conf.year||0) < 0.7) vision.year = "";
     if ((conf.author||0) < 0.7) vision.author = "";
     const { googleResults, enriched } = await enrich(vision);
-    res.json({ ok:true, data:enriched, googleResults });
+    const croppedImage = await cropBookImage(req.file.buffer, vision.crop);
+    res.json({ ok:true, data:enriched, googleResults, croppedImage });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 

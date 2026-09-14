@@ -239,7 +239,7 @@ function AddBook({ user, onDone, toast_, coords }) {
         author:    d.author    || f.author,
         publisher: d.publisher || f.publisher,
         year:      d.year      || f.year,
-        thumbnail: d.thumbnail || f.thumbnail,
+        thumbnail: d.thumbnail || res.croppedImage || f.thumbnail,
         genre:     d.genre     || f.genre,
       }));
       const cnt = [d.title, d.author, d.publisher].filter(Boolean).length;
