@@ -1,17 +1,44 @@
 <!doctype html>
-<html lang="he">
+<html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>ספרייה שכונתית | Pageturner</title>
+    <meta name="description" content="הספרים שכבר קראת, אצל השכנים שמחפשים אותם. מוכרים, משאילים, מחליפים ומוסרים ספרים בשכונה. צלמו כריכה והפרטים יתמלאו לבד." />
+    <meta name="theme-color" content="#1E2D3D" />
+    <link rel="canonical" href="https://pageturner.co.il/" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ספרייה שכונתית" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pageturner" />
+    <meta property="og:locale" content="he_IL" />
+    <meta property="og:url" content="https://pageturner.co.il/" />
+    <meta property="og:title" content="ספרייה שכונתית | Pageturner" />
+    <meta property="og:description" content="הספרים שכבר קראת, אצל השכנים שמחפשים אותם. השאלה, מכירה, החלפה ומסירה של ספרים בשכונה." />
+    <meta property="og:image" content="https://pageturner.co.il/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@700;900&family=Rubik:wght@400;500;600;700;800&display=swap" />
     <style>
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; overflow-x: hidden; max-width: 100vw; }
+      html, body { margin: 0; padding: 0; overflow-x: clip; max-width: 100vw; background: #f5f0e8; }
+      #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #1E2D3D; }
+      #boot span { width: 10px; height: 34px; margin: 0 3px; border-radius: 2px 4px 4px 2px; animation: b 1s ease-in-out infinite; }
+      @keyframes b { 50% { transform: translateY(-8px); } }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="boot"><span style="background:#6B8F47"></span><span style="background:#F5F0E8;animation-delay:.15s"></span><span style="background:#C9822F;animation-delay:.3s"></span></div></div>
+    <noscript>כדי להשתמש בספרייה השכונתית צריך להפעיל JavaScript.</noscript>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

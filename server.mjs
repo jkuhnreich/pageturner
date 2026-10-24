@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual } from "crypto";
 import cron from "node-cron";
 import pg from "pg";
 import { Jimp } from "jimp";
@@ -10,15 +10,60 @@ import { Jimp } from "jimp";
 dotenv.config();
 
 const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false });
+const DB_URL = process.env.DATABASE_URL || "";
+const isLocalDb = /localhost|127\.0\.0\.1/.test(DB_URL);
+const pool = new Pool({ connectionString: DB_URL, ssl: DB_URL && !isLocalDb ? { rejectUnauthorized: false } : false });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, fieldSize: 5 * 1024 * 1024 } });
 
-app.use(cors());
-app.use(express.json());
+const DAY = 86400000;
+const SESSION_DAYS = 180;
+const VISION_DAILY_LIMIT = Number(process.env.VISION_DAILY_LIMIT || 40);
+const VISION_MODEL = process.env.VISION_MODEL || "claude-sonnet-5-5";
+const VISION_FALLBACK_MODEL = "claude-opus-4-5";
+const PUBLIC_SITE = process.env.PUBLIC_SITE || "https://pageturner.co.il";
 
+app.set("trust proxy", 1);
+
+// ── CORS: רק האתר שלנו ─────────────────────────────────────
+const ALLOWED_ORIGINS = [/^https:\/\/(www\.)?pageturner\.co\.il$/, /^https:\/\/pageturner[a-z0-9-]*\.vercel\.app$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/];
+app.use(cors({
+  origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.some(r => r.test(origin))),
+}));
+app.use((req, res, next) => {
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+app.use(express.json({ limit: "2mb" }));
+
+// ── עזרים ─────────────────────────────────────────────────
+const sha256 = s => createHash("sha256").update(String(s)).digest("hex");
+const normEmail = e => String(e || "").trim().toLowerCase();
+const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+const clip = (s, n) => String(s ?? "").slice(0, n);
+
+function safeEqual(a, b) {
+  const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || ""));
+  return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
+}
+
+// הגבלת קצב פשוטה בזיכרון (חלון קבוע)
+const buckets = new Map();
+function hit(key, max, windowMs) {
+  const now = Date.now();
+  const b = buckets.get(key);
+  if (!b || now > b.reset) { buckets.set(key, { n: 1, reset: now + windowMs }); return true; }
+  b.n++;
+  return b.n <= max;
+}
+setInterval(() => { const now = Date.now(); for (const [k, b] of buckets) if (now > b.reset) buckets.delete(k); }, 10 * 60 * 1000).unref();
+const limit = (name, max, windowMs) => (req, res, next) =>
+  hit(`${name}:${req.ip}`, max, windowMs) ? next() : res.status(429).json({ error: "יותר מדי ניסיונות, נסו שוב בעוד כמה דקות" });
+
+// ── מסד נתונים ────────────────────────────────────────────
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -32,8 +77,7 @@ async function initDB() {
       chatCount INTEGER DEFAULT 0,
       bookCount INTEGER DEFAULT 0,
       createdAt BIGINT
-    )
-  `);
+    )`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS books (
       id TEXT PRIMARY KEY,
@@ -50,52 +94,56 @@ async function initDB() {
       frontImg TEXT,
       thumbnail TEXT,
       createdAt BIGINT
-    )
-  `);
-  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT"); } catch {}
-  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS city TEXT"); } catch {}
-  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS dealstatus TEXT"); } catch {}
-  try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerAsked BOOLEAN DEFAULT false"); } catch {}
-  try { await pool.query("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerConfirmed BOOLEAN DEFAULT false"); } catch {}
-  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT"); } catch {}
-  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT"); } catch {}
-  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT"); } catch {}
-  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false"); } catch {}
-  try { await pool.query("CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)"); } catch {}
-  try { await pool.query("ALTER TABLE books ADD COLUMN IF NOT EXISTS prevownerid TEXT"); } catch {}
-  try { await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
-    id TEXT PRIMARY KEY,
-    bookId TEXT,
-    bookTitle TEXT,
-    fromUserId TEXT,
-    toUserId TEXT,
-    type TEXT,
-    status TEXT DEFAULT 'pending',
-    askedStatus BOOLEAN DEFAULT false,
-    createdAt BIGINT
-  )`); } catch(e) { console.error("contacts table error:", e.message); }
-  try { await pool.query(`CREATE TABLE IF NOT EXISTS analytics (
-    id TEXT PRIMARY KEY,
-    event TEXT,
-    userId TEXT,
-    data JSONB,
-    city TEXT,
-    createdAt BIGINT
-  )`); } catch(e) { console.error("analytics table error:", e.message); }
+    )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
+    id TEXT PRIMARY KEY, bookId TEXT, bookTitle TEXT, fromUserId TEXT, toUserId TEXT,
+    type TEXT, status TEXT DEFAULT 'pending', askedStatus BOOLEAN DEFAULT false, createdAt BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS analytics (id TEXT PRIMARY KEY, event TEXT, userId TEXT, data JSONB, city TEXT, createdAt BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS wishlist (id TEXT PRIMARY KEY, userid TEXT, query TEXT, createdat BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS sessions (tokenhash TEXT PRIMARY KEY, userid TEXT NOT NULL, createdat BIGINT, lastseen BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS otps (email TEXT PRIMARY KEY, codehash TEXT, expires BIGINT, attempts INTEGER DEFAULT 0, sends INTEGER DEFAULT 0, windowstart BIGINT, tickethash TEXT, ticketexpires BIGINT)`);
+  const alters = [
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT",
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS city TEXT",
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS dealstatus TEXT",
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS prevownerid TEXT",
+    "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerAsked BOOLEAN DEFAULT false",
+    "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerConfirmed BOOLEAN DEFAULT false",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false",
+    "ALTER TABLE wishlist ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false",
+    "CREATE INDEX IF NOT EXISTS books_avail_created ON books (avail, createdat DESC)",
+    "CREATE INDEX IF NOT EXISTS books_owner ON books (ownerid)",
+    "CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userid)",
+    "CREATE INDEX IF NOT EXISTS analytics_event_created ON analytics (event, createdat)",
+  ];
+  for (const q of alters) { try { await pool.query(q); } catch (e) { console.error("migration:", e.message); } }
   console.log("✅ DB ready");
 }
-
-initDB().catch(e => console.error("DB init error:", e.message));
 
 // ── Analytics ────────────────────────────────────────────
 async function track(event, userId, data, city) {
   try {
-    const id = randomUUID();
     await pool.query(
       "INSERT INTO analytics (id,event,userId,data,city,createdAt) VALUES ($1,$2,$3,$4,$5,$6)",
-      [id, event, userId||null, JSON.stringify(data||{}), city||null, Date.now()]
+      [randomUUID(), event, userId || null, JSON.stringify(data || {}), city || null, Date.now()]
     );
   } catch {}
+}
+
+// ── תמונות ───────────────────────────────────────────────
+// מקטין תמונה ומחזיר data URI של JPEG. תמונה קטנה מספיק נשמרת כמו שהיא.
+async function shrinkImage(buf, maxW, maxH, quality = 80) {
+  const image = await Jimp.read(buf);
+  if (image.bitmap.width > maxW || image.bitmap.height > maxH) image.scaleToFit({ w: maxW, h: maxH });
+  return image.getBase64("image/jpeg", { quality });
+}
+function dataUriToBuffer(uri) {
+  const m = /^data:(image\/[a-z+.-]+);base64,(.+)$/i.exec(uri || "");
+  return m ? { mime: m[1], buf: Buffer.from(m[2], "base64") } : null;
 }
 
 async function cropBookImage(buf, crop) {
@@ -103,54 +151,95 @@ async function cropBookImage(buf, crop) {
     if (!crop) return null;
     const image = await Jimp.read(buf);
     const W = image.bitmap.width, H = image.bitmap.height;
-    const x = Math.max(0, Math.round((crop.x||0)/100 * W));
-    const y = Math.max(0, Math.round((crop.y||0)/100 * H));
-    const w = Math.min(W - x, Math.round((crop.width||100)/100 * W));
-    const h = Math.min(H - y, Math.round((crop.height||100)/100 * H));
+    const x = Math.max(0, Math.round((crop.x || 0) / 100 * W));
+    const y = Math.max(0, Math.round((crop.y || 0) / 100 * H));
+    const w = Math.min(W - x, Math.round((crop.width || 100) / 100 * W));
+    const h = Math.min(H - y, Math.round((crop.height || 100) / 100 * H));
     if (w < 20 || h < 20) return null;
     image.crop({ x, y, w, h });
     image.scaleToFit({ w: 600, h: 900 });
-    const base64 = await image.getBase64("image/jpeg", { quality: 80 });
-    return base64;
+    return await image.getBase64("image/jpeg", { quality: 80 });
   } catch (e) {
     console.log("Crop error:", e.message);
     return null;
   }
 }
 
-async function claudeVision(buf, mime, prompt, maxTok = 600) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
+// ── Claude Vision ─────────────────────────────────────────
+async function callClaude(model, buf, mime, prompt, maxTok) {
+  return fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
-      model: "claude-opus-4-5", max_tokens: maxTok,
+      model, max_tokens: maxTok,
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: mime, data: buf.toString("base64") } },
-        { type: "text", text: prompt }
-      ]}]
-    })
+        { type: "text", text: prompt },
+      ] }],
+    }),
   });
-  if (!r.ok) { const t = await r.text(); throw new Error(`Vision ${r.status}: ${t.slice(0,200)}`); }
+}
+async function claudeVision(buf, mime, prompt, maxTok = 600) {
+  let r = await callClaude(VISION_MODEL, buf, mime, prompt, maxTok);
+  if ((r.status === 400 || r.status === 404) && VISION_MODEL !== VISION_FALLBACK_MODEL) {
+    const t = await r.text();
+    if (/model/i.test(t)) {
+      console.error(`Vision model ${VISION_MODEL} rejected, falling back:`, t.slice(0, 160));
+      r = await callClaude(VISION_FALLBACK_MODEL, buf, mime, prompt, maxTok);
+    } else throw new Error(`Vision ${r.status}: ${t.slice(0, 200)}`);
+  }
+  if (!r.ok) { const t = await r.text(); throw new Error(`Vision ${r.status}: ${t.slice(0, 200)}`); }
   const d = await r.json();
   return d?.content?.[0]?.text || "";
 }
+// מכין תמונה לניתוח: מקטין ל-1568px לכל היותר (מהיר וזול יותר)
+async function prepForVision(file) {
+  try {
+    const image = await Jimp.read(file.buffer);
+    if (image.bitmap.width > 1568 || image.bitmap.height > 1568) {
+      image.scaleToFit({ w: 1568, h: 1568 });
+      return { buf: await image.getBuffer("image/jpeg", { quality: 85 }), mime: "image/jpeg" };
+    }
+  } catch {}
+  return { buf: file.buffer, mime: file.mimetype };
+}
 
 function parseJ(raw) {
-  const s = raw.trim().replace(/^```(?:json)?[\r\n]*/i,"").replace(/[\r\n]*```$/i,"").trim();
+  const s = raw.trim().replace(/^```(?:json)?[\r\n]*/i, "").replace(/[\r\n]*```$/i, "").trim();
   const obj = s.match(/\{[\s\S]*\}/);
   const arr = s.match(/\[[\s\S]*\]/);
   const t = arr && (!obj || arr.index < obj.index) ? arr[0] : obj ? obj[0] : s;
   return JSON.parse(t);
 }
 
+// ── גיאוקוד ───────────────────────────────────────────────
+const NOMINATIM_UA = "Pageturner/1.0 (pageturner.co.il)";
 async function geocode(address) {
   try {
-    const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
-    const r = await fetch(u, { headers: { "User-Agent": "SefariaShkhunati/1.0" } });
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`, { headers: { "User-Agent": NOMINATIM_UA } });
     const d = await r.json();
     if (d?.[0]) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
   } catch {}
   return null;
+}
+async function reverseGeocode(lat, lng) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&accept-language=he`, { headers: { "User-Agent": NOMINATIM_UA } });
+    const d = await r.json();
+    return d?.address?.city || d?.address?.town || d?.address?.village || d?.address?.suburb || null;
+  } catch {}
+  return null;
+}
+function dist(lat1, lng1, lat2, lng2) {
+  const R = 6371, dL = (lat2 - lat1) * Math.PI / 180, dG = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dL / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dG / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+// מרחק מעוגל כדי שאי אפשר יהיה לאתר כתובת מדויקת
+function fuzzKm(km) {
+  if (km < 1) return 0.5;
+  if (km < 10) return Math.round(km * 2) / 2;
+  return Math.round(km);
 }
 
 function mapGenre(categories) {
@@ -172,38 +261,21 @@ function mapGenre(categories) {
   return "אחר";
 }
 
-async function reverseGeocode(lat, lng) {
-  try {
-    const u = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`;
-    const r = await fetch(u, { headers: { "User-Agent": "SefariaShkhunati/1.0" } });
-    const d = await r.json();
-    return d?.address?.city || d?.address?.town || d?.address?.village || d?.address?.suburb || null;
-  } catch {}
-  return null;
-}
-
-function dist(lat1, lng1, lat2, lng2) {
-  const R=6371, dL=(lat2-lat1)*Math.PI/180, dG=(lng2-lng1)*Math.PI/180;
-  const a = Math.sin(dL/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dG/2)**2;
-  return +(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))).toFixed(1);
-}
-
+// ── ספרים חיצוניים ────────────────────────────────────────
 async function openLibrary(isbn) {
   try {
-    const r = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`, {
-      headers: { "User-Agent": "Pageturner/1.0 (pageturner.co.il)" }
-    });
+    const r = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(isbn)}&format=json&jscmd=data`, { headers: { "User-Agent": NOMINATIM_UA } });
     if (!r.ok) return null;
     const d = await r.json();
     const book = d[`ISBN:${isbn}`];
     if (!book) return null;
     return {
       title: book.title || "",
-      author: (book.authors||[]).map(a=>a.name).join(", "),
-      publisher: (book.publishers||[]).map(p=>p.name).join(", "),
+      author: (book.authors || []).map(a => a.name).join(", "),
+      publisher: (book.publishers || []).map(p => p.name).join(", "),
       year: book.publish_date ? book.publish_date.match(/\d{4}/)?.[0] || "" : "",
       isbn,
-      thumbnail: book.cover?.medium || book.cover?.small || "",
+      thumbnail: (book.cover?.medium || book.cover?.small || "").replace("http:", "https:"),
       description: book.excerpts?.[0]?.text || "",
     };
   } catch { return null; }
@@ -213,73 +285,57 @@ async function gBooks(query, max = 10, lang = "") {
   if (!query?.trim()) return [];
   const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
   const langFilter = lang ? `&langRestrict=${lang}` : "";
-  const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=${max}&orderBy=relevance${key}${langFilter}`);
-  if (!r.ok) return [];
-  const d = await r.json();
-  return (d.items || []).map(item => {
-    const v = item.volumeInfo;
-    return {
-      googleId: item.id, title: v.title || "", author: (v.authors||[]).join(", "),
-      publisher: v.publisher || "", year: (v.publishedDate||"").split("-")[0],
-      description: v.description || "", thumbnail: (v.imageLinks?.thumbnail||"").replace("http:","https:"),
-      isbn: v.industryIdentifiers?.find(x=>x.type==="ISBN_13")?.identifier || "",
-      language: v.language || "", categories: v.categories || [],
-    };
-  });
+  try {
+    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=${max}&orderBy=relevance${key}${langFilter}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return (d.items || []).map(item => {
+      const v = item.volumeInfo;
+      return {
+        googleId: item.id, title: v.title || "", author: (v.authors || []).join(", "),
+        publisher: v.publisher || "", year: (v.publishedDate || "").split("-")[0],
+        description: v.description || "", thumbnail: (v.imageLinks?.thumbnail || "").replace("http:", "https:"),
+        isbn: v.industryIdentifiers?.find(x => x.type === "ISBN_13")?.identifier || "",
+        language: v.language || "", categories: v.categories || [],
+      };
+    });
+  } catch { return []; }
 }
 
 async function enrich(vision) {
   let results = [];
   const q = [vision.title, vision.author].filter(Boolean).join(" ");
 
-  // 1. Open Library לפי ISBN — הכי מדויק
   if (vision.isbn) {
     const ol = await openLibrary(vision.isbn);
     if (ol) {
       return {
         googleResults: [],
         enriched: {
-          title: vision.title || ol.title,
-          author: vision.author || ol.author,
-          publisher: ol.publisher || vision.publisher,
-          year: ol.year || vision.year,
-          language: vision.language || "",
-          series: vision.series || "",
-          volume: vision.volume || "",
-          thumbnail: ol.thumbnail || "",
-          isbn: ol.isbn,
-          description: ol.description,
-          categories: [],
-          googleId: "",
-        }
+          title: vision.title || ol.title, author: vision.author || ol.author,
+          publisher: ol.publisher || vision.publisher, year: ol.year || vision.year,
+          language: vision.language || "", series: vision.series || "", volume: vision.volume || "",
+          thumbnail: ol.thumbnail || "", isbn: ol.isbn, description: ol.description, categories: [], googleId: "",
+        },
       };
     }
   }
-
-  // 2. Google Books לפי ISBN — התאמה ודאית
   let isbnSearch = false;
   if (vision.isbn) {
     results = await gBooks(`isbn:${vision.isbn}`, 3);
     if (results.length) isbnSearch = true;
   }
-  // 3. Google Books בעברית
-  if (!results.length && q.trim()) {
-    results = await gBooks(q, 5, "he");
-  }
-  // 4. Google Books בכל שפה
-  if (!results.length && q.trim()) {
-    results = await gBooks(q, 8);
-  }
-  if (!results.length) return { googleResults:[], enriched: vision };
-  // בחר את התוצאה הטובה ביותר — עדיפות לעברית, אחר כך לפי התאמת כותרת
-  const titleLow = (vision.title||"").toLowerCase().trim();
-  const authorLow = (vision.author||"").toLowerCase().trim();
+  if (!results.length && q.trim()) results = await gBooks(q, 5, "he");
+  if (!results.length && q.trim()) results = await gBooks(q, 8);
+  if (!results.length) return { googleResults: [], enriched: vision };
+
+  const titleLow = (vision.title || "").toLowerCase().trim();
+  const authorLow = (vision.author || "").toLowerCase().trim();
   const hebrewMatches = results.filter(r => r.language === "he" || r.language === "iw");
-  const pool = hebrewMatches.length ? hebrewMatches : results;
-  const titleMatch = pool.find(r => titleLow && (r.title.toLowerCase().includes(titleLow) || titleLow.includes(r.title.toLowerCase())));
-  const best = titleMatch || pool[0];
+  const candidates = hebrewMatches.length ? hebrewMatches : results;
+  const titleMatch = candidates.find(r => titleLow && (r.title.toLowerCase().includes(titleLow) || titleLow.includes(r.title.toLowerCase())));
+  const best = titleMatch || candidates[0];
   const authorMatches = Boolean(authorLow && best.author && (best.author.toLowerCase().includes(authorLow) || authorLow.includes(best.author.toLowerCase())));
-  // רק אם יש התאמה אמיתית (ISBN / כותרת / מחבר) נשתמש בתמונה מהאינטרנט — אחרת נשאיר ריק כדי שהתמונה שצולמה תוצג
   const confidentMatch = isbnSearch || Boolean(titleMatch) || authorMatches;
   return {
     googleResults: results,
@@ -289,7 +345,7 @@ async function enrich(vision) {
       language: vision.language || best.language, series: vision.series || "",
       volume: vision.volume || "", thumbnail: confidentMatch ? best.thumbnail : "", isbn: best.isbn,
       description: best.description, categories: best.categories, googleId: best.googleId, genre: mapGenre(best.categories),
-    }
+    },
   };
 }
 
@@ -321,593 +377,870 @@ Spines are narrow vertical strips — text is ROTATED 90°.
 Return ONLY a JSON array. Empty shelves: []
 [{"title":"","author":"","publisher":"","year":""}]`;
 
-app.get("/api/health", async (req,res) => {
-  const u = await pool.query("SELECT COUNT(*) FROM users");
-  const b = await pool.query("SELECT COUNT(*) FROM books");
-  res.json({ ok:true, users:+u.rows[0].count, books:+b.rows[0].count });
+// ── אימות משתמשים ─────────────────────────────────────────
+async function createSession(userId) {
+  const token = randomBytes(32).toString("base64url");
+  const now = Date.now();
+  await pool.query("INSERT INTO sessions (tokenhash,userid,createdat,lastseen) VALUES ($1,$2,$3,$3)", [sha256(token), userId, now]);
+  return token;
+}
+
+async function loadAuth(req, res, next) {
+  const h = req.get("authorization") || "";
+  const token = h.startsWith("Bearer ") ? h.slice(7).trim() : "";
+  if (!token) return next();
+  try {
+    const r = await pool.query(
+      "SELECT u.*, s.lastseen, s.createdat AS sessioncreated FROM sessions s JOIN users u ON u.id=s.userid WHERE s.tokenhash=$1",
+      [sha256(token)]
+    );
+    const row = r.rows[0];
+    if (row && Date.now() - Number(row.sessioncreated) < SESSION_DAYS * DAY) {
+      req.user = row;
+      req.tokenHash = sha256(token);
+      if (Date.now() - Number(row.lastseen || 0) > DAY) pool.query("UPDATE sessions SET lastseen=$1 WHERE tokenhash=$2", [Date.now(), req.tokenHash]).catch(() => {});
+    } else {
+      req.authFailed = true;
+    }
+  } catch (e) { console.error("auth:", e.message); }
+  next();
+}
+app.use(loadAuth);
+
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "יש להתחבר מחדש", code: "auth" });
+  next();
+}
+
+// ── מה נחשף החוצה ─────────────────────────────────────────
+function origin(req) { return `${req.protocol}://${req.get("host")}`; }
+function avatarUrl(req, u) {
+  if (!u.avatar) return null;
+  if (/^https?:/.test(u.avatar)) return u.avatar;
+  return `${origin(req)}/api/img/avatar/${u.id}?v=${String(u.avatar).length}`;
+}
+// פרטים שכל אחד יכול לראות
+function publicUser(req, u) {
+  return {
+    id: u.id, name: u.name, storeName: u.storename || "", type: u.type, bio: u.bio || "",
+    avatar: avatarUrl(req, u), createdAt: u.createdat,
+  };
+}
+// פרטים שרק המשתמש עצמו רואה
+function privateUser(req, u) {
+  return {
+    ...publicUser(req, u),
+    email: u.email, phone: u.phone || "", address: u.address || "",
+    emailConsent: !!u.email_consent, featuredBooks: u.featuredbooks || "[]",
+  };
+}
+
+// עמודות לרשימות ספרים — בלי טלפון, בלי מיקום מדויק ובלי נתוני תמונה כבדים
+const BOOK_COLS = `b.id,b.title,b.author,b.publisher,b.year,b.summary,b.condition,b.series,b.volume,b.isbn,b.genre,b.mode,b.price,
+  b.lendduration,b.swapfor,b.lenduntil,b.avail,b.ownername,b.ownertype,b.ownerid,b.city,b.dealstatus,b.createdat,b.lat,b.lng,
+  CASE WHEN b.thumbnail LIKE 'http%' THEN b.thumbnail END AS thumburl,
+  (COALESCE(length(b.thumbnail),0) + COALESCE(length(b.frontimg),0)) AS imgver,
+  (COALESCE(b.thumbnail,'') LIKE 'data:%' OR COALESCE(b.frontimg,'') <> '') AS hasimg,
+  u.id AS uid, CASE WHEN u.avatar IS NOT NULL AND u.avatar <> '' THEN length(u.avatar) END AS avatarver,
+  CASE WHEN u.avatar LIKE 'http%' THEN u.avatar END AS avatarurl`;
+
+function publicBook(req, b, coords) {
+  const img = b.hasimg ? `${origin(req)}/api/img/book/${b.id}?v=${b.imgver}` : null;
+  const thumb = b.thumburl || img;
+  const out = {
+    id: b.id, title: b.title, author: b.author, publisher: b.publisher, year: b.year, summary: b.summary,
+    condition: b.condition, series: b.series, volume: b.volume, isbn: b.isbn, genre: b.genre, mode: b.mode,
+    price: b.price, lendduration: b.lendduration, swapfor: b.swapfor, lenduntil: b.lenduntil, avail: b.avail,
+    ownername: b.ownername, ownertype: b.ownertype, ownerid: b.ownerid, city: b.city, dealstatus: b.dealstatus,
+    createdat: b.createdat,
+    thumbnail: thumb, frontimg: img || thumb,
+    owneravatar: b.avatarurl || (b.avatarver ? `${origin(req)}/api/img/avatar/${b.uid}?v=${b.avatarver}` : null),
+  };
+  if (coords && b.lat != null && b.lng != null) {
+    const own = req.user && req.user.id === b.ownerid;
+    out.km = own ? 0 : fuzzKm(dist(coords.lat, coords.lng, b.lat, b.lng));
+  }
+  return out;
+}
+async function getBookRow(id) {
+  return (await pool.query(`SELECT ${BOOK_COLS} FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.id=$1`, [id])).rows[0];
+}
+
+// ── בריאות ───────────────────────────────────────────────
+app.get("/api/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ ok: true });
+  } catch { res.status(503).json({ ok: false }); }
 });
 
-app.post("/api/analyze/front", upload.single("image"), async (req,res) => {
-  if (!req.file) return res.status(400).json({ error:"לא הועלתה תמונה" });
+// ── תמונות (עם מטמון) ─────────────────────────────────────
+function sendImage(res, uri) {
+  const parsed = dataUriToBuffer(uri);
+  if (!parsed) return false;
+  res.set("Content-Type", parsed.mime);
+  res.set("Cache-Control", "public, max-age=604800, immutable");
+  res.set("Cross-Origin-Resource-Policy", "cross-origin");
+  res.send(parsed.buf);
+  return true;
+}
+app.get("/api/img/book/:id", async (req, res) => {
   try {
-    const raw = await claudeVision(req.file.buffer, req.file.mimetype, P_FRONT, 600);
+    const r = await pool.query("SELECT thumbnail, frontimg FROM books WHERE id=$1", [req.params.id]);
+    const b = r.rows[0];
+    if (!b) return res.status(404).end();
+    if (b.thumbnail?.startsWith("data:") && sendImage(res, b.thumbnail)) return;
+    if (b.frontimg?.startsWith("data:") && sendImage(res, b.frontimg)) return;
+    const url = [b.thumbnail, b.frontimg].find(x => /^https:\/\//.test(x || ""));
+    if (url) return res.redirect(302, url);
+    res.status(404).end();
+  } catch { res.status(500).end(); }
+});
+app.get("/api/img/avatar/:id", async (req, res) => {
+  try {
+    const r = await pool.query("SELECT avatar FROM users WHERE id=$1", [req.params.id]);
+    const a = r.rows[0]?.avatar;
+    if (a && sendImage(res, a)) return;
+    if (/^https:\/\//.test(a || "")) return res.redirect(302, a);
+    res.status(404).end();
+  } catch { res.status(500).end(); }
+});
+
+// ── ניתוח תמונות (מחובר בלבד + מכסה יומית) ─────────────────
+async function visionQuota(req, res, next) {
+  try {
+    const r = await pool.query("SELECT COUNT(*) FROM analytics WHERE event='vision' AND userid=$1 AND createdat>$2", [req.user.id, Date.now() - DAY]);
+    if (+r.rows[0].count >= VISION_DAILY_LIMIT) return res.status(429).json({ error: "הגעת למכסת הסריקות היומית. אפשר להזין את פרטי הספר ידנית" });
+    track("vision", req.user.id, { path: req.path });
+    next();
+  } catch (e) { next(e); }
+}
+const visionGuard = [limit("vision", 80, 10 * 60 * 1000), requireAuth, upload.single("image"), visionQuota];
+
+app.post("/api/analyze/front", visionGuard, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "לא הועלתה תמונה" });
+  try {
+    const { buf, mime } = await prepForVision(req.file);
+    const raw = await claudeVision(buf, mime, P_FRONT, 600);
     let vision = {};
     try { vision = parseJ(raw); } catch {}
-    Object.keys(vision).forEach(k => { if (typeof vision[k]==="string") vision[k]=vision[k].trim(); });
+    Object.keys(vision).forEach(k => { if (typeof vision[k] === "string") vision[k] = vision[k].trim(); });
     const conf = vision.confidence || {};
-    if ((conf.publisher||0) < 0.7) vision.publisher = "";
-    if ((conf.year||0) < 0.7) vision.year = "";
-    if ((conf.author||0) < 0.7) vision.author = "";
+    if ((conf.publisher || 0) < 0.7) vision.publisher = "";
+    if ((conf.year || 0) < 0.7) vision.year = "";
+    if ((conf.author || 0) < 0.7) vision.author = "";
     const { googleResults, enriched } = await enrich(vision);
-    const croppedImage = await cropBookImage(req.file.buffer, vision.crop);
-    res.json({ ok:true, data:enriched, googleResults, croppedImage });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post("/api/analyze/back", upload.single("image"), async (req,res) => {
-  if (!req.file) return res.status(400).json({ error:"לא הועלתה תמונה" });
-  try {
-    const raw = await claudeVision(req.file.buffer, req.file.mimetype, P_BACK, 900);
-    let data = {};
-    try { data = parseJ(raw); } catch { data = { summary: raw.trim() }; }
-    Object.keys(data).forEach(k => { if (typeof data[k]==="string") data[k]=data[k].trim(); });
-    // אם יש ISBN — חפש ב-Google Books לנתונים מדויקים
-    let googleData = {};
-    if (data.isbn && data.isbn.match(/^97[89]/)) {
-      const results = await gBooks(`isbn:${data.isbn}`, 1);
-      if (results.length) {
-        googleData = { publisher: results[0].publisher, year: results[0].year, title: results[0].title, author: results[0].author, thumbnail: results[0].thumbnail };
-      }
-    }
-    res.json({ ok:true, data: { summary:data.summary||"", isbn:data.isbn||"", price:data.price||"", genre:data.genre||"", publisher:googleData.publisher||data.publisher||"", year:googleData.year||data.year||"", googleTitle:googleData.title||"", googleAuthor:googleData.author||"", thumbnail:googleData.thumbnail||"" } });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post("/api/analyze/shelf", upload.single("image"), async (req,res) => {
-  if (!req.file) return res.status(400).json({ error:"לא הועלתה תמונה" });
-  try {
-    const raw = await claudeVision(req.file.buffer, req.file.mimetype, P_SHELF, 2500);
-    let arr = [];
-    try { const p = parseJ(raw); arr = Array.isArray(p) ? p : []; } catch { arr=[]; }
-    const results = arr.filter(x=>x.title?.trim()).map(x=>({ title:(x.title||"").trim(), author:(x.author||"").trim(), publisher:(x.publisher||"").trim(), year:(x.year||"").trim() }));
-    res.json({ ok:true, data:results, count:results.length });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/books/search", async (req,res) => {
-  const { q, limit="10" } = req.query;
-  if (!q?.trim()) return res.status(400).json({ error:"חסר q" });
-  try {
-    const results = await gBooks(q, Math.min(Number(limit),20));
-    res.json({ ok:true, results, count:results.length });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/books", async (req,res) => {
-  const { q, mode, lat, lng, ownerId, all, genre } = req.query;
-  try {
-    let query = ownerId && all ? "SELECT b.*, u.avatar as owneravatar FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.ownerid=$1" : "SELECT b.*, u.avatar as owneravatar FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.avail=true";
-    if (ownerId && all) {
-      const result = await pool.query(query, [ownerId]);
-      return res.json(result.rows);
-    }
-    const params = [];
-    if (q?.trim()) { params.push(`%${q.toLowerCase()}%`); query += ` AND (LOWER(title) LIKE $${params.length} OR LOWER(author) LIKE $${params.length})`; }
-    if (mode && mode!=="all") { params.push(mode); query += ` AND mode=$${params.length}`; }
-    if (genre && genre!=="all") { params.push(genre); query += ` AND genre=$${params.length}`; }
-    query += " ORDER BY createdAt DESC";
-    const result = await pool.query(query, params);
-    let books = result.rows;
-    if (lat && lng) {
-      const uLat=parseFloat(lat), uLng=parseFloat(lng);
-      books = books.map(b => ({ ...b, km: (b.lat&&b.lng) ? dist(uLat,uLng,b.lat,b.lng) : 99 }));
-      books.sort((a,b) => (a.km||99)-(b.km||99));
-    }
-    res.json(books);
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post("/api/books", upload.single("frontImage"), async (req,res) => {
-  const b = req.body;
-  if (!b.title?.trim()) return res.status(400).json({ error:"title חובה" });
-  try {
-    const id = randomUUID();
-    const frontImg = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}` : (b.thumbnail||null);
-      const city = (b.lat && b.lng) ? await reverseGeocode(parseFloat(b.lat), parseFloat(b.lng)) : null;
-    await pool.query(
-      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
-      [id, b.title.trim(), b.author||"", b.publisher||"", b.year||"", b.summary||"", b.condition||"",
-       b.series||"", b.volume||"", b.isbn||"", b.genre||"", b.mode||"sell",
-       b.mode==="sell"?(Number(b.price)||null):null, b.lendDuration||"", b.swapFor||"", b.lendUntil||b.lenduntil||"",
-       true, b.ownerName||"אני", b.ownerType||"private", b.phone||"", b.ownerId||null,
-       b.lat?parseFloat(b.lat):null, b.lng?parseFloat(b.lng):null, city, frontImg, b.thumbnail||null, Date.now()]
-    );
-    const book = (await pool.query("SELECT * FROM books WHERE id=$1", [id])).rows[0];
-    track("book_publish", b.ownerId, { bookId: id, title: b.title, mode: b.mode, city });
-    res.json({ ok:true, book });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.put("/api/books/:id", async (req,res) => {
-  const { userId, title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail, lat, lng, dealStatus } = req.body;
-  try {
-    const existing = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
-    if (!existing) return res.status(404).json({ error:"לא נמצא" });
-    if (userId && existing.ownerid && existing.ownerid !== userId) return res.status(403).json({ error:"אין הרשאה" });
-    await pool.query(
-      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11,avail=$12,lat=$13,lng=$14,city=$15,dealstatus=$16 WHERE id=$17`,
-      [title||existing.title, author||existing.author, publisher||existing.publisher, year||existing.year,
-       summary||existing.summary, mode||existing.mode, mode==="sell"?(Number(price)||null):null,
-       condition||existing.condition, lendDuration||existing.lendduration, swapFor||existing.swapfor, lendUntil||existing.lenduntil||"", avail!==undefined?avail:existing.avail, lat?parseFloat(lat):existing.lat, lng?parseFloat(lng):existing.lng, lat&&lng?(await reverseGeocode(parseFloat(lat),parseFloat(lng)))||existing.city:existing.city, dealStatus||existing.dealstatus||null, req.params.id]
-    );
-    const book = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
-    res.json({ ok:true, book });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.delete("/api/books/:id", async (req,res) => {
-  const { userId } = req.query;
-  try {
-    const existing = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
-    if (!existing) return res.status(404).json({ error:"לא נמצא" });
-    if (userId && existing.ownerid && existing.ownerid !== userId) return res.status(403).json({ error:"אין הרשאה" });
-    await pool.query("DELETE FROM books WHERE id=$1", [req.params.id]);
-    res.json({ ok:true });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post("/api/users/register", async (req,res) => {
-  const { name, phone, email, type, storeName, address, storeType } = req.body;
-  const miss = [];
-  if (!name?.trim()) miss.push("שם");
-  if (!phone?.trim()) miss.push("טלפון");
-  if (!email?.trim()) miss.push("אימייל");
-  if (miss.length) return res.status(400).json({ error:`שדות חסרים: ${miss.join(", ")}`, missing:miss });
-  try {
-    const ex = await pool.query("SELECT * FROM users WHERE email=$1", [email.trim().toLowerCase()]);
-    if (ex.rows.length) return res.json({ ok:true, user:ex.rows[0], existing:true });
-    let lat=null, lng=null;
-    if (address?.trim()) {
-      const geo = await geocode(address.trim());
-      if (geo) { lat=geo.lat; lng=geo.lng; }
-    }
-    const id = randomUUID();
-    await pool.query(
-      `INSERT INTO users (id,name,phone,email,type,storeName,address,storeType,lat,lng,plan,xp,chatCount,bookCount,createdAt)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'free',0,0,0,$11)`,
-      [id, name.trim(), phone.trim(), email.trim().toLowerCase(), type||"private",
-       storeName||"", address||"", storeType||"", lat, lng, Date.now()]
-    );
-    const user = (await pool.query("SELECT * FROM users WHERE id=$1", [id])).rows[0];
-    res.json({ ok:true, user, existing:false });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post("/api/users/login", async (req,res) => {
-  const { email } = req.body;
-  if (!email?.trim()) return res.status(400).json({ error:"אימייל חסר" });
-  try {
-    const result = await pool.query("SELECT * FROM users WHERE email=$1", [email.trim().toLowerCase()]);
-    if (!result.rows.length) return res.status(404).json({ error:"משתמש לא נמצא" });
-    track("login", result.rows[0].id, { email: email.trim().toLowerCase() });
-    res.json({ ok:true, user:result.rows[0] });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/users/:id", async (req,res) => {
-  try {
-    const result = await pool.query("SELECT * FROM users WHERE id=$1", [req.params.id]);
-    if (!result.rows.length) return res.status(404).json({ error:"לא נמצא" });
-    res.json(result.rows[0]);
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post("/api/users/:id/avatar", async (req, res) => {
-  try {
-    const { avatar } = req.body;
-    if (!avatar) return res.status(400).json({ error: "no avatar" });
-    await pool.query("UPDATE users SET avatar=$1 WHERE id=$2", [avatar, req.params.id]);
-    res.json({ ok: true, avatar });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-
-app.put("/api/users/:id/profile", async (req, res) => {
-  try {
-    const { bio, featuredBooks } = req.body;
-    await pool.query("UPDATE users SET bio=$1, featuredBooks=$2 WHERE id=$3", [bio||"", JSON.stringify(featuredBooks||[]), req.params.id]);
-    const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.params.id])).rows[0];
-    res.json({ ok: true, user });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-app.post("/api/auth/google", async (req, res) => {
-  const { token } = req.body;
-  if (!token) return res.status(400).json({ error:"no token" });
-  try {
-    const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + token);
-    const g = await r.json();
-    if (g.error || !g.email) return res.status(401).json({ error:"invalid token" });
-    const ex = await pool.query("SELECT * FROM users WHERE email=$1", [g.email.toLowerCase()]);
-    if (ex.rows.length) return res.json({ ok:true, user:ex.rows[0] });
-    const id = randomUUID();
-    await pool.query(
-      `INSERT INTO users (id,name,phone,email,type,storeName,address,storeType,lat,lng,plan,xp,chatCount,bookCount,createdAt)
-       VALUES ($1,$2,'','$3','private','','','',null,null,'free',0,0,0,$4)`,
-      [id, g.name||g.email.split("@")[0], g.email.toLowerCase(), Date.now()]
-    );
-    const user = (await pool.query("SELECT * FROM users WHERE id=$1", [id])).rows[0];
-    res.json({ ok:true, user });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-// ── OTP ──────────────────────────────────────────────────
-const otps = {};
-
-// ── Contacts ──────────────────────────────────────────────
-app.post("/api/contacts", async (req, res) => {
-  const { bookId, bookTitle, fromUserId, toUserId, type } = req.body;
-  if (!bookId || !fromUserId) return res.status(400).json({ error:"חסרים פרטים" });
-  try {
-    const existing = await pool.query("SELECT * FROM contacts WHERE bookId=$1 AND fromUserId=$2 ORDER BY createdat DESC LIMIT 1", [bookId, fromUserId]);
-    if (existing.rows.length) {
-      const c = existing.rows[0];
-      // אם הישן הוא pending — החזר אותו
-      if (c.status === "pending" && !c.askedstatus) return res.json({ ok:true, contact: c });
-      // אחרת (no, done, skip) — צור חדש
-    }
-    const id = randomUUID();
-    await pool.query(
-      "INSERT INTO contacts (id,bookId,bookTitle,fromUserId,toUserId,type,status,askedStatus,createdAt) VALUES ($1,$2,$3,$4,$5,$6,'pending',false,$7)",
-      [id, bookId, bookTitle||"", fromUserId, toUserId||"", type||"whatsapp", Date.now()]
-    );
-    res.json({ ok:true });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/contacts/owner-pending/:userId", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT c.*, b.title as booktitle, u.name as interestedname 
-       FROM contacts c 
-       LEFT JOIN books b ON c.bookid=b.id 
-       LEFT JOIN users u ON c.fromuserid=u.id
-       WHERE c.touserid=$1 AND c.status='done' AND c.ownerasked=false 
-       ORDER BY c.createdat DESC LIMIT 1`,
-      [req.params.userId]
-    );
-    res.json(result.rows[0] || null);
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/contacts/pending/:userId", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT c.*, b.title as booktitle FROM contacts c LEFT JOIN books b ON c.bookid=b.id WHERE c.fromuserid=$1 AND c.status='pending' AND c.askedstatus=false ORDER BY c.createdat DESC LIMIT 1",
-      [req.params.userId]
-    );
-    res.json(result.rows[0] || null);
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.put("/api/contacts/:id", async (req, res) => {
-  try {
-    const { status, dealStatus, bookId, markAsked, confirmedByOwner } = req.body;
-    await pool.query("UPDATE contacts SET status=$1, askedStatus=$2 WHERE id=$3", [status, markAsked===true, req.params.id]);
-
-    if (status === "done") {
-      // המתעניין אישר — נשלח שאלה למפרסם
-      // המתעניין אישר — סמן שצריך לשאול את המפרסם
-    }
-
-    if (confirmedByOwner !== undefined) {
-      // המפרסם ענה (כן או לא) — סמן ownerAsked=true כדי שלא ישאלו שוב
-      await pool.query("UPDATE contacts SET ownerAsked=true WHERE id=$1", [req.params.id]);
-    }
-    if (confirmedByOwner && bookId) {
-      // המפרסם אישר — בדוק אם גם המתעניין אישר
-      const contact = (await pool.query("SELECT * FROM contacts WHERE id=$1", [req.params.id])).rows[0];
-      if (contact && contact.status === "done") {
-        // שניהם אישרו — הורד מזמינות
-        const newOwnerId = contact.fromuserid;
-        const bookRow = (await pool.query("SELECT * FROM books WHERE id=$1", [bookId])).rows[0];
-        if (bookRow) {
-          const {randomUUID} = await import("crypto");
-          await pool.query("INSERT INTO book_history (id,bookid,fromuserid,touserid,type,createdat) VALUES ($1,$2,$3,$4,$5,$6)",[randomUUID(),bookId,bookRow.ownerid,newOwnerId,dealStatus||"agreed",Date.now()]);
-          const newOwner = (await pool.query("SELECT name,storename FROM users WHERE id=$1",[newOwnerId])).rows[0];
-          await pool.query("UPDATE books SET avail=false,dealstatus=null,prevownerid=$1,ownerid=$2,ownername=$3 WHERE id=$4",[bookRow.ownerid,newOwnerId,newOwner?.storename||newOwner?.name||"",bookId]);
-        }
-      }
-    }
-
-    res.json({ ok:true });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-// ── Admin ────────────────────────────────────────────────
-app.post("/api/analytics", async (req, res) => {
-  const { event, data, userId } = req.body;
-  if (!event) return res.status(400).json({ error:"event חסר" });
-  try {
-    await track(event, userId||null, data||{});
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get("/api/admin/stats", async (req, res) => {
-  const { key } = req.query;
-  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error:"unauthorized" });
-  try {
-    const now = Date.now();
-    const day = 86400000;
-    const week = day * 7;
-    const month = day * 30;
-
-    const [users, books, contacts, todayUsers, weekUsers, monthUsers,
-           todayBooks, weekBooks, monthBooks, todayContacts, cities, hourly] = await Promise.all([
-      pool.query("SELECT COUNT(*) FROM users"),
-      pool.query("SELECT COUNT(*) FROM books WHERE avail=true"),
-      pool.query("SELECT COUNT(*) FROM contacts WHERE status='done'"),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-day]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-week]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-month]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-day]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-week]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-month]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event IN ('login','register') AND createdat>$1", [now-day]),
-      pool.query("SELECT city, COUNT(*) as cnt FROM books WHERE city IS NOT NULL AND city!='' GROUP BY city ORDER BY cnt DESC LIMIT 10"),
-      pool.query("SELECT EXTRACT(HOUR FROM to_timestamp(createdat/1000)) as hour, COUNT(*) as cnt FROM analytics WHERE createdat>$1 GROUP BY hour ORDER BY hour", [now-week]),
-    ]);
-
-    res.json({
-      totals: { users: +users.rows[0].count, books: +books.rows[0].count, deals: +contacts.rows[0].count },
-      today: { users: +todayUsers.rows[0].count, books: +todayBooks.rows[0].count, logins: +todayContacts.rows[0].count },
-      week: { users: +weekUsers.rows[0].count, books: +weekBooks.rows[0].count },
-      month: { users: +monthUsers.rows[0].count, books: +monthBooks.rows[0].count },
-      cities: cities.rows,
-      hourly: hourly.rows,
-    });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post("/api/auth/send-otp", async (req, res) => {
-  const { email } = req.body;
-  if (!email?.trim()) return res.status(400).json({ error:"אימייל חסר" });
-  
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  otps[email.toLowerCase()] = { code, expires: Date.now() + 10 * 60 * 1000 };
-  
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: "Pageturner <noreply@pageturner.co.il>",
-        to: [email.trim()],
-        subject: "קוד הכניסה שלך ל-Pageturner",
-        html: `<div dir="rtl" style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:24px">
-          <h2 style="color:#0e0c08">📚 Pageturner</h2>
-          <p>קוד הכניסה שלך:</p>
-          <div style="font-size:36px;font-weight:900;letter-spacing:8px;color:#b5390e;padding:16px;background:#fef8ec;border-radius:12px;text-align:center">${code}</div>
-          <p style="color:#888;font-size:12px">הקוד תקף ל-10 דקות</p>
-        </div>`
-      })
-    });
-    if (!r.ok) { const t = await r.json(); throw new Error(t.message||"שגיאה בשליחה"); }
-    res.json({ ok: true });
-  } catch(e) {
-    console.error("OTP error:", e.message);
-    res.status(500).json({ error: e.message });
+    const croppedImage = await cropBookImage(buf, vision.crop);
+    res.json({ ok: true, data: enriched, googleResults, croppedImage });
+  } catch (e) {
+    console.error("analyze/front:", e.message);
+    res.status(502).json({ error: "לא הצלחנו לנתח את התמונה, אפשר למלא את הפרטים ידנית" });
   }
 });
 
-app.post("/api/auth/verify-otp", async (req, res) => {
-  const { email, code } = req.body;
-  if (!email || !code) return res.status(400).json({ error:"חסרים פרטים" });
-  
-  const stored = otps[email.toLowerCase()];
-  if (!stored) return res.status(400).json({ error:"לא נשלח קוד לכתובת זו" });
-  if (Date.now() > stored.expires) return res.status(400).json({ error:"הקוד פג תוקף" });
-  if (stored.code !== code) return res.status(400).json({ error:"קוד שגוי" });
-  
-  delete otps[email.toLowerCase()];
-  
-  const existing = await pool.query("SELECT * FROM users WHERE email=$1", [email.toLowerCase()]);
-  if (existing.rows.length) return res.json({ ok: true, user: existing.rows[0], isNew: false });
-  
-  res.json({ ok: true, user: null, isNew: true });
+app.post("/api/analyze/back", visionGuard, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "לא הועלתה תמונה" });
+  try {
+    const { buf, mime } = await prepForVision(req.file);
+    const raw = await claudeVision(buf, mime, P_BACK, 900);
+    let data = {};
+    try { data = parseJ(raw); } catch { data = { summary: raw.trim() }; }
+    Object.keys(data).forEach(k => { if (typeof data[k] === "string") data[k] = data[k].trim(); });
+    let googleData = {};
+    if (data.isbn && /^97[89]/.test(data.isbn)) {
+      const results = await gBooks(`isbn:${data.isbn}`, 1);
+      if (results.length) googleData = { publisher: results[0].publisher, year: results[0].year, title: results[0].title, author: results[0].author, thumbnail: results[0].thumbnail };
+    }
+    res.json({ ok: true, data: {
+      summary: data.summary || "", isbn: data.isbn || "", price: data.price || "", genre: data.genre || "",
+      publisher: googleData.publisher || data.publisher || "", year: googleData.year || data.year || "",
+      googleTitle: googleData.title || "", googleAuthor: googleData.author || "", thumbnail: googleData.thumbnail || "",
+    } });
+  } catch (e) {
+    console.error("analyze/back:", e.message);
+    res.status(502).json({ error: "לא הצלחנו לנתח את התמונה, אפשר למלא את הפרטים ידנית" });
+  }
 });
 
-
-
-// ── פונקציית שליחת דוח ──────────────────────────────────
-async function sendReport(type) {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  if (!adminEmail) return;
-
-  const now = Date.now();
-  const day = 86400000;
-  const week = day * 7;
-  const month = day * 30;
-  const period = type === "daily" ? day : type === "weekly" ? week : month;
-
+app.post("/api/analyze/shelf", visionGuard, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "לא הועלתה תמונה" });
   try {
-    const [users, books, deals, newUsers, newBooks, newDeals,
-           logins, guestLogins, views, searches, contacts, cities, hours] = await Promise.all([
-      pool.query("SELECT COUNT(*) FROM users"),
-      pool.query("SELECT COUNT(*) FROM books WHERE avail=true"),
-      pool.query("SELECT COUNT(*) FROM contacts WHERE status='done'"),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='register' AND createdat>$1", [now-period]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_publish' AND createdat>$1", [now-period]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event IN ('book_deal') AND createdat>$1", [now-period]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='login' AND createdat>$1", [now-period]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='guest_login' AND createdat>$1", [now-period]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_view' AND createdat>$1", [now-period]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='search' AND createdat>$1", [now-period]),
-      pool.query("SELECT COUNT(*) FROM analytics WHERE event='book_contact' AND createdat>$1", [now-period]),
-      pool.query("SELECT city, COUNT(*) as cnt FROM books WHERE city IS NOT NULL AND city!='' GROUP BY city ORDER BY cnt DESC LIMIT 5"),
-      pool.query("SELECT EXTRACT(HOUR FROM to_timestamp(createdat/1000)) as hour, COUNT(*) as cnt FROM analytics WHERE createdat>$1 GROUP BY hour ORDER BY cnt DESC LIMIT 5", [now-period]),
-    ]);
+    const { buf, mime } = await prepForVision(req.file);
+    const raw = await claudeVision(buf, mime, P_SHELF, 2500);
+    let arr = [];
+    try { const p = parseJ(raw); arr = Array.isArray(p) ? p : []; } catch { arr = []; }
+    const results = arr.filter(x => x.title?.trim()).map(x => ({ title: (x.title || "").trim(), author: (x.author || "").trim(), publisher: (x.publisher || "").trim(), year: (x.year || "").trim() }));
+    res.json({ ok: true, data: results, count: results.length });
+  } catch (e) {
+    console.error("analyze/shelf:", e.message);
+    res.status(502).json({ error: "לא הצלחנו לנתח את התמונה" });
+  }
+});
 
-    const periodHe = type === "daily" ? "יומי" : type === "weekly" ? "שבועי" : "חודשי";
-    const peakHours = hours.rows.map(h => `${h.hour}:00 (${h.cnt} אירועים)`).join(", ");
-    const topCities = cities.rows.map(c => `${c.city}: ${c.cnt}`).join(", ");
+// ── חיפוש חיצוני ──────────────────────────────────────────
+app.get("/api/books/search", limit("gsearch", 60, 60 * 1000), async (req, res) => {
+  const { q, limit: lim = "10" } = req.query;
+  if (!q?.trim()) return res.status(400).json({ error: "חסר q" });
+  const results = await gBooks(q, Math.min(Number(lim) || 10, 20));
+  res.json({ ok: true, results, count: results.length });
+});
 
-    const html = `
-<div dir="rtl" style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#fef8ec">
-  <h1 style="color:#0e0c08;font-size:24px;border-bottom:2px solid #b5390e;padding-bottom:12px">
-    📚 Pageturner — דוח ${periodHe}
-  </h1>
-  <p style="color:#888;font-size:13px">${new Date().toLocaleDateString("he-IL", {weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
+app.get("/api/books/search-google", limit("gsearch", 60, 60 * 1000), async (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: "missing q" });
+  const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
+  const [olRes, gbRes] = await Promise.all([
+    fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=key,title,author_name,cover_i,first_publish_year`, { headers: { "User-Agent": NOMINATIM_UA } }).then(r => r.json()).catch(() => ({ docs: [] })),
+    fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5${key}`).then(r => r.json()).catch(() => ({ items: [] })),
+  ]);
+  const olResults = (olRes.docs || []).map(item => ({
+    googleId: item.key, title: item.title || "", author: (item.author_name || []).slice(0, 2).join(", "),
+    thumbnail: item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : "",
+    year: item.first_publish_year ? String(item.first_publish_year) : "",
+  }));
+  const gbResults = (gbRes.items || []).map(item => ({
+    googleId: item.id, title: item.volumeInfo?.title || "", author: (item.volumeInfo?.authors || []).join(", "),
+    thumbnail: item.volumeInfo?.imageLinks?.thumbnail?.replace("http://", "https://") || "",
+    year: item.volumeInfo?.publishedDate?.substring(0, 4) || "",
+  }));
+  const seen = new Set(olResults.map(x => x.title.toLowerCase()));
+  res.json([...olResults, ...gbResults.filter(x => !seen.has(x.title.toLowerCase()))].slice(0, 8));
+});
 
-  <h2 style="color:#b5390e;font-size:16px">📊 סיכום כולל</h2>
-  <table style="width:100%;border-collapse:collapse">
-    <tr style="background:#f0ebe0">
-      <td style="padding:10px;border:1px solid #ddd">👥 סה"כ משתמשים</td>
-      <td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${users.rows[0].count}</td>
-    </tr>
-    <tr>
-      <td style="padding:10px;border:1px solid #ddd">📚 ספרים פעילים</td>
-      <td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${books.rows[0].count}</td>
-    </tr>
-    <tr style="background:#f0ebe0">
-      <td style="padding:10px;border:1px solid #ddd">🤝 עסקאות שבוצעו</td>
-      <td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${deals.rows[0].count}</td>
-    </tr>
-  </table>
-
-  <h2 style="color:#b5390e;font-size:16px;margin-top:20px">📈 פעילות ב${periodHe === "יומי" ? "24 שעות האחרונות" : periodHe === "שבועי" ? "שבוע האחרון" : "חודש האחרון"}</h2>
-  <table style="width:100%;border-collapse:collapse">
-    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">✅ הרשמות חדשות</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${newUsers.rows[0].count}</td></tr>
-    <tr><td style="padding:10px;border:1px solid #ddd">🔑 כניסות משתמשים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${logins.rows[0].count}</td></tr>
-    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">👀 כניסות כאורח</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${guestLogins.rows[0].count}</td></tr>
-    <tr><td style="padding:10px;border:1px solid #ddd">📖 ספרים חדשים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${newBooks.rows[0].count}</td></tr>
-    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">👁️ צפיות בספרים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${views.rows[0].count}</td></tr>
-    <tr><td style="padding:10px;border:1px solid #ddd">🔍 חיפושים</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${searches.rows[0].count}</td></tr>
-    <tr style="background:#f0ebe0"><td style="padding:10px;border:1px solid #ddd">📱 יצירות קשר</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${contacts.rows[0].count}</td></tr>
-    <tr><td style="padding:10px;border:1px solid #ddd">🤝 עסקאות חדשות</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${newDeals.rows[0].count}</td></tr>
-  </table>
-
-  ${topCities ? `<h2 style="color:#b5390e;font-size:16px;margin-top:20px">📍 ערים פעילות</h2><p style="color:#444">${topCities}</p>` : ""}
-  ${peakHours ? `<h2 style="color:#b5390e;font-size:16px;margin-top:20px">⏰ שעות שיא</h2><p style="color:#444">${peakHours}</p>` : ""}
-
-  <p style="color:#aaa;font-size:11px;margin-top:30px;border-top:1px solid #ddd;padding-top:12px">
-    Pageturner — ספרייה שכונתית | דוח אוטומטי
-  </p>
-</div>`;
-
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: "Pageturner Reports <noreply@pageturner.co.il>",
-        to: [adminEmail],
-        subject: `📊 Pageturner — דוח ${periodHe} | ${new Date().toLocaleDateString("he-IL")}`,
-        html
-      })
-    });
-    console.log(`✅ דוח ${periodHe} נשלח`);
-  } catch(e) { console.error("Report error:", e.message); }
+// ── ספרים ────────────────────────────────────────────────
+function parseCoords(q) {
+  const lat = parseFloat(q.lat), lng = parseFloat(q.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
 }
 
-// ── Cron Jobs ────────────────────────────────────────────
-// יומי — כל יום ב-8:00 בבוקר
-cron.schedule("0 8 * * *", () => sendReport("daily"), { timezone: "Asia/Jerusalem" });
-// שבועי — כל יום ראשון ב-9:00
-cron.schedule("0 9 * * 0", () => sendReport("weekly"), { timezone: "Asia/Jerusalem" });
-// חודשי — ראשון בחודש ב-10:00
-cron.schedule("0 10 1 * *", () => sendReport("monthly"), { timezone: "Asia/Jerusalem" });
-
-console.log("✅ Cron jobs registered");
-
-// שגיאות (כולל multer) תמיד חוזרות כ-JSON ולא כדף HTML
-app.use((err, req, res, next) => {
-  console.error("Request error:", err.code || "", err.message);
-  const tooBig = err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE" || err.type === "entity.too.large";
-  res.status(tooBig ? 413 : 500).json({ error: tooBig ? "התמונה גדולה מדי" : "שגיאת שרת" });
+app.get("/api/books", async (req, res) => {
+  const { q, mode, ownerId, all, genre } = req.query;
+  const coords = parseCoords(req.query);
+  try {
+    if (ownerId && all) {
+      const r = await pool.query(`SELECT ${BOOK_COLS} FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.ownerid=$1 ORDER BY b.createdat DESC`, [ownerId]);
+      return res.json(r.rows.map(b => publicBook(req, b, coords)));
+    }
+    let query = `SELECT ${BOOK_COLS} FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.avail=true`;
+    const params = [];
+    if (q?.trim()) {
+      params.push(`%${q.trim().toLowerCase()}%`);
+      query += ` AND (LOWER(b.title) LIKE $${params.length} OR LOWER(b.author) LIKE $${params.length} OR LOWER(b.ownername) LIKE $${params.length})`;
+    }
+    if (mode && mode !== "all") { params.push(mode); query += ` AND b.mode=$${params.length}`; }
+    if (genre && genre !== "all") { params.push(genre); query += ` AND b.genre=$${params.length}`; }
+    query += " ORDER BY b.createdat DESC LIMIT 500";
+    const r = await pool.query(query, params);
+    let books = r.rows.map(b => publicBook(req, b, coords));
+    if (coords) books.sort((a, b) => (a.km ?? 999) - (b.km ?? 999));
+    res.json(books);
+  } catch (e) { console.error("books:", e.message); res.status(500).json({ error: "שגיאה בטעינת ספרים" }); }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`\n📚 ספרייה שכונתית v4 — port ${PORT}`);
-  console.log(`   Anthropic:    ${process.env.ANTHROPIC_API_KEY?"✓":"✗ חסר!"}`);
-  console.log(`   Database:     ${process.env.DATABASE_URL?"✓ PostgreSQL":"⚠ in-memory"}`);
+app.get("/api/books/:id", async (req, res) => {
+  try {
+    const b = await getBookRow(req.params.id);
+    if (!b) return res.status(404).json({ error: "לא נמצא" });
+    res.json(publicBook(req, b, parseCoords(req.query)));
+  } catch { res.status(500).json({ error: "שגיאה" }); }
 });
-app.post("/api/admin/send-report", async (req, res) => {
-  const { key, type } = req.body;
-  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error:"unauthorized" });
-  await sendReport(type || "daily");
+
+// מקבל data URI או קישור https לתמונה, ומחזיר גרסה קטנה ובטוחה לשמירה
+async function cleanThumbnail(t) {
+  if (!t) return null;
+  if (/^https:\/\/[^\s"'<>]+$/.test(t)) return clip(t, 1000);
+  const parsed = dataUriToBuffer(t);
+  if (!parsed) return null;
+  try { return await shrinkImage(parsed.buf, 600, 900, 80); } catch { return null; }
+}
+
+app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, upload.single("frontImage"), async (req, res) => {
+  const b = req.body;
+  const u = req.user;
+  if (!b.title?.trim()) return res.status(400).json({ error: "שם הספר הוא שדה חובה" });
+  if (!u.phone) return res.status(400).json({ error: "כדי לפרסם ספר צריך להוסיף מספר טלפון בפרופיל", code: "phone" });
+  try {
+    const id = randomUUID();
+    let frontImg = null;
+    if (req.file) {
+      try { frontImg = await shrinkImage(req.file.buffer, 1000, 1400, 82); }
+      catch { return res.status(400).json({ error: "קובץ התמונה לא נתמך, נסו תמונה אחרת" }); }
+    }
+    const thumbnail = await cleanThumbnail(b.thumbnail);
+    const coords = parseCoords(b);
+    const city = coords ? await reverseGeocode(coords.lat, coords.lng) : null;
+    const mode = ["sell", "lend", "swap", "give"].includes(b.mode) ? b.mode : "sell";
+    await pool.query(
+      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+      [id, clip(b.title.trim(), 300), clip(b.author, 200), clip(b.publisher, 200), clip(b.year, 10), clip(b.summary, 4000), clip(b.condition, 100),
+       clip(b.series, 200), clip(b.volume, 20), clip(b.isbn, 20), clip(b.genre, 60), mode,
+       mode === "sell" ? (Number(b.price) || null) : null, clip(b.lendDuration, 60), clip(b.swapFor, 300), clip(b.lendUntil || b.lenduntil, 20),
+       true, u.storename || u.name || "", u.type || "private", u.phone || "", u.id,
+       coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now()]
+    );
+    track("book_publish", u.id, { bookId: id, title: b.title, mode, city });
+    notifyWishlist(id, b.title, b.author, u.id).catch(e => console.error("wishlist notify:", e.message));
+    res.json({ ok: true, book: publicBook(req, await getBookRow(id), coords) });
+  } catch (e) { console.error("publish:", e.message); res.status(500).json({ error: "הפרסום נכשל, נסו שוב" }); }
+});
+
+async function ownBook(req, res) {
+  const existing = (await pool.query("SELECT * FROM books WHERE id=$1", [req.params.id])).rows[0];
+  if (!existing) { res.status(404).json({ error: "הספר לא נמצא" }); return null; }
+  if (existing.ownerid !== req.user.id) { res.status(403).json({ error: "אין הרשאה לשנות ספר של משתמש אחר" }); return null; }
+  return existing;
+}
+
+app.put("/api/books/:id", requireAuth, async (req, res) => {
+  const { title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail, dealStatus } = req.body;
+  try {
+    const existing = await ownBook(req, res);
+    if (!existing) return;
+    const newMode = ["sell", "lend", "swap", "give"].includes(mode) ? mode : existing.mode;
+    const newPrice = newMode === "sell" ? (price !== undefined && price !== null && price !== "" ? Number(price) || null : existing.price) : null;
+    const coords = parseCoords(req.body);
+    const city = coords ? (await reverseGeocode(coords.lat, coords.lng)) || existing.city : existing.city;
+    await pool.query(
+      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11,avail=$12,lat=$13,lng=$14,city=$15,dealstatus=$16 WHERE id=$17`,
+      [clip(title || existing.title, 300), clip(author ?? existing.author, 200), clip(publisher ?? existing.publisher, 200), clip(year ?? existing.year, 10),
+       clip(summary ?? existing.summary, 4000), newMode, newPrice, clip(condition ?? existing.condition, 100),
+       clip(lendDuration ?? existing.lendduration, 60), clip(swapFor ?? existing.swapfor, 300), clip(lendUntil ?? existing.lenduntil ?? "", 20),
+       typeof avail === "boolean" ? avail : existing.avail, coords ? coords.lat : existing.lat, coords ? coords.lng : existing.lng, city,
+       dealStatus !== undefined ? (dealStatus ? clip(dealStatus, 20) : null) : existing.dealstatus, req.params.id]
+    );
+    if (dealStatus && existing.avail) track("book_deal", req.user.id, { bookId: req.params.id, dealStatus });
+    res.json({ ok: true, book: publicBook(req, await getBookRow(req.params.id), null) });
+  } catch (e) { console.error("update book:", e.message); res.status(500).json({ error: "העדכון נכשל" }); }
+});
+
+app.delete("/api/books/:id", requireAuth, async (req, res) => {
+  try {
+    const existing = await ownBook(req, res);
+    if (!existing) return;
+    await pool.query("DELETE FROM books WHERE id=$1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { console.error("delete book:", e.message); res.status(500).json({ error: "המחיקה נכשלה" }); }
+});
+
+// ── יצירת קשר: הטלפון נחשף רק למשתמש מחובר ─────────────────
+async function recordContact(bookId, bookTitle, fromUserId, toUserId, type) {
+  const existing = await pool.query("SELECT * FROM contacts WHERE bookId=$1 AND fromUserId=$2 ORDER BY createdat DESC LIMIT 1", [bookId, fromUserId]);
+  const c = existing.rows[0];
+  if (c && c.status === "pending" && !c.askedstatus) return c;
+  const id = randomUUID();
+  await pool.query(
+    "INSERT INTO contacts (id,bookId,bookTitle,fromUserId,toUserId,type,status,askedStatus,createdAt) VALUES ($1,$2,$3,$4,$5,$6,'pending',false,$7)",
+    [id, bookId, clip(bookTitle, 300), fromUserId, toUserId || "", ["whatsapp", "phone"].includes(type) ? type : "whatsapp", Date.now()]
+  );
+  track("book_contact", fromUserId, { bookId, type });
+  return { id };
+}
+
+// מחזיר את מספר הטלפון של המפרסם (לצפייה בדף הספר)
+app.get("/api/books/:id/phone", requireAuth, async (req, res) => {
+  if (!hit(`phone:${req.user.id}`, 80, DAY)) return res.status(429).json({ error: "הגעת למכסת הפניות היומית" });
+  try {
+    const b = (await pool.query("SELECT phone, ownerid, avail FROM books WHERE id=$1", [req.params.id])).rows[0];
+    if (!b) return res.status(404).json({ error: "הספר לא נמצא" });
+    if (!b.avail && b.ownerid !== req.user.id) return res.status(410).json({ error: "הספר כבר לא זמין" });
+    let phone = b.phone;
+    if (b.ownerid) {
+      const o = (await pool.query("SELECT phone FROM users WHERE id=$1", [b.ownerid])).rows[0];
+      if (o?.phone) phone = o.phone;
+    }
+    res.json({ ok: true, phone: phone || "" });
+  } catch { res.status(500).json({ error: "שגיאה" }); }
+});
+
+app.post("/api/contacts", requireAuth, async (req, res) => {
+  const { bookId, type } = req.body;
+  if (!bookId) return res.status(400).json({ error: "חסרים פרטים" });
+  try {
+    const b = (await pool.query("SELECT title, ownerid FROM books WHERE id=$1", [bookId])).rows[0];
+    if (!b) return res.status(404).json({ error: "הספר לא נמצא" });
+    if (b.ownerid === req.user.id) return res.json({ ok: true });
+    const contact = await recordContact(bookId, b.title, req.user.id, b.ownerid, type);
+    res.json({ ok: true, contact });
+  } catch (e) { console.error("contact:", e.message); res.status(500).json({ error: "שגיאה" }); }
+});
+
+app.get("/api/contacts/owner-pending/:userId", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.*, b.title as booktitle, u.name as interestedname
+       FROM contacts c LEFT JOIN books b ON c.bookid=b.id LEFT JOIN users u ON c.fromuserid=u.id
+       WHERE c.touserid=$1 AND c.status='done' AND c.ownerasked=false AND b.avail=true
+       ORDER BY c.createdat DESC LIMIT 1`,
+      [req.user.id]
+    );
+    res.json(result.rows[0] || null);
+  } catch { res.status(500).json({ error: "שגיאה" }); }
+});
+
+app.get("/api/contacts/pending/:userId", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.*, b.title as booktitle FROM contacts c LEFT JOIN books b ON c.bookid=b.id
+       WHERE c.fromuserid=$1 AND c.status='pending' AND c.askedstatus=false AND b.avail=true
+       ORDER BY c.createdat DESC LIMIT 1`,
+      [req.user.id]
+    );
+    res.json(result.rows[0] || null);
+  } catch { res.status(500).json({ error: "שגיאה" }); }
+});
+
+app.put("/api/contacts/:id", requireAuth, async (req, res) => {
+  try {
+    const { status, dealStatus, markAsked, confirmedByOwner } = req.body;
+    const contact = (await pool.query("SELECT * FROM contacts WHERE id=$1", [req.params.id])).rows[0];
+    if (!contact) return res.status(404).json({ error: "לא נמצא" });
+    const me = req.user.id;
+    const isInterested = contact.fromuserid === me;
+    const isOwner = contact.touserid === me;
+    if (!isInterested && !isOwner) return res.status(403).json({ error: "אין הרשאה" });
+
+    if (isInterested && confirmedByOwner === undefined) {
+      const st = ["pending", "no", "skip", "done"].includes(status) ? status : contact.status;
+      await pool.query("UPDATE contacts SET status=$1, askedStatus=$2 WHERE id=$3", [st, markAsked === true, contact.id]);
+    }
+    if (isOwner && confirmedByOwner !== undefined) {
+      await pool.query("UPDATE contacts SET ownerAsked=true, ownerConfirmed=$1 WHERE id=$2", [!!confirmedByOwner, contact.id]);
+      if (confirmedByOwner && contact.status === "done") {
+        const bookRow = (await pool.query("SELECT * FROM books WHERE id=$1", [contact.bookid])).rows[0];
+        if (bookRow && bookRow.ownerid === me && bookRow.avail) {
+          const newOwnerId = contact.fromuserid;
+          await pool.query("INSERT INTO book_history (id,bookid,fromuserid,touserid,type,createdat) VALUES ($1,$2,$3,$4,$5,$6)",
+            [randomUUID(), bookRow.id, bookRow.ownerid, newOwnerId, clip(dealStatus || "agreed", 20), Date.now()]);
+          const newOwner = (await pool.query("SELECT name,storename FROM users WHERE id=$1", [newOwnerId])).rows[0];
+          await pool.query("UPDATE books SET avail=false,dealstatus=null,prevownerid=$1,ownerid=$2,ownername=$3 WHERE id=$4",
+            [bookRow.ownerid, newOwnerId, newOwner?.storename || newOwner?.name || "", bookRow.id]);
+          track("book_deal", me, { bookId: bookRow.id, dealStatus });
+        }
+      }
+    }
+    res.json({ ok: true });
+  } catch (e) { console.error("contact update:", e.message); res.status(500).json({ error: "שגיאה" }); }
+});
+
+// ── קוד כניסה במייל (OTP) ─────────────────────────────────
+async function sendEmail(to, subject, html) {
+  if (!process.env.RESEND_API_KEY) { console.log(`[email skipped] to=${to} subject=${subject}`); return; }
+  const r = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [to], subject, html }),
+  });
+  if (!r.ok) { const t = await r.text(); throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`); }
+}
+
+app.post("/api/auth/send-otp", limit("otp-send", 40, 15 * 60 * 1000), async (req, res) => {
+  const email = normEmail(req.body.email);
+  if (!isEmail(email)) return res.status(400).json({ error: "כתובת המייל לא תקינה" });
+  try {
+    const now = Date.now();
+    const row = (await pool.query("SELECT * FROM otps WHERE email=$1", [email])).rows[0];
+    let sends = 1, windowstart = now;
+    if (row && now - Number(row.windowstart) < 60 * 60 * 1000) {
+      if (row.sends >= 5) return res.status(429).json({ error: "נשלחו יותר מדי קודים לכתובת הזו. נסו שוב בעוד שעה" });
+      sends = row.sends + 1; windowstart = Number(row.windowstart);
+    }
+    const code = String(randomInt(100000, 1000000));
+    await pool.query(
+      `INSERT INTO otps (email,codehash,expires,attempts,sends,windowstart) VALUES ($1,$2,$3,0,$4,$5)
+       ON CONFLICT (email) DO UPDATE SET codehash=$2, expires=$3, attempts=0, sends=$4, windowstart=$5`,
+      [email, sha256(email + ":" + code), now + 10 * 60 * 1000, sends, windowstart]
+    );
+    if (!process.env.RESEND_API_KEY && process.env.NODE_ENV !== "production") console.log(`[dev] OTP for ${email}: ${code}`);
+    await sendEmail(email, "קוד הכניסה שלך ל-Pageturner", `<div dir="rtl" style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:24px">
+      <h2 style="color:#1E2D3D">📚 Pageturner</h2>
+      <p>קוד הכניסה שלך:</p>
+      <div style="font-size:36px;font-weight:900;letter-spacing:8px;color:#1E2D3D;padding:16px;background:#f0f4ec;border-radius:12px;text-align:center">${code}</div>
+      <p style="color:#888;font-size:12px">הקוד תקף ל-10 דקות. אם לא ביקשת קוד, אפשר להתעלם מההודעה.</p>
+    </div>`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("OTP send:", e.message);
+    res.status(500).json({ error: "לא הצלחנו לשלוח את הקוד. בדקו את כתובת המייל ונסו שוב" });
+  }
+});
+
+app.post("/api/auth/verify-otp", limit("otp-verify", 80, 15 * 60 * 1000), async (req, res) => {
+  const email = normEmail(req.body.email);
+  const code = String(req.body.code || "").trim();
+  if (!email || !code) return res.status(400).json({ error: "חסרים פרטים" });
+  try {
+    const row = (await pool.query("SELECT * FROM otps WHERE email=$1", [email])).rows[0];
+    if (!row || !row.codehash) return res.status(400).json({ error: "לא נשלח קוד לכתובת הזו" });
+    if (Date.now() > Number(row.expires)) return res.status(400).json({ error: "הקוד פג תוקף, בקשו קוד חדש" });
+    if (row.attempts >= 5) return res.status(429).json({ error: "יותר מדי ניסיונות. בקשו קוד חדש" });
+    if (!safeEqual(row.codehash, sha256(email + ":" + code))) {
+      await pool.query("UPDATE otps SET attempts=attempts+1 WHERE email=$1", [email]);
+      return res.status(400).json({ error: "הקוד שגוי" });
+    }
+    const existing = (await pool.query("SELECT * FROM users WHERE email=$1", [email])).rows[0];
+    if (existing) {
+      await pool.query("UPDATE otps SET codehash=NULL WHERE email=$1", [email]);
+      const token = await createSession(existing.id);
+      track("login", existing.id, {});
+      return res.json({ ok: true, user: privateUser(req, existing), token, isNew: false });
+    }
+    // משתמש חדש: כרטיס הרשמה חד-פעמי שתקף ל-30 דקות
+    const ticket = randomBytes(24).toString("base64url");
+    await pool.query("UPDATE otps SET codehash=NULL, tickethash=$2, ticketexpires=$3 WHERE email=$1", [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
+    res.json({ ok: true, user: null, isNew: true, ticket });
+  } catch (e) { console.error("OTP verify:", e.message); res.status(500).json({ error: "שגיאה באימות, נסו שוב" }); }
+});
+
+// הרשמה: רק אחרי אימות המייל (עם הכרטיס מ-verify-otp)
+app.post("/api/users/register", limit("register", 40, 60 * 60 * 1000), async (req, res) => {
+  const { name, phone, type, storeName, address, storeType, ticket, emailConsent } = req.body;
+  const email = normEmail(req.body.email);
+  const miss = [];
+  if (!name?.trim()) miss.push("שם");
+  if (!phone?.trim()) miss.push("טלפון");
+  if (!email) miss.push("אימייל");
+  if (miss.length) return res.status(400).json({ error: `שדות חסרים: ${miss.join(", ")}`, missing: miss });
+  const phoneDigits = phone.replace(/[^\d+]/g, "");
+  if (!/^(\+972|0)\d{8,9}$/.test(phoneDigits)) return res.status(400).json({ error: "מספר הטלפון לא תקין" });
+  try {
+    const row = (await pool.query("SELECT tickethash, ticketexpires FROM otps WHERE email=$1", [email])).rows[0];
+    if (!ticket || !row?.tickethash || Date.now() > Number(row.ticketexpires) || !safeEqual(row.tickethash, sha256(ticket)))
+      return res.status(401).json({ error: "צריך לאמת את המייל מחדש", code: "verify" });
+    const ex = (await pool.query("SELECT * FROM users WHERE email=$1", [email])).rows[0];
+    let user = ex;
+    if (!ex) {
+      let lat = null, lng = null;
+      if (address?.trim()) { const geo = await geocode(address.trim()); if (geo) { lat = geo.lat; lng = geo.lng; } }
+      const id = randomUUID();
+      await pool.query(
+        `INSERT INTO users (id,name,phone,email,type,storeName,address,storeType,lat,lng,plan,xp,chatCount,bookCount,createdAt,email_consent)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'free',0,0,0,$11,$12)`,
+        [id, clip(name.trim(), 80), phoneDigits, email, type === "store" ? "store" : "private",
+         clip(storeName, 120), clip(address, 200), clip(storeType, 60), lat, lng, Date.now(), !!emailConsent]
+      );
+      user = (await pool.query("SELECT * FROM users WHERE id=$1", [id])).rows[0];
+      track("register", id, { type: user.type });
+    }
+    await pool.query("UPDATE otps SET tickethash=NULL WHERE email=$1", [email]);
+    const token = await createSession(user.id);
+    res.json({ ok: true, user: privateUser(req, user), token, existing: !!ex });
+  } catch (e) { console.error("register:", e.message); res.status(500).json({ error: "ההרשמה נכשלה, נסו שוב" }); }
+});
+
+// ── משתמשים ──────────────────────────────────────────────
+app.get("/api/me", requireAuth, (req, res) => res.json({ ok: true, user: privateUser(req, req.user) }));
+
+app.put("/api/me", requireAuth, async (req, res) => {
+  const { name, phone, emailConsent } = req.body;
+  try {
+    let phoneDigits = req.user.phone;
+    if (phone !== undefined) {
+      phoneDigits = String(phone).replace(/[^\d+]/g, "");
+      if (!/^(\+972|0)\d{8,9}$/.test(phoneDigits)) return res.status(400).json({ error: "מספר הטלפון לא תקין" });
+    }
+    const newName = name?.trim() ? clip(name.trim(), 80) : req.user.name;
+    await pool.query("UPDATE users SET name=$1, phone=$2, email_consent=$3 WHERE id=$4",
+      [newName, phoneDigits, emailConsent !== undefined ? !!emailConsent : req.user.email_consent, req.user.id]);
+    if (newName !== req.user.name && !req.user.storename) await pool.query("UPDATE books SET ownername=$1 WHERE ownerid=$2", [newName, req.user.id]);
+    if (phoneDigits !== req.user.phone) await pool.query("UPDATE books SET phone=$1 WHERE ownerid=$2", [phoneDigits, req.user.id]);
+    const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
+    res.json({ ok: true, user: privateUser(req, user) });
+  } catch (e) { console.error("update me:", e.message); res.status(500).json({ error: "העדכון נכשל" }); }
+});
+
+app.post("/api/auth/logout", requireAuth, async (req, res) => {
+  await pool.query("DELETE FROM sessions WHERE tokenhash=$1", [req.tokenHash]).catch(() => {});
   res.json({ ok: true });
 });
 
-// Wishlist endpoints
-app.post("/api/wishlist", async (req, res) => {
+// מחיקת חשבון: המשתמש, הספרים, המשאלות, החיבורים, ונתוני הפעילות מאוחסנים בלי זיהוי
+app.delete("/api/me", requireAuth, async (req, res) => {
+  const id = req.user.id;
+  const client = await pool.connect();
   try {
-    const { userId, query } = req.body;
-    if (!userId || !query) return res.status(400).json({ error: "missing fields" });
-    const { randomUUID } = await import("crypto");
-    await pool.query(
-      "INSERT INTO wishlist (id,userid,query,createdat) VALUES ($1,$2,$3,$4)",
-      [randomUUID(), userId, query.toLowerCase().trim(), Date.now()]
-    );
+    await client.query("BEGIN");
+    await client.query("DELETE FROM books WHERE ownerid=$1", [id]);
+    await client.query("DELETE FROM wishlist WHERE userid=$1", [id]);
+    await client.query("DELETE FROM contacts WHERE fromuserid=$1 OR touserid=$1", [id]);
+    await client.query("DELETE FROM sessions WHERE userid=$1", [id]);
+    await client.query("DELETE FROM otps WHERE email=$1", [req.user.email]);
+    await client.query("UPDATE analytics SET userid=NULL WHERE userid=$1", [id]);
+    await client.query("DELETE FROM users WHERE id=$1", [id]);
+    await client.query("COMMIT");
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("delete account:", e.message);
+    res.status(500).json({ error: "מחיקת החשבון נכשלה" });
+  } finally { client.release(); }
 });
 
-app.get("/api/wishlist/matches/:userId", async (req, res) => {
+app.get("/api/users/:id", async (req, res) => {
   try {
-    const wishes = (await pool.query("SELECT * FROM wishlist WHERE userid=$1", [req.params.userId])).rows;
+    const result = await pool.query("SELECT * FROM users WHERE id=$1", [req.params.id]);
+    if (!result.rows.length) return res.status(404).json({ error: "לא נמצא" });
+    const u = result.rows[0];
+    res.json(req.user?.id === u.id ? privateUser(req, u) : publicUser(req, u));
+  } catch { res.status(500).json({ error: "שגיאה" }); }
+});
+
+function selfOnly(req, res, next) {
+  if (req.params.id !== req.user.id) return res.status(403).json({ error: "אין הרשאה" });
+  next();
+}
+
+app.post("/api/users/:id/avatar", requireAuth, selfOnly, async (req, res) => {
+  try {
+    const parsed = dataUriToBuffer(req.body.avatar);
+    if (!parsed) return res.status(400).json({ error: "תמונה לא תקינה" });
+    const avatar = await shrinkImage(parsed.buf, 300, 300, 75);
+    await pool.query("UPDATE users SET avatar=$1 WHERE id=$2", [avatar, req.user.id]);
+    res.json({ ok: true, avatar: avatarUrl(req, { id: req.user.id, avatar }) });
+  } catch (e) { console.error("avatar:", e.message); res.status(500).json({ error: "העלאת התמונה נכשלה" }); }
+});
+
+app.put("/api/users/:id/profile", requireAuth, selfOnly, async (req, res) => {
+  try {
+    const { bio, featuredBooks } = req.body;
+    await pool.query("UPDATE users SET bio=$1, featuredBooks=$2 WHERE id=$3", [clip(bio, 150), JSON.stringify(Array.isArray(featuredBooks) ? featuredBooks.slice(0, 12) : []), req.user.id]);
+    const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
+    res.json({ ok: true, user: privateUser(req, user) });
+  } catch { res.status(500).json({ error: "העדכון נכשל" }); }
+});
+
+// ── רשימת משאלות ─────────────────────────────────────────
+app.post("/api/wishlist", requireAuth, async (req, res) => {
+  try {
+    const query = String(req.body.query || "").toLowerCase().trim();
+    if (query.length < 2) return res.status(400).json({ error: "חסר שם ספר" });
+    const count = (await pool.query("SELECT COUNT(*) FROM wishlist WHERE userid=$1", [req.user.id])).rows[0].count;
+    if (+count >= 50) return res.status(400).json({ error: "אפשר לשמור עד 50 משאלות" });
+    const dup = await pool.query("SELECT id FROM wishlist WHERE userid=$1 AND query=$2", [req.user.id, query]);
+    if (!dup.rows.length) await pool.query("INSERT INTO wishlist (id,userid,query,createdat,notified) VALUES ($1,$2,$3,$4,false)", [randomUUID(), req.user.id, clip(query, 200), Date.now()]);
+    res.json({ ok: true });
+  } catch (e) { console.error("wishlist:", e.message); res.status(500).json({ error: "שגיאה" }); }
+});
+
+app.get("/api/wishlist/matches/:userId", requireAuth, async (req, res) => {
+  try {
+    const wishes = (await pool.query("SELECT * FROM wishlist WHERE userid=$1", [req.user.id])).rows;
     const matches = [];
     for (const w of wishes) {
-      const books = (await pool.query(
-        "SELECT * FROM books WHERE avail=true AND (LOWER(title) LIKE $1 OR LOWER(author) LIKE $1) LIMIT 3",
-        [`%${w.query}%`]
-      )).rows;
-      if (books.length > 0) matches.push({ wish: w, books });
+      const r = await pool.query(
+        `SELECT ${BOOK_COLS} FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.avail=true AND b.ownerid<>$2 AND (LOWER(b.title) LIKE $1 OR LOWER(b.author) LIKE $1) ORDER BY b.createdat DESC LIMIT 3`,
+        [`%${w.query}%`, req.user.id]
+      );
+      if (r.rows.length) matches.push({ wish: w, books: r.rows.map(b => publicBook(req, b, null)) });
     }
     res.json(matches);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch { res.status(500).json({ error: "שגיאה" }); }
 });
 
-app.delete("/api/wishlist/:id", async (req, res) => {
+app.delete("/api/wishlist/:id", requireAuth, async (req, res) => {
   try {
-    await pool.query("DELETE FROM wishlist WHERE id=$1", [req.params.id]);
+    await pool.query("DELETE FROM wishlist WHERE id=$1 AND userid=$2", [req.params.id, req.user.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch { res.status(500).json({ error: "שגיאה" }); }
 });
 
-// חיפוש ספרים לwishlist
-app.get("/api/books/search-google", async (req, res) => {
+// כשמתפרסם ספר — מייל למי שחיכה לו
+async function notifyWishlist(bookId, title, author, ownerId) {
+  const t = String(title || "").toLowerCase(), a = String(author || "").toLowerCase();
+  if (!t) return;
+  const r = await pool.query(
+    `SELECT w.id, w.query, u.email, u.name FROM wishlist w JOIN users u ON u.id=w.userid
+     WHERE w.notified=false AND w.userid<>$3 AND length(w.query)>=2 AND ($1 LIKE '%' || w.query || '%' OR ($2 <> '' AND $2 LIKE '%' || w.query || '%'))`,
+    [t, a, ownerId]
+  );
+  for (const w of r.rows) {
+    try {
+      await sendEmail(w.email, `📚 "${title}" זמין עכשיו ב-Pageturner`, `<div dir="rtl" style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+        <h2 style="color:#1E2D3D">היי ${escapeHtml(w.name || "")},</h2>
+        <p>ביקשת שנעדכן אותך — הספר <b>${escapeHtml(title)}</b> פורסם עכשיו בספרייה השכונתית.</p>
+        <p><a href="${PUBLIC_SITE}/?book=${bookId}" style="display:inline-block;background:#6B8F47;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:700">לצפייה בספר</a></p>
+        <p style="color:#999;font-size:12px">קיבלת את המייל כי ביקשת התראה על הספר הזה.</p>
+      </div>`);
+      await pool.query("UPDATE wishlist SET notified=true WHERE id=$1", [w.id]);
+    } catch (e) { console.error("wish email:", e.message); }
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ── צור קשר: נשלח למייל של המנהל ─────────────────────────
+app.post("/api/feedback", limit("feedback", 5, 60 * 60 * 1000), async (req, res) => {
+  const message = String(req.body.message || "").trim();
+  const replyTo = normEmail(req.body.email || req.user?.email || "");
+  if (message.length < 3) return res.status(400).json({ error: "כתבו כמה מילים" });
+  if (!process.env.ADMIN_EMAIL) return res.status(503).json({ error: "לא ניתן לשלוח כרגע" });
   try {
-    const q = req.query.q;
-    if (!q) return res.status(400).json({ error: "missing q" });
-    const key = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
-    
-    // חיפוש מקביל ב-Open Library ו-Google Books
-    const [olRes, gbRes] = await Promise.all([
-      fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=key,title,author_name,cover_i,first_publish_year`).then(r=>r.json()).catch(()=>({docs:[]})),
-      fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5${key}`).then(r=>r.json()).catch(()=>({items:[]}))
-    ]);
-
-    const olResults = (olRes.docs||[]).map(item => ({
-      googleId: item.key,
-      title: item.title || "",
-      author: (item.author_name||[]).slice(0,2).join(", "),
-      thumbnail: item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : "",
-      year: item.first_publish_year ? String(item.first_publish_year) : ""
-    }));
-
-    const gbResults = (gbRes.items||[]).map(item => ({
-      googleId: item.id,
-      title: item.volumeInfo?.title || "",
-      author: (item.volumeInfo?.authors||[]).join(", "),
-      thumbnail: item.volumeInfo?.imageLinks?.thumbnail?.replace("http://","https://") || "",
-      year: item.volumeInfo?.publishedDate?.substring(0,4) || ""
-    }));
-
-    // מזג - קודם Open Library, אחר כך Google Books ללא כפילויות
-    const seen = new Set(olResults.map(x=>x.title.toLowerCase()));
-    const merged = [...olResults, ...gbResults.filter(x=>!seen.has(x.title.toLowerCase()))].slice(0,8);
-    res.json(merged);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    await sendEmail(process.env.ADMIN_EMAIL, `📮 פנייה מהאתר${req.user ? " — " + clip(req.user.name, 40) : ""}`, `<div dir="rtl" style="font-family:sans-serif">
+      <p><b>מאת:</b> ${escapeHtml(req.user?.name || "אורח")} ${replyTo ? "&lt;" + escapeHtml(replyTo) + "&gt;" : ""}</p>
+      <p style="white-space:pre-wrap;background:#f5f0e8;padding:12px;border-radius:8px">${escapeHtml(clip(message, 3000))}</p>
+    </div>`);
+    res.json({ ok: true });
+  } catch (e) { console.error("feedback:", e.message); res.status(500).json({ error: "השליחה נכשלה, נסו שוב" }); }
 });
-// Sat Jun  6 14:47:37 IDT 2026
+
+// ── אנליטיקס ─────────────────────────────────────────────
+const CLIENT_EVENTS = new Set(["search", "book_view", "page_load", "guest_login", "book_contact", "share"]);
+app.post("/api/analytics", limit("analytics", 120, 60 * 1000), async (req, res) => {
+  const { event, data } = req.body;
+  if (!CLIENT_EVENTS.has(event)) return res.status(400).json({ error: "event לא מוכר" });
+  const safe = JSON.stringify(data || {}).length <= 1000 ? data : {};
+  await track(event, req.user?.id || null, safe);
+  res.json({ ok: true });
+});
+
+// ── אדמין ────────────────────────────────────────────────
+function isAdmin(req) {
+  const key = req.get("x-admin-key") || req.query.key || req.body?.key;
+  return !!process.env.ADMIN_KEY && safeEqual(key, process.env.ADMIN_KEY);
+}
+app.get("/api/admin/stats", limit("admin", 20, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
+  try {
+    const now = Date.now(), week = DAY * 7, month = DAY * 30;
+    const q = (sql, p) => pool.query(sql, p);
+    const [users, books, contacts, todayUsers, weekUsers, monthUsers, todayBooks, weekBooks, monthBooks, todayLogins, cities, hourly] = await Promise.all([
+      q("SELECT COUNT(*) FROM users"),
+      q("SELECT COUNT(*) FROM books WHERE avail=true"),
+      q("SELECT COUNT(*) FROM book_history"),
+      q("SELECT COUNT(*) FROM users WHERE createdat>$1", [now - DAY]),
+      q("SELECT COUNT(*) FROM users WHERE createdat>$1", [now - week]),
+      q("SELECT COUNT(*) FROM users WHERE createdat>$1", [now - month]),
+      q("SELECT COUNT(*) FROM books WHERE createdat>$1", [now - DAY]),
+      q("SELECT COUNT(*) FROM books WHERE createdat>$1", [now - week]),
+      q("SELECT COUNT(*) FROM books WHERE createdat>$1", [now - month]),
+      q("SELECT COUNT(DISTINCT userid) FROM analytics WHERE event IN ('login','register','page_load') AND userid IS NOT NULL AND createdat>$1", [now - DAY]),
+      q("SELECT city, COUNT(*) as cnt FROM books WHERE city IS NOT NULL AND city!='' GROUP BY city ORDER BY cnt DESC LIMIT 10"),
+      q("SELECT EXTRACT(HOUR FROM to_timestamp(createdat/1000) AT TIME ZONE 'Asia/Jerusalem') as hour, COUNT(*) as cnt FROM analytics WHERE createdat>$1 GROUP BY hour ORDER BY hour", [now - week]),
+    ]);
+    res.json({
+      totals: { users: +users.rows[0].count, books: +books.rows[0].count, deals: +contacts.rows[0].count },
+      today: { users: +todayUsers.rows[0].count, books: +todayBooks.rows[0].count, logins: +todayLogins.rows[0].count },
+      week: { users: +weekUsers.rows[0].count, books: +weekBooks.rows[0].count },
+      month: { users: +monthUsers.rows[0].count, books: +monthBooks.rows[0].count },
+      cities: cities.rows, hourly: hourly.rows,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/admin/send-report", limit("admin", 20, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
+  await sendReport(req.body.type || "daily");
+  res.json({ ok: true });
+});
+
+// ── דוחות במייל ──────────────────────────────────────────
+async function sendReport(type) {
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (!adminEmail) return;
+  const now = Date.now();
+  const period = type === "daily" ? DAY : type === "weekly" ? DAY * 7 : DAY * 30;
+  try {
+    const q = (sql, p) => pool.query(sql, p);
+    const [users, books, deals, newUsers, newBooks, newDeals, logins, guestLogins, views, searches, contacts, cities, hours] = await Promise.all([
+      q("SELECT COUNT(*) FROM users"),
+      q("SELECT COUNT(*) FROM books WHERE avail=true"),
+      q("SELECT COUNT(*) FROM book_history"),
+      q("SELECT COUNT(*) FROM users WHERE createdat>$1", [now - period]),
+      q("SELECT COUNT(*) FROM books WHERE createdat>$1", [now - period]),
+      q("SELECT COUNT(*) FROM analytics WHERE event='book_deal' AND createdat>$1", [now - period]),
+      q("SELECT COUNT(DISTINCT userid) FROM analytics WHERE event IN ('login','page_load') AND userid IS NOT NULL AND createdat>$1", [now - period]),
+      q("SELECT COUNT(*) FROM analytics WHERE event='guest_login' AND createdat>$1", [now - period]),
+      q("SELECT COUNT(*) FROM analytics WHERE event='book_view' AND createdat>$1", [now - period]),
+      q("SELECT COUNT(*) FROM analytics WHERE event='search' AND createdat>$1", [now - period]),
+      q("SELECT COUNT(*) FROM analytics WHERE event='book_contact' AND createdat>$1", [now - period]),
+      q("SELECT city, COUNT(*) as cnt FROM books WHERE city IS NOT NULL AND city!='' GROUP BY city ORDER BY cnt DESC LIMIT 5"),
+      q("SELECT EXTRACT(HOUR FROM to_timestamp(createdat/1000) AT TIME ZONE 'Asia/Jerusalem') as hour, COUNT(*) as cnt FROM analytics WHERE createdat>$1 GROUP BY hour ORDER BY cnt DESC LIMIT 5", [now - period]),
+    ]);
+    const periodHe = type === "daily" ? "יומי" : type === "weekly" ? "שבועי" : "חודשי";
+    const peakHours = hours.rows.map(h => `${h.hour}:00 (${h.cnt} אירועים)`).join(", ");
+    const topCities = cities.rows.map(c => `${escapeHtml(c.city)}: ${c.cnt}`).join(", ");
+    const row = (label, v, shade) => `<tr${shade ? ' style="background:#f0ebe0"' : ""}><td style="padding:10px;border:1px solid #ddd">${label}</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${v}</td></tr>`;
+    const html = `
+<div dir="rtl" style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f0e8">
+  <h1 style="color:#1E2D3D;font-size:24px;border-bottom:2px solid #6B8F47;padding-bottom:12px">📚 Pageturner — דוח ${periodHe}</h1>
+  <p style="color:#888;font-size:13px">${new Date().toLocaleDateString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Jerusalem" })}</p>
+  <h2 style="color:#6B8F47;font-size:16px">📊 סיכום כולל</h2>
+  <table style="width:100%;border-collapse:collapse">
+    ${row("👥 סה\"כ משתמשים", users.rows[0].count, 1)}${row("📚 ספרים פעילים", books.rows[0].count)}${row("🤝 עסקאות שבוצעו", deals.rows[0].count, 1)}
+  </table>
+  <h2 style="color:#6B8F47;font-size:16px;margin-top:20px">📈 פעילות בתקופה</h2>
+  <table style="width:100%;border-collapse:collapse">
+    ${row("✅ הרשמות חדשות", newUsers.rows[0].count, 1)}${row("🔑 משתמשים פעילים", logins.rows[0].count)}${row("👀 כניסות כאורח", guestLogins.rows[0].count, 1)}
+    ${row("📖 ספרים חדשים", newBooks.rows[0].count)}${row("👁️ צפיות בספרים", views.rows[0].count, 1)}${row("🔍 חיפושים", searches.rows[0].count)}
+    ${row("📱 פניות למפרסמים", contacts.rows[0].count, 1)}${row("🤝 עסקאות חדשות", newDeals.rows[0].count)}
+  </table>
+  ${topCities ? `<h2 style="color:#6B8F47;font-size:16px;margin-top:20px">📍 ערים פעילות</h2><p style="color:#444">${topCities}</p>` : ""}
+  ${peakHours ? `<h2 style="color:#6B8F47;font-size:16px;margin-top:20px">⏰ שעות שיא</h2><p style="color:#444">${peakHours}</p>` : ""}
+  <p style="color:#aaa;font-size:11px;margin-top:30px;border-top:1px solid #ddd;padding-top:12px">Pageturner — ספרייה שכונתית | דוח אוטומטי</p>
+</div>`;
+    await sendEmail(adminEmail, `📊 Pageturner — דוח ${periodHe} | ${new Date().toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" })}`, html);
+    console.log(`✅ דוח ${periodHe} נשלח`);
+  } catch (e) { console.error("Report error:", e.message); }
+}
+
+cron.schedule("0 8 * * *", () => sendReport("daily"), { timezone: "Asia/Jerusalem" });
+cron.schedule("0 9 * * 0", () => sendReport("weekly"), { timezone: "Asia/Jerusalem" });
+cron.schedule("0 10 1 * *", () => sendReport("monthly"), { timezone: "Asia/Jerusalem" });
+// ניקוי: חיבורים שפגו וקודים ישנים
+cron.schedule("30 3 * * *", async () => {
+  try {
+    await pool.query("DELETE FROM sessions WHERE createdat < $1", [Date.now() - SESSION_DAYS * DAY]);
+    await pool.query("DELETE FROM otps WHERE windowstart < $1", [Date.now() - DAY]);
+  } catch (e) { console.error("cleanup:", e.message); }
+}, { timezone: "Asia/Jerusalem" });
+
+// ── הקטנת תמונות ישנות (פעם אחת, ברקע) ──────────────────────
+async function shrinkOldImages() {
+  let done = 0;
+  const seen = [];
+  try {
+    for (;;) {
+      const r = await pool.query(
+        `SELECT id FROM books WHERE ((frontimg LIKE 'data:%' AND length(frontimg) > 400000) OR (thumbnail LIKE 'data:%' AND length(thumbnail) > 250000))
+         AND NOT (id = ANY($1::text[])) LIMIT 5`, [seen]
+      );
+      if (!r.rows.length) break;
+      for (const { id } of r.rows) {
+        seen.push(id);
+        const b = (await pool.query("SELECT frontimg, thumbnail FROM books WHERE id=$1", [id])).rows[0];
+        let front = b.frontimg, thumb = b.thumbnail;
+        try {
+          if (front?.startsWith("data:") && front.length > 400000) front = await shrinkImage(dataUriToBuffer(front).buf, 1000, 1400, 82);
+          if (thumb?.startsWith("data:") && thumb.length > 250000) thumb = await shrinkImage(dataUriToBuffer(thumb).buf, 600, 900, 80);
+        } catch (e) {
+          console.error("shrink", id, e.message);
+          if (front?.length > 400000) front = null;
+          if (thumb?.startsWith("data:") && thumb.length > 250000) thumb = null;
+        }
+        await pool.query("UPDATE books SET frontimg=$1, thumbnail=$2 WHERE id=$3", [front, thumb, id]);
+        done++;
+      }
+    }
+    if (done) console.log(`🖼️ ${done} תמונות ישנות הוקטנו`);
+  } catch (e) { console.error("shrinkOldImages:", e.message); }
+}
+
+// ── שגיאות: תמיד JSON בעברית ─────────────────────────────
+app.use("/api", (req, res) => res.status(404).json({ error: "לא נמצא" }));
+app.use((err, req, res, next) => {
+  console.error("Request error:", err.code || "", err.message);
+  const tooBig = err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE" || err.type === "entity.too.large";
+  if (res.headersSent) return next(err);
+  res.status(tooBig ? 413 : 500).json({ error: tooBig ? "התמונה גדולה מדי" : "שגיאת שרת, נסו שוב" });
+});
+
+initDB()
+  .then(() => setTimeout(shrinkOldImages, 5000))
+  .catch(e => console.error("DB init error:", e.message));
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`\n📚 ספרייה שכונתית v5 — port ${PORT}`);
+  console.log(`   Anthropic:    ${process.env.ANTHROPIC_API_KEY ? "✓" : "✗ חסר!"}`);
+  console.log(`   Database:     ${process.env.DATABASE_URL ? "✓ PostgreSQL" : "✗ חסר!"}`);
+});

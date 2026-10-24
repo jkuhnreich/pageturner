@@ -1,7 +1,23 @@
-const BASE = import.meta.env.VITE_API_URL || "";
 // frontend/src/App.jsx
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate, useParams, Routes, Route } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+
+const BASE = import.meta.env.VITE_API_URL ||
+  (typeof location !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "" : "https://pageturner-production-5baf.up.railway.app");
+
+// ── חיבור: הטוקן נשמר בדפדפן ונשלח בכל בקשה ─────────────────
+const session = {
+  token() { try { return localStorage.getItem("pt_token") || ""; } catch { return ""; } },
+  save(user, token) {
+    try {
+      if (token) localStorage.setItem("pt_token", token);
+      localStorage.setItem("pt_user", JSON.stringify(user));
+      localStorage.setItem("pt_screen", "app");
+    } catch {}
+  },
+  saveUser(user) { try { localStorage.setItem("pt_user", JSON.stringify(user)); } catch {} },
+  clear() { try { ["pt_token", "pt_user", "pt_screen"].forEach(k => localStorage.removeItem(k)); } catch {} },
+};
 
 // קורא תשובה כ-JSON גם כשהשרת מחזיר HTML, בלי להציג למשתמש שגיאה טכנית
 async function safeJson(r) {
@@ -10,30 +26,52 @@ async function safeJson(r) {
   catch { return { error: r.status === 413 ? "התמונה גדולה מדי" : "השרת לא זמין כרגע, נסו שוב בעוד רגע" }; }
 }
 
-// ── כל קריאות ה-API עוברות דרך /api (proxy ל-3001) ─────────
+async function request(method, path, body, isForm) {
+  const headers = {};
+  const t = session.token();
+  if (t) headers.Authorization = "Bearer " + t;
+  let payload;
+  if (isForm) payload = body;
+  else if (body !== undefined) { headers["Content-Type"] = "application/json"; payload = JSON.stringify(body); }
+  let r;
+  try { r = await fetch(BASE + path, { method, headers, body: payload }); }
+  catch { throw Object.assign(new Error("אין חיבור לאינטרנט או שהשרת לא זמין"), { code: "network" }); }
+  const data = await safeJson(r);
+  if (r.status === 401 && data?.code === "auth") document.dispatchEvent(new CustomEvent("pt-auth-expired"));
+  if (!r.ok) throw Object.assign(new Error(data?.error || "משהו השתבש, נסו שוב"), { code: data?.code, status: r.status });
+  return data;
+}
+
 const api = {
-  async get(path) {
-    const r = await fetch(BASE + path);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  },
-  async post(path, body) {
-    const r = await fetch(BASE + path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await safeJson(r);
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-    return data;
-  },
-  async upload(path, formData) {
-    const r = await fetch(BASE + path, { method: "POST", body: formData });
-    const data = await safeJson(r);
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-    return data;
-  },
+  get: path => request("GET", path),
+  post: (path, body) => request("POST", path, body ?? {}),
+  put: (path, body) => request("PUT", path, body ?? {}),
+  del: path => request("DELETE", path),
+  upload: (path, formData) => request("POST", path, formData, true),
+  // אירועי שימוש — לא חוסמים ולא מציגים שגיאות
+  track: (event, data) => { request("POST", "/api/analytics", { event, data: data || {} }).catch(() => {}); },
 };
+
+// מקטין תמונה בטלפון לפני העלאה: מהיר יותר בגלישה סלולרית
+function compressImage(file, max = 1600, quality = 0.85) {
+  return new Promise(resolve => {
+    if (!file || !/^image\//.test(file.type) || file.type === "image/gif") return resolve(file);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const ratio = Math.min(max / img.width, max / img.height, 1);
+      if (ratio === 1 && file.size < 1.5 * 1024 * 1024) return resolve(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(b => resolve(b ? new File([b], "photo.jpg", { type: "image/jpeg" }) : file), "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
 
 // ── עיצוב בסיסי ────────────────────────────────────────────
 const C = {
@@ -52,7 +90,6 @@ const MODES = {
 };
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Rubik:wght@400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#f5f0e8;font-family:'Rubik',sans-serif;direction:rtl}
 input,textarea,button{font-family:'Rubik',sans-serif}
@@ -64,6 +101,10 @@ input::placeholder,textarea::placeholder{color:#9a9080}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 @keyframes spineRise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes toastIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #6B8F47;outline-offset:2px}
+img{max-width:100%}
 `;
 
 // ── קומפוננטים קטנים ────────────────────────────────────────
@@ -120,9 +161,9 @@ function Spinner({ size="small" }) {
 
 function Toast({ t }) {
   if (!t) return null;
-  const bg = { ok: C.teal, warn: C.gold, err: C.accent }[t.type] || C.teal;
+  const bg = { ok: C.teal, warn: "#b7791f", err: C.red }[t.type] || C.teal;
   return (
-    <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:bg,color:"#fff",padding:"10px 20px",borderRadius:99,fontSize:13,fontWeight:700,zIndex:9999,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,.25)",animation:"toastIn .28s cubic-bezier(.34,1.56,.64,1)"}}>
+    <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:bg,color:"#fff",padding:"10px 20px",borderRadius:16,fontSize:13,fontWeight:700,zIndex:9999,maxWidth:"calc(100vw - 32px)",textAlign:"center",lineHeight:1.5,boxShadow:"0 4px 20px rgba(0,0,0,.25)",animation:"toastIn .28s cubic-bezier(.34,1.56,.64,1)"}}>
       {t.msg}
     </div>
   );
@@ -215,7 +256,7 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile }) {
 }
 
 // ── מסך הוספת ספר ──────────────────────────────────────────
-function AddBook({ user, onDone, toast_, coords }) {
+function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
   const [step, setStep] = useState("gps"); // gps | choose | camera | manual
   const [gpsGranted, setGpsGranted] = useState(false);
   const [fp, setFp] = useState(null);  // front preview URL
@@ -231,10 +272,11 @@ function AddBook({ user, onDone, toast_, coords }) {
   const [preview, setPreview] = useState(false);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
-  const scanFront = async file => {
-    setFp(URL.createObjectURL(file));
-    setFrontFile(file);
+  const scanFront = async raw => {
+    setFp(URL.createObjectURL(raw));
     setFl(true);
+    const file = await compressImage(raw);
+    setFrontFile(file);
     try {
       const fd = new FormData();
       fd.append("image", file);
@@ -252,13 +294,14 @@ function AddBook({ user, onDone, toast_, coords }) {
       const cnt = [d.title, d.author, d.publisher].filter(Boolean).length;
       toast_(`✓ כריכה קדמית — ${cnt} פרטים חולצו`);
     } catch (e) {
-      toast_("שגיאה בניתוח כריכה קדמית: " + e.message, "err");
+      toast_(e.message, "err");
     } finally { setFl(false); }
   };
 
-  const scanBack = async file => {
-    setBp(URL.createObjectURL(file));
+  const scanBack = async raw => {
+    setBp(URL.createObjectURL(raw));
     setBl(true);
+    const file = await compressImage(raw);
     try {
       const fd = new FormData();
       fd.append("image", file);
@@ -280,7 +323,7 @@ function AddBook({ user, onDone, toast_, coords }) {
         toast_("כריכה נותחה — לא נמצאו פרטים", "warn");
       }
     } catch (e) {
-      toast_("שגיאה בניתוח כריכה אחורית: " + e.message, "err");
+      toast_(e.message, "err");
     } finally { setBl(false); }
   };
 
@@ -302,18 +345,15 @@ function AddBook({ user, onDone, toast_, coords }) {
       const location = await getCoords();
       const fd = new FormData();
       Object.entries(form).forEach(([k,v]) => { if(v) fd.append(k, String(v)); });
-      fd.append("ownerName", user.storeName || user?.name);
-      fd.append("ownerId", user?.id);
-      fd.append("ownerType", user?.type);
       if (location) { fd.append("lat", location.lat); fd.append("lng", location.lng); }
-      fd.append("phone", user?.phone);
       if (frontFile) fd.append("frontImage", frontFile);
 
       const res = await api.upload("/api/books", fd);
       toast_("הספר פורסם! 🎉");
       onDone(res.book);
     } catch (e) {
-      toast_("שגיאה בפרסום: " + e.message, "err");
+      toast_(e.message, "err");
+      if (e.code === "phone" && onNeedPhone) onNeedPhone();
     } finally { setSaving(false); }
   };
 
@@ -336,7 +376,7 @@ function AddBook({ user, onDone, toast_, coords }) {
           const file = e.target.files[0];
           if(!file) return;
           setFp(URL.createObjectURL(file));
-          setFrontFile(file);
+          setFrontFile(await compressImage(file));
           setForm(f=>({...f,thumbnail:""}));
         }}/>
       </label>
@@ -345,7 +385,7 @@ function AddBook({ user, onDone, toast_, coords }) {
           {saving ? <><Spinner/> מפרסם...</> : "פרסם ✨"}
         </Btn>
         <Btn variant="outline" onClick={()=>setPreview(false)} style={{flex:1,padding:"13px",borderRadius:13}}>
-          ← ערוך
+          → עריכה
         </Btn>
       </div>
     </div>
@@ -402,7 +442,7 @@ function AddBook({ user, onDone, toast_, coords }) {
   return (
     <div style={{animation:"fadeUp .2s ease"}}>
       <button onClick={()=>setStep("choose")} style={{background:C.bg,border:"none",borderRadius:9,padding:"6px 12px",cursor:"pointer",fontSize:13,marginBottom:14}}>
-        ← חזרה
+        → חזרה
       </button>
 
       {step === "camera" && (
@@ -489,112 +529,139 @@ function AddBook({ user, onDone, toast_, coords }) {
   );
 }
 
-function Login({ onBack, onDone }) {
+// שדה קוד בן 6 ספרות — מקלדת מספרים והשלמה אוטומטית מה-SMS/מייל
+function CodeInput({ value, onChange, onEnter }) {
+  return (
+    <input value={value} onChange={e=>onChange(e.target.value.replace(/\D/g,"").slice(0,6))}
+      onKeyDown={e=>e.key==="Enter"&&onEnter&&onEnter()}
+      inputMode="numeric" autoComplete="one-time-code" placeholder="••••••" autoFocus
+      style={{width:"100%",padding:"16px",borderRadius:12,border:`1.5px solid ${C.border}`,marginBottom:14,fontSize:26,textAlign:"center",letterSpacing:10,background:C.bg,color:C.ink,outline:"none",direction:"ltr"}} />
+  );
+}
+
+function Login({ onBack, onDone, onRegister }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState("email");
   const [err, setErr] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
   const sendOtp = async () => {
-    if (!email.trim()) return setErr("הכנס אימייל");
-    setLoading(true); setErr("");
+    if (!email.trim()) return setErr("הכנס כתובת מייל");
+    setLoading(true); setErr(""); setInfo("");
     try {
       await api.post("/api/auth/send-otp", { email });
-      setStep("code");
+      setStep("code"); setCode("");
+      setInfo("הקוד נשלח. כדאי לבדוק גם בתיקיית הספאם");
     } catch(e) { setErr(e.message); }
     setLoading(false);
   };
 
   const verifyOtp = async () => {
-    if (!code.trim()) return setErr("הכנס קוד");
+    if (code.length !== 6) return setErr("הקוד בן 6 ספרות");
     setLoading(true); setErr("");
     try {
       const res = await api.post("/api/auth/verify-otp", { email, code });
-      if (res.isNew) return setErr("משתמש לא נמצא — אנא הירשם");
-      onDone(res.user);
+      if (res.isNew) { setLoading(false); return onRegister({ email: email.trim().toLowerCase(), ticket: res.ticket }); }
+      onDone(res.user, res.token);
     } catch(e) { setErr(e.message); }
     setLoading(false);
   };
 
   return (
     <div style={{minHeight:"100vh",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",padding:24,direction:"rtl"}}>
-      <div style={{background:C.paper,borderRadius:20,padding:28,width:"100%",maxWidth:380}}>
-        <button onClick={step==="code"?()=>setStep("email"):onBack} style={{background:"none",border:"none",fontSize:16,color:C.muted,cursor:"pointer",marginBottom:20}}>← חזרה</button>
-        <h2 style={{fontFamily:"'Playfair Display',serif",marginBottom:8}}>התחבר</h2>
+      <div style={{background:C.white,borderRadius:22,padding:"26px 24px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:"fadeUp .25s ease"}}>
+        <button onClick={step==="code"?()=>{setStep("email");setErr("");}:onBack} style={{background:C.bg,border:"none",borderRadius:9,padding:"6px 12px",fontSize:13,color:C.muted,cursor:"pointer",marginBottom:18}}>→ חזרה</button>
+        <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,color:C.ink,marginBottom:6}}>{step==="email"?"התחברות":"הקוד שלך"}</h2>
         {step==="email" ? <>
-          <p style={{fontSize:13,color:C.muted,marginBottom:20}}>נשלח לך קוד כניסה למייל</p>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="כתובת מייל" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:17}} />
-          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
-          <Btn onClick={sendOtp} disabled={loading} style={{width:"100%",padding:"17px",borderRadius:14}}>{loading?"שולח...":"שלח קוד →"}</Btn>
+          <p style={{fontSize:14,color:C.muted,marginBottom:20,lineHeight:1.6}}>בלי סיסמאות. נשלח לך קוד כניסה למייל.</p>
+          <input type="email" inputMode="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendOtp()} placeholder="כתובת מייל" autoFocus
+            style={{width:"100%",padding:"15px 16px",borderRadius:12,border:`1.5px solid ${C.border}`,marginBottom:14,fontSize:17,background:C.bg,color:C.ink,outline:"none",direction:"ltr",textAlign:"right"}} />
+          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
+          <Btn onClick={sendOtp} disabled={loading} style={{width:"100%",padding:"16px",borderRadius:14,fontSize:16}}>{loading?"שולח...":"שלחו לי קוד"}</Btn>
         </> : <>
-          <p style={{fontSize:13,color:C.muted,marginBottom:20}}>הכנס את הקוד שנשלח ל-{email}</p>
-          <input type="number" value={code} onChange={e=>setCode(e.target.value)} placeholder="קוד בן 6 ספרות" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:22,textAlign:"center",letterSpacing:8}} />
-          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
-          <Btn onClick={verifyOtp} disabled={loading} style={{width:"100%",padding:"17px",borderRadius:14}}>{loading?"מאמת...":"כניסה →"}</Btn>
-          <button onClick={sendOtp} style={{width:"100%",marginTop:10,background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer"}}>לא קיבלת? שלח שוב</button>
+          <p style={{fontSize:14,color:C.muted,marginBottom:16,lineHeight:1.6}}>שלחנו קוד בן 6 ספרות אל <b style={{color:C.ink,direction:"ltr",display:"inline-block"}}>{email}</b></p>
+          <CodeInput value={code} onChange={setCode} onEnter={verifyOtp}/>
+          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
+          {!err && info && <div style={{color:C.muted,fontSize:12,marginBottom:10}}>{info}</div>}
+          <Btn onClick={verifyOtp} disabled={loading||code.length!==6} style={{width:"100%",padding:"16px",borderRadius:14,fontSize:16}}>{loading?"מאמת...":"כניסה"}</Btn>
+          <button onClick={sendOtp} disabled={loading} style={{width:"100%",marginTop:12,background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:600,cursor:"pointer"}}>לא הגיע? שלחו שוב</button>
         </>}
       </div>
     </div>
   );
 }
 
-// ── מסך הרשמה ──────────────────────────────────────────────
-function Register({ onBack, onDone }) {
-  const [type, setType] = useState(null);
-  const [form, setForm] = useState({ name:"", phone:"", email:"", storeName:"", address:"" });
+// ── מסך הרשמה: פרטים ← קוד במייל ← סיום ─────────────────────
+function Register({ onBack, onDone, prefill, onShowLegal }) {
+  const [type, setType] = useState(prefill ? "private" : null);
+  const [form, setForm] = useState({ name:"", phone:"", email: prefill?.email || "", storeName:"", address:"" });
+  const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [ticket, setTicket] = useState(prefill?.ticket || null);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
-  const valid = form.name && form.phone && form.email && (type!=="store" || (form.storeName && form.address));
+  const phoneOk = /^(\+972|0)\d{8,9}$/.test(form.phone.replace(/[^\d+]/g,""));
+  const valid = form.name.trim() && phoneOk && /\S+@\S+\.\S+/.test(form.email) && (type!=="store" || (form.storeName && form.address));
 
   const [otpStep, setOtpStep] = useState(false);
   const [otp, setOtp] = useState("");
-  const [pendingUser, setPendingUser] = useState(null);
+
+  const finish = async (tk) => {
+    const res = await api.post("/api/users/register", { ...form, type, ticket: tk, emailConsent: consent });
+    onDone(res.user, res.token);
+  };
 
   const submit = async () => {
+    if (!valid) return setErr(!phoneOk && form.phone ? "מספר הטלפון לא תקין" : "יש למלא את כל שדות החובה");
     setLoading(true); setErr("");
     try {
-      const res = await api.post("/api/users/register", { ...form, type });
+      if (ticket) { await finish(ticket); return; }
       await api.post("/api/auth/send-otp", { email: form.email });
-      setPendingUser(res.user);
       setOtpStep(true);
-    } catch(e) { setErr(e.message); }
+    } catch(e) {
+      if (e.code === "verify") { setTicket(null); setErr("צריך לאמת את המייל שוב"); }
+      else setErr(e.message);
+    }
     finally { setLoading(false); }
   };
 
   const verifyOtp = async () => {
-    if (!otp.trim()) return setErr("הכנס קוד");
+    if (otp.length !== 6) return setErr("הקוד בן 6 ספרות");
     setLoading(true); setErr("");
     try {
-      await api.post("/api/auth/verify-otp", { email: form.email, code: otp });
-      onDone(pendingUser);
+      const res = await api.post("/api/auth/verify-otp", { email: form.email, code: otp });
+      if (!res.isNew) { onDone(res.user, res.token); return; }
+      setTicket(res.ticket);
+      await finish(res.ticket);
     } catch(e) { setErr(e.message); }
     setLoading(false);
   };
 
   const quotes = [
-    "\"ספר טוב הוא חבר לכל החיים\" 📚",
-    "\"מי שקורא חי אלף חיים\" ✨",
-    "\"הכל מתחיל בפרק הבא...\" 📖",
+    "\"ספר טוב הוא חבר לכל החיים\"",
+    "\"מי שקורא חי אלף חיים\"",
+    "\"הכל מתחיל בפרק הבא...\"",
   ];
   const q = quotes[Math.floor(Date.now()/1000) % 3];
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,direction:"rtl"}}>
-      <div style={{background:HDR,padding:"22px 17px 20px"}}>
-        {onBack && <button onClick={onBack} style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:9,padding:"6px 12px",color:"rgba(255,255,255,.7)",fontSize:14,cursor:"pointer",marginBottom:12}}>← חזרה</button>}
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,fontWeight:900,color:"#fff"}}>
-          {type ? "הרשמה" : "מדפדפים לפרק הבא 📖"}
+      <div style={{background:HDR,padding:"22px 18px 22px"}}>
+        {onBack && <button onClick={onBack} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:9,padding:"6px 12px",color:"rgba(255,255,255,.8)",fontSize:13,cursor:"pointer",marginBottom:14}}>→ חזרה</button>}
+        <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,fontWeight:900,color:"#fff"}}>
+          {otpStep ? "כמעט שם" : type ? "הרשמה" : "מדפדפים לפרק הבא"}
         </div>
-        {!type && <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginTop:4,fontStyle:"italic"}}>{q}</div>}
+        {!type && <div style={{fontSize:13,color:"rgba(255,255,255,.55)",marginTop:6,fontStyle:"italic"}}>{q}</div>}
+        {prefill && !otpStep && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",marginTop:6}}>המייל אומת. נשארו רק כמה פרטים</div>}
       </div>
 
-      <div style={{padding:"18px 15px"}}>
+      <div style={{padding:"18px 15px",maxWidth:520,margin:"0 auto"}}>
         {!type
           ? <>
-              <div style={{fontSize:13,color:C.muted,marginBottom:18,lineHeight:1.7,textAlign:"center"}}>
-                רק שם, טלפון ומייל — ואנחנו בפרק הבא! 🙂
+              <div style={{fontSize:14,color:C.muted,marginBottom:18,lineHeight:1.7,textAlign:"center"}}>
+                רק שם, טלפון ומייל, ואנחנו בפרק הבא
               </div>
               <div style={{display:"flex",gap:12}}>
                 {[
@@ -602,58 +669,124 @@ function Register({ onBack, onDone }) {
                   {t:"store",  i:"🏪",tl:"חנות ספרים", d:"נהל מלאי וקבל התראות"},
                 ].map(o=>(
                   <div key={o.t} onClick={()=>setType(o.t)}
-                    style={{flex:1,background:C.white,borderRadius:18,border:`2px solid ${C.border}`,padding:"20px 12px",cursor:"pointer",textAlign:"center",boxShadow:"0 2px 9px rgba(0,0,0,.06)"}}>
+                    style={{flex:1,background:C.white,borderRadius:18,border:`2px solid ${C.border}`,padding:"22px 12px",cursor:"pointer",textAlign:"center",boxShadow:"0 2px 9px rgba(0,0,0,.06)"}}>
                     <div style={{fontSize:38,marginBottom:10}}>{o.i}</div>
-                    <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:5}}>{o.tl}</div>
-                    <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>{o.d}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:C.ink,marginBottom:5}}>{o.tl}</div>
+                    <div style={{fontSize:12,color:C.muted,lineHeight:1.5}}>{o.d}</div>
                   </div>
                 ))}
               </div>
             </>
+          : otpStep ? <>
+              <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"20px 16px",marginBottom:12}}>
+                <p style={{fontSize:14,color:C.muted,marginBottom:14,lineHeight:1.6}}>שלחנו קוד בן 6 ספרות אל <b style={{color:C.ink,direction:"ltr",display:"inline-block"}}>{form.email}</b>. כדאי לבדוק גם בספאם.</p>
+                <CodeInput value={otp} onChange={setOtp} onEnter={verifyOtp}/>
+                {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
+                <Btn onClick={verifyOtp} disabled={loading||otp.length!==6} style={{width:"100%",padding:"15px",borderRadius:13,fontSize:15}}>{loading?"מאמת...":"אמת והיכנס"}</Btn>
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:12}}>
+                  <button onClick={()=>{setOtpStep(false);setErr("");}} style={{background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer"}}>תיקון פרטים</button>
+                  <button onClick={submit} disabled={loading} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:600,cursor:"pointer"}}>שלחו קוד שוב</button>
+                </div>
+              </div>
+            </>
           : <>
-              <button onClick={()=>setType(null)} style={{background:C.bg,border:"none",borderRadius:9,padding:"6px 13px",cursor:"pointer",fontSize:13,marginBottom:14}}>← חזרה</button>
+              {!prefill && <button onClick={()=>setType(null)} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:9,padding:"6px 13px",cursor:"pointer",fontSize:13,marginBottom:14,color:C.muted}}>→ סוג חשבון</button>}
               <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"16px",marginBottom:12}}>
-                <div style={{fontSize:11,color:C.muted,marginBottom:14}}>שדות עם * הם חובה</div>
-                <Inp label="שם" required value={form.name}  onChange={upd("name")}  placeholder="השם שלך" icon="👤"/>
-                <Inp label="טלפון" required value={form.phone} onChange={upd("phone")} placeholder="050-0000000" inputMode="tel" icon="📞"/>
-                <Inp label="אימייל" required value={form.email} onChange={upd("email")} placeholder="email@example.com" type="email" icon="✉️"/>
+                <div style={{fontSize:12,color:C.muted,marginBottom:14}}>שדות עם * הם חובה</div>
+                <Inp label="שם" required value={form.name}  onChange={upd("name")}  placeholder="השם שלך" icon="👤" autoComplete="name"/>
+                <Inp label="טלפון" required value={form.phone} onChange={upd("phone")} placeholder="050-0000000" inputMode="tel" type="tel" icon="📞" autoComplete="tel"/>
+                <div style={{fontSize:11,color:C.muted,marginTop:-8,marginBottom:12}}>מוצג רק למשתמשים רשומים שפונים אליך לגבי ספר</div>
+                <Inp label="אימייל" required value={form.email} onChange={upd("email")} placeholder="email@example.com" type="email" inputMode="email" icon="✉️" autoComplete="email" disabled={!!prefill}/>
                 {type === "store" && <>
                   <div style={{height:1,background:C.border,margin:"12px 0"}}/>
                   <Inp label="שם החנות" required value={form.storeName} onChange={upd("storeName")} placeholder="שם החנות" icon="🏪"/>
                   <Inp label="כתובת החנות" required value={form.address} onChange={upd("address")} placeholder="רחוב, מספר, עיר" icon="📍"/>
                 </>}
+                <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:13,color:C.ink,lineHeight:1.5,cursor:"pointer",marginTop:4}}>
+                  <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} style={{marginTop:3,width:18,height:18,accentColor:C.accent,flexShrink:0}}/>
+                  <span>אשמח לקבל עדכונים על ספרים חדשים בשכונה (אפשר להסיר בכל רגע)</span>
+                </label>
               </div>
-              {err && <div style={{background:C.redL,borderRadius:10,padding:"10px 14px",fontSize:13,color:C.red,marginBottom:12}}>⚠️ {err}</div>}
-              {otpStep ? <>
-            <p style={{fontSize:13,color:C.muted,marginBottom:12}}>הכנס את הקוד שנשלח ל-{form.email}</p>
-            <input type="number" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="קוד בן 6 ספרות" style={{width:"100%",padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,marginBottom:14,fontSize:22,textAlign:"center",letterSpacing:8}} />
-            <Btn onClick={verifyOtp} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:13}}>{loading?"מאמת...":"אמת וכנס →"}</Btn>
-          </> : <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"14px",borderRadius:13}}>
-            {loading ? <><Spinner/> שולח קוד...</> : type==="store" ? "🏪 פתח חנות" : "📖 מדפדפים →"}
-          </Btn>}
+              {err && <div style={{background:C.redL,borderRadius:10,padding:"10px 14px",fontSize:13,color:C.red,marginBottom:12}}>{err}</div>}
+              <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"15px",borderRadius:13,fontSize:15}}>
+                {loading ? <><Spinner/> רגע...</> : ticket ? "סיום הרשמה" : type==="store" ? "פתיחת חנות" : "המשך"}
+              </Btn>
+              <div style={{fontSize:12,color:C.muted,textAlign:"center",marginTop:12,lineHeight:1.6}}>
+                בהרשמה אני מסכים/ה ל<button onClick={()=>onShowLegal("terms")} style={linkBtn}>תנאי השימוש</button> ול<button onClick={()=>onShowLegal("privacy")} style={linkBtn}>מדיניות הפרטיות</button>
+              </div>
             </>
         }
       </div>
     </div>
   );
 }
+const linkBtn = {background:"none",border:"none",padding:0,color:"#4a6b2f",textDecoration:"underline",cursor:"pointer",fontSize:"inherit",fontFamily:"inherit"};
 
 // ── מסך פתיחה ──────────────────────────────────────────────
-function Splash({ onReg, onGuest, onLogin, onAdmin }) {
+function Splash({ onReg, onGuest, onLogin, onShowLegal }) {
   return (
-    <div style={{minHeight:"100vh",background:HDR,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
-      <div style={{display:"flex",gap:5,marginBottom:34}}>
+    <div style={{minHeight:"100vh",background:`radial-gradient(120% 80% at 50% 0%, #2a3d52 0%, ${HDR} 60%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
+      <div style={{display:"flex",gap:5,marginBottom:34,alignItems:"flex-end"}}>
         {SPINES.map((c,i)=>(
           <div key={i} style={{width:14,height:52+Math.sin(i*.9)*9,borderRadius:"3px 5px 5px 3px",background:c,boxShadow:`2px 2px 10px ${c}66`,animation:`spineRise .5s ${i*.07}s both ease`}}/>
         ))}
       </div>
-      <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:"#fff",textAlign:"center",lineHeight:1.15,marginBottom:9}}>ספרייה<br/>שכונתית</div>
-      <div style={{color:"rgba(255,255,255,.4)",fontSize:14,marginBottom:44}}>השאל · קנה · החלף · גלה</div>
+      <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:36,fontWeight:900,color:"#fff",textAlign:"center",lineHeight:1.12,marginBottom:12}}>ספרייה<br/>שכונתית</h1>
+      <div style={{color:"rgba(255,255,255,.7)",fontSize:15,marginBottom:10,textAlign:"center",lineHeight:1.6,maxWidth:300}}>הספרים שכבר קראת, אצל השכנים שמחפשים אותם</div>
+      <div style={{color:"rgba(255,255,255,.4)",fontSize:13,marginBottom:40,letterSpacing:".5px"}}>השאלה · מכירה · החלפה · מסירה</div>
       <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
-        <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13}}>הרשמה →</Btn>
-              <Btn onClick={onLogin} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:13,background:"rgba(255,255,255,.15)"}}>התחבר →</Btn>
-        <button onClick={onGuest} style={{width:"100%",padding:"13px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:13,color:"rgba(255,255,255,.75)",fontSize:14,cursor:"pointer"}}>כניסה כאורח 👀</button>
-        <button onClick={onAdmin} style={{marginTop:8,background:"none",border:"none",color:"rgba(255,255,255,.25)",fontSize:11,cursor:"pointer",width:"100%"}}>⚙️</button>
+        <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"15px",fontSize:16,borderRadius:14,boxShadow:"0 6px 20px rgba(107,143,71,.35)"}}>הצטרפות חינם</Btn>
+        <Btn onClick={onLogin} style={{width:"100%",padding:"15px",fontSize:15,borderRadius:14,background:"rgba(255,255,255,.14)"}}>יש לי חשבון</Btn>
+        <button onClick={onGuest} style={{width:"100%",padding:"13px",background:"none",border:"none",color:"rgba(255,255,255,.7)",fontSize:14,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:4}}>להציץ בספרים בלי להירשם</button>
+      </div>
+      <div style={{marginTop:36,fontSize:12,color:"rgba(255,255,255,.35)",display:"flex",gap:14}}>
+        <button onClick={()=>onShowLegal("terms")} style={{...linkBtn,color:"rgba(255,255,255,.45)",textDecoration:"none"}}>תנאי שימוש</button>
+        <span>·</span>
+        <button onClick={()=>onShowLegal("privacy")} style={{...linkBtn,color:"rgba(255,255,255,.45)",textDecoration:"none"}}>פרטיות</button>
+      </div>
+    </div>
+  );
+}
+
+// ── מדיניות פרטיות ותנאי שימוש ──────────────────────────────
+const LEGAL_UPDATED = "24.10.2026";
+const LEGAL = {
+  privacy: { title: "מדיניות פרטיות", sections: [
+    ["מי אנחנו", "Pageturner (\"ספרייה שכונתית\", pageturner.co.il) היא פלטפורמה ישראלית שמחברת בין שכנים שרוצים למכור, להשאיל, להחליף או למסור ספרים. לכל שאלה או בקשה בנוגע למידע שלכם אפשר לפנות אלינו דרך \"צור קשר\" בתפריט האתר."],
+    ["איזה מידע אנחנו אוספים", "שם, מספר טלפון וכתובת מייל שמסרתם בהרשמה. פרטי הספרים שפרסמתם ותמונות שצילמתם. מיקום משוער של הספר, רק אם אישרתם גישה למיקום. תמונת פרופיל ומשפט על עצמכם, אם הוספתם. נתוני שימוש בסיסיים: חיפושים, צפייה בספרים ופניות למפרסמים, כדי לשפר את השירות."],
+    ["מה רואים משתמשים אחרים", "כל מי שנכנס לאתר רואה את פרטי הספר, את השם שלכם ואת העיר. המרחק מוצג בעיגול, כך שאי אפשר לדעת את הכתובת המדויקת. מספר הטלפון מוצג רק למשתמש רשום שפותח את דף הספר כדי לפנות אליכם. כתובת המייל לא מוצגת לאף אחד."],
+    ["צילומי כריכה", "כשאתם מצלמים כריכה לזיהוי אוטומטי, התמונה נשלחת לשירות בינה מלאכותית חיצוני (Anthropic) רק כדי לחלץ את פרטי הספר. אנחנו לא שולחים איתה שום פרט מזהה עליכם."],
+    ["ספקים שעובדים איתנו", "אחסון השרת ומסד הנתונים (Railway), אחסון האתר (Vercel), שליחת מיילים (Resend), זיהוי ספרים מתמונה (Anthropic), חיפוש פרטי ספרים (Google Books, Open Library) ותרגום מיקום לשם עיר (OpenStreetMap). חלק מהספקים פועלים מחוץ לישראל. אנחנו לא מוכרים מידע אישי לאף אחד."],
+    ["מיילים", "נשלח לכם קודי כניסה, ועדכון כשספר שביקשתם להתעדכן עליו מתפרסם. עדכונים שיווקיים יישלחו רק אם הסכמתם לכך בהרשמה, ואפשר לבטל בכל רגע בהגדרות הפרופיל."],
+    ["הזכויות שלכם", "אפשר לעיין במידע שלכם ולתקן אותו בפרופיל. אפשר למחוק את החשבון בכל רגע מתוך הפרופיל: החשבון, הספרים והמשאלות נמחקים מיד, ונתוני השימוש נשמרים ללא זיהוי. לבקשות נוספות אפשר לפנות אלינו דרך \"צור קשר\" בתפריט."],
+    ["אבטחה", "הכניסה לאתר נעשית בקוד חד-פעמי שנשלח למייל, בלי סיסמאות. החיבור לאתר מוצפן, והגישה לפעולות בחשבון מחייבת זיהוי. שום מערכת אינה חסינה לחלוטין, ואנחנו פועלים כדי לצמצם סיכונים."],
+  ]},
+  terms: { title: "תנאי שימוש", sections: [
+    ["השירות", "Pageturner מאפשרת לפרסם ספרים ולמצוא ספרים אצל אנשים בסביבה. אנחנו לוח מודעות שמחבר בין אנשים, ולא צד לעסקאות. התשלום, המסירה וההחזרה של ספרים נעשים ישירות בין המשתמשים."],
+    ["פרסום ספרים", "מפרסמים רק ספרים שבבעלותכם, עם פרטים נכונים ומצב אמיתי של הספר. אסור לפרסם תוכן פוגעני, מטעה, או כזה שמפר זכויות של אחרים. אנחנו רשאים להסיר מודעות או לחסום משתמשים שמפרים את התנאים."],
+    ["עסקאות בין משתמשים", "בדקו את הספר לפני תשלום, ותאמו מפגש במקום ציבורי כשאפשר. האחריות על העסקה, על מצב הספר ועל החזרת ספרים מושאלים היא של המשתמשים עצמם."],
+    ["פניות", "השתמשו בפרטי הקשר של משתמשים אחרים רק כדי לפנות לגבי הספר שפרסמו. אסור לשלוח ספאם, לאסוף פרטים או להטריד."],
+    ["אחריות", "השירות ניתן כמו שהוא. אנחנו עושים מאמץ שיפעל כראוי, אבל לא מתחייבים לזמינות רציפה או לדיוק של מידע שמשתמשים פרסמו או שזוהה אוטומטית מתמונה."],
+    ["שינויים", "ייתכן שנעדכן את התנאים מעת לעת. נעדכן כאן את תאריך העדכון האחרון, ושימוש בשירות לאחר עדכון מהווה הסכמה לתנאים המעודכנים. על התנאים חל הדין הישראלי."],
+  ]},
+};
+
+function LegalSheet({ kind, onClose }) {
+  const doc = LEGAL[kind];
+  if (!doc) return null;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={onClose}>
+      <div role="dialog" aria-label={doc.title} style={{width:"100%",maxWidth:560,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"88vh",overflowY:"auto",padding:"22px 20px 32px",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:32,height:4,borderRadius:99,background:C.border,margin:"0 auto 18px"}}/>
+        <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:24,fontWeight:900,color:C.ink}}>{doc.title}</div>
+        <div style={{fontSize:12,color:C.muted,marginTop:4,marginBottom:18}}>עודכן לאחרונה: {LEGAL_UPDATED}</div>
+        {doc.sections.map(([h,t])=>(
+          <div key={h} style={{marginBottom:16}}>
+            <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:4}}>{h}</div>
+            <div style={{fontSize:14,color:"#4a5560",lineHeight:1.75}}>{t}</div>
+          </div>
+        ))}
+        <button onClick={onClose} style={{width:"100%",marginTop:8,padding:"13px",borderRadius:12,background:C.ink,color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:"pointer"}}>סגירה</button>
       </div>
     </div>
   );
@@ -678,11 +811,25 @@ export default function App() {
   }, []);
 
   const [screen, setScreen] = useState(() => {
-    try { return localStorage.getItem("pt_screen") || "splash"; } catch { return "splash"; }
+    if (new URLSearchParams(window.location.search).has("admin")) return "admin";
+    try {
+      const u = JSON.parse(localStorage.getItem("pt_user") || "null");
+      if (u && u.type !== "guest" && !session.token()) return "login";
+      return u ? (localStorage.getItem("pt_screen") || "app") : "splash";
+    } catch { return "splash"; }
   });
   const [user, setUser] = useState(() => {
-    try { const u = localStorage.getItem("pt_user"); return u ? JSON.parse(u) : null; } catch { return null; }
+    try {
+      const u = JSON.parse(localStorage.getItem("pt_user") || "null");
+      if (u && u.type !== "guest" && !session.token()) { session.clear(); return null; }
+      return u;
+    } catch { return null; }
   });
+  const [legal, setLegal] = useState(null);
+  const [regPrefill, setRegPrefill] = useState(null);
+  const [showContact, setShowContact] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [wishMatches, setWishMatches] = useState([]);
   const [books, setBooks] = useState([]);
   const [myBooks, setMyBooks] = useState([]);
   const [tab, setTab] = useState(()=>{
@@ -730,7 +877,7 @@ export default function App() {
     if (!user?.id) return;
     try {
       const data = await api.get(`/api/books?ownerId=${user?.id}&all=true`);
-      setMyBooks(data);
+      setMyBooks(Array.isArray(data) ? data : []);
     } catch(e) {}
   }, [user?.id]);
 
@@ -748,13 +895,13 @@ export default function App() {
       if (genreFilter !== "all") params.set("genre", genreFilter);
       if (userCoords) { params.set("lat", userCoords.lat); params.set("lng", userCoords.lng); }
       const data = await api.get(`/api/books?${params}`);
-      setBooks(data);
+      setBooks(Array.isArray(data) ? data : []);
       if (search && search !== lastSearch.current) {
         lastSearch.current = search;
-        fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"search",data:{q:search},userId:user?.id})});
+        api.track("search", { q: search });
       }
     } catch(e) {
-      toast_("שגיאה בטעינת ספרים: " + e.message, "err");
+      toast_(e.message, "err");
     } finally { setLoading(false); }
   }, [search, modeFilter, genreFilter, toast_, userCoords]);
 
@@ -793,13 +940,13 @@ export default function App() {
     if (!user?.id || isGuest) return;
     const checkPending = async () => {
       try {
-        const r = await fetch(BASE + `/api/contacts/pending/${user?.id}`);
-        const d = await r.json();
+        const d = await api.get(`/api/contacts/pending/${user?.id}`);
         if (d) setPendingContact(d);
         // בדוק גם שאלות למפרסם
-        const r2 = await fetch(BASE + `/api/contacts/owner-pending/${user?.id}`);
-        const d2 = await r2.json();
+        const d2 = await api.get(`/api/contacts/owner-pending/${user?.id}`);
         if (d2) setOwnerPending(d2);
+        const m = await api.get(`/api/wishlist/matches/${user?.id}`);
+        if (Array.isArray(m)) setWishMatches(m);
       } catch {}
     };
     const t = setTimeout(checkPending, 2000);
@@ -812,50 +959,23 @@ export default function App() {
       // "לא" — לא מסמן askedStatus כדי לאפשר שאילה חוזרת
       // "skip" ו-"done" — מסמן askedStatus=true לצמיתות
       const markAsked = answer === "skip" || answer === "done";
-      await fetch(BASE + `/api/contacts/${pendingContact.id}`, {
-        method:"PUT",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ status: answer, dealStatus, bookId: pendingContact.bookid, markAsked })
-      });
+      await api.put(`/api/contacts/${pendingContact.id}`, { status: answer, dealStatus, markAsked });
     } catch {}
     setPendingContact(null);
     setAskDealMode(false);
     if (answer === "done") { loadBooks(); loadMyBooks(); }
   };
 
-  const recordContactApp = async (book, type) => {
-    if (!user?.id || String(book.ownerid)===String(user?.id)) return;
-    try {
-      await fetch(BASE + "/api/contacts", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user?.id, toUserId:book.ownerid, type })
-      });
-      // בדוק pending אחרי 3 שניות
-      setTimeout(async () => {
-        try {
-          const r = await fetch(BASE + `/api/contacts/pending/${user?.id}`);
-          const d = await r.json();
-          if (d) setPendingContact(d);
-        } catch {}
-      }, 3000);
-    } catch {}
+  const checkPendingSoon = () => {
+    setTimeout(async () => {
+      try { const d = await api.get(`/api/contacts/pending/${user?.id}`); if (d) setPendingContact(d); } catch {}
+    }, 3000);
   };
 
   const handleOwnerAnswer = async (answer, dealStatus) => {
     if (!ownerPending) return;
     try {
-      await fetch(BASE + `/api/contacts/${ownerPending.id}`, {
-        method:"PUT",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ 
-          status: answer === "confirmed" ? "done" : "no",
-          dealStatus, 
-          bookId: ownerPending.bookid,
-          confirmedByOwner: answer === "confirmed",
-          markAsked: true
-        })
-      });
+      await api.put(`/api/contacts/${ownerPending.id}`, { dealStatus, confirmedByOwner: answer === "confirmed" });
       if (answer === "confirmed") {
         toast_("✅ הספר ירד מזמינות — תודה על העדכון!");
         loadBooks();
@@ -866,21 +986,37 @@ export default function App() {
     setOwnerAskDeal(false);
   };
 
-  const trackEvent = async (event, data) => {
-    try {
-      await fetch(BASE + "/api/analytics", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ event, data, userId: user?.id })
-      });
-    } catch {}
-  };
-
   useEffect(() => {
-    if (screen === "app") {
-      fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"page_load",data:{},userId:user?.id})});
-    }
+    if (screen === "app") api.track("page_load");
   }, [screen]);
+
+  // חיבור שפג: חזרה למסך הכניסה
+  const resetUi = () => {
+    setEditBio(false); setShowSettings(false); setShowContact(false); setMenuOpen(false);
+    setViewBook(null); setEditBook(null); setViewUserId(null); setTab("search");
+    setPendingContact(null); setOwnerPending(null); setWishMatches([]); setMyBooks([]);
+  };
+  useEffect(() => {
+    const onExpired = () => {
+      resetUi(); session.clear(); setUser(null); setScreen("login");
+      setTimeout(() => toast_("צריך להתחבר שוב. נשלח לך קוד למייל", "warn"), 60);
+    };
+    document.addEventListener("pt-auth-expired", onExpired);
+    return () => document.removeEventListener("pt-auth-expired", onExpired);
+  }, [toast_]);
+
+  // רענון פרטי המשתמש מהשרת
+  useEffect(() => {
+    if (!user?.id || isGuest || !session.token()) return;
+    api.get("/api/me").then(d => { if (d?.user) { setUser(d.user); session.saveUser(d.user); } }).catch(() => {});
+  }, [user?.id]);
+
+  // קישור ישיר לספר (?book=...) — למשל ממייל או משיתוף
+  useEffect(() => {
+    if (screen !== "app" || !viewBookId) return;
+    const id = viewBookId; setViewBookId(null);
+    api.get(`/api/books/${encodeURIComponent(id)}`).then(b => b?.id && setViewBook(b)).catch(() => toast_("הספר לא נמצא", "warn"));
+  }, [screen, viewBookId]);
 
   // כפתור חזרה של הטלפון
   useEffect(() => {
@@ -899,40 +1035,44 @@ export default function App() {
     return () => window.removeEventListener("popstate", handleBack);
   }, [tab, viewBook, editBook, showAbout, menuOpen]);
 
-  const handleReg = u => { setUser(u); setScreen("app"); toast_("ברוך הבא! 📖"); try { localStorage.setItem("pt_user", JSON.stringify(u)); localStorage.setItem("pt_screen", "app"); } catch {} };
-  const handleGuest = () => { setUser({name:"אורח",type:"guest"}); setScreen("app"); fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"guest_login",data:{}})}); };
+  const handleAuth = (u, token, welcome) => {
+    session.save(u, token); setUser(u); setScreen("app"); setRegPrefill(null);
+    toast_(welcome ? `ברוך הבא, ${u.name} 📖` : `שלום ${u.name} 👋`);
+  };
+  const handleGuest = () => { const g = {name:"אורח",type:"guest"}; setUser(g); session.save(g); setScreen("app"); api.track("guest_login"); };
+  const logout = async () => {
+    resetUi();
+    try { await api.post("/api/auth/logout"); } catch {}
+    session.clear(); setUser(null); setScreen("splash");
+  };
 
   const saveEdit = async (id, fields) => {
     try {
 
-      const r = await fetch(BASE + `/api/books/${id}`, {
-        method:"PUT",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({...fields, userId: user?.id})
-      });
-      if (!r.ok) throw new Error("שגיאה בעדכון");
+      await api.put(`/api/books/${id}`, fields);
       setEditBook(null);
       toast_("✓ הספר עודכן");
       loadBooks();
       loadMyBooks();
-    } catch(e) { toast_("שגיאה: " + e.message, "err"); }
+    } catch(e) { toast_(e.message, "err"); }
   };
 
   const deleteBook = async id => {
     try {
-      const r = await fetch(BASE + `/api/books/${id}?userId=${user?.id}`, {method:"DELETE"});
-      if (!r.ok) throw new Error("שגיאה במחיקה");
+      await api.del(`/api/books/${id}`);
       setBooks(p => p.filter(b => b.id!==id));
+      setMyBooks(p => p.filter(b => b.id!==id));
       setEditBook(null);
-      toast_("🗑️ הספר נמחק", "warn");
-    } catch(e) { toast_("שגיאה: " + e.message, "err"); }
+      toast_("הספר נמחק", "warn");
+    } catch(e) { toast_(e.message, "err"); }
   };
 
   // ── screens ──────────────────────────────────────────────
-  if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>setScreen("splash")}/></>
-  if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onAdmin={()=>setScreen("admin")}/></>;
-  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u)=>{setUser(u);setScreen("app");try{localStorage.setItem("pt_user",JSON.stringify(u));localStorage.setItem("pt_screen","app");}catch{}}}/></>; 
-  if (screen === "register") return <><style>{CSS}</style><Register onBack={()=>setScreen(user?"app":"splash")} onDone={handleReg}/></>;
+  const legalSheet = legal && <LegalSheet kind={legal} onClose={()=>setLegal(null)}/>;
+  if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>{navigate("/");setScreen(user?"app":"splash");}}/></>
+  if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onShowLegal={setLegal}/>{legalSheet}<Toast t={toast}/></>;
+  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u,t)=>handleAuth(u,t,false)} onRegister={pf=>{setRegPrefill(pf);setScreen("register");}}/><Toast t={toast}/></>;
+  if (screen === "register") return <><style>{CSS}</style><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);setScreen(user?"app":"splash");}} onDone={(u,t)=>handleAuth(u,t,true)} onShowLegal={setLegal}/>{legalSheet}</>;
 
   const TABS = [
     ["search", <IconSearch/>, "חיפוש"],
@@ -941,28 +1081,25 @@ export default function App() {
   ];
 
   return (
-    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",direction:"rtl",background:C.bg,position:"relative",overflow:(viewUserId||viewBook)?"hidden":"auto",height:(viewUserId||viewBook)?"100vh":"auto"}}>
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",direction:"rtl",background:C.bg,position:"relative",overflow:(viewUserId||viewBook)?"hidden":"visible",height:(viewUserId||viewBook)?"100vh":"auto"}}>
       <style>{CSS}</style>
 
       {/* Edit drawer */}
       {editBook && <EditDrawer book={editBook} onSave={saveEdit} onDelete={deleteBook} onCancel={()=>setEditBook(null)} toast_={toast_}/>}
       {viewUserId && <UserPage userId={viewUserId} onClose={()=>{setViewUserId(null);navigate("/");}} onViewBook={b=>{setViewUserId(null);setViewBook(b);}} HDR={HDR} SPINES={SPINES}/>}
-      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={()=>{setTimeout(async()=>{try{const r=await fetch(BASE+`/api/contacts/pending/${user?.id}`);const d=await r.json();if(d)setPendingContact(d);}catch{}},3000);}}/>}
+      {viewBook && <BookPage book={viewBook} onClose={()=>setViewBook(null)} isGuest={isGuest} onGuest={onGuestAction} user={user} toast_={toast_} onBookUpdated={()=>{loadBooks();loadMyBooks();}} onContactMade={checkPendingSoon} onViewUser={id=>{setViewBook(null);setViewUserId(id);navigate(`?user=${id}`);}}/>}
 
       {/* Header */}
-      <div style={{background:HDR,flexShrink:0}}>
+      <div style={{background:HDR,flexShrink:0,position:"sticky",top:0,zIndex:60,paddingTop:"env(safe-area-inset-top)"}}>
         <div style={{padding:"14px 17px 0"}}>
-          <div style={{display:"flex",gap:3,marginBottom:10,opacity:.8}}>
-            {SPINES.map((c,i)=><div key={i} style={{flex:1,height:3,borderRadius:3,background:c}}/>)}
-          </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <button onClick={()=>{setTab("search");setSearch("");setModeFilter("all");loadBooks();}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"right",padding:0}}>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
+              <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:21,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
             </button>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               {!isGuest && <button onClick={()=>setTab("profile")} style={{background:"none",border:"none",cursor:"pointer",padding:0}}><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(()=>{const h=new Date().getHours();return h>=4&&h<12?"☀️ בוקר טוב":h<18?"🌤️ צהריים טובים":h<22?"🌆 ערב טוב":"🌙 לילה טוב";})()} {user?.name||""}</div></button>}
               {isGuest && <button onClick={onGuestAction} style={{background:"#6B8F47",border:"none",borderRadius:9,padding:"5px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:6}}>הצטרף →</button>}
-              <button onClick={()=>setMenuOpen(true)} style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",color:"#fff",fontSize:20,lineHeight:1}}>☰</button>
+              <button onClick={()=>setMenuOpen(true)} aria-label="תפריט" style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:10,cursor:"pointer",width:38,height:38,color:"#fff",fontSize:19,lineHeight:1}}>☰</button>
             </div>
           </div>
         </div>
@@ -971,8 +1108,8 @@ export default function App() {
           <div style={{padding:"10px 15px 12px"}}>
             <div style={{position:"relative"}}>
               <span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",fontSize:15,opacity:.4,pointerEvents:"none"}}>🔍</span>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="חפש שם ספר, מחבר..."
-                style={{width:"100%",padding:"10px 42px 10px 13px",background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.18)",borderRadius:11,color:"#fff",fontSize:14,outline:"none"}}
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="חיפוש ספר, מחבר או מפרסם" type="search" enterKeyHint="search"
+                style={{width:"100%",padding:"12px 42px 12px 13px",background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.18)",borderRadius:12,color:"#fff",fontSize:16,outline:"none"}}
                 onFocus={e=>e.target.style.background="rgba(255,255,255,.16)"}
                 onBlur={e=>e.target.style.background="rgba(255,255,255,.1)"}
               />
@@ -981,36 +1118,12 @@ export default function App() {
         )}
       </div>
 
-      {/* Top nav */}
-      <div style={{background:C.white,borderBottom:`1px solid ${C.border}`,display:"flex",flexShrink:0}}>
-        {TABS.map(([id,ic,lb])=>{
-          const a = tab===id;
-          return (
-            <button key={id} onClick={()=>{
-              setTab(id);
-              navigate(`?tab=${id}`);
-              if (id === "add" && navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                  pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                  () => {},
-                  { enableHighAccuracy: false, timeout: 10000 }
-                );
-              }
-            }}
-              style={{flex:1,padding:"8px 3px 7px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderBottom:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
-              <span style={{fontSize:a?18:16}}>{id==="profile"&&user?.avatar ? <img src={user.avatar} alt="" style={{width:22,height:22,borderRadius:"50%",objectFit:"cover",border:a?"2px solid "+C.ink:"2px solid transparent"}}/> : ic}</span>
-              <span style={{fontSize:13,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
-            </button>
-          );
-        })}
-      </div>
-
       {/* Filter chips */}
       {tab === "search" && (
         <div style={{display:"flex",gap:6,padding:"8px 13px",background:C.white,borderBottom:`1px solid ${C.border}`,overflowX:"auto",flexShrink:0}}>
-          {[["all","הכל","📚"],["sell","מכירה","₪"],["lend","השאלה","↩"],["swap","החלפה","⇄"]].map(([k,l,ic])=>(
-            <button key={k} onClick={()=>setModeFilter(k)}
-              style={{padding:"5px 11px",borderRadius:99,fontSize:12,fontWeight:modeFilter===k?700:500,border:"none",cursor:"pointer",background:modeFilter===k?C.ink:C.bg,color:modeFilter===k?"#fff":C.muted,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
+          {[["all","הכל","📚"],["sell","מכירה","₪"],["lend","השאלה","↩"],["swap","החלפה","⇄"],["give","מסירה","🎁"]].map(([k,l,ic])=>(
+            <button key={k} onClick={()=>setModeFilter(k)} aria-pressed={modeFilter===k}
+              style={{padding:"7px 13px",borderRadius:99,fontSize:13,fontWeight:modeFilter===k?700:500,border:"none",cursor:"pointer",background:modeFilter===k?C.ink:C.bg,color:modeFilter===k?"#fff":C.muted,display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}}>
               {ic} {l}
             </button>
           ))}
@@ -1018,7 +1131,7 @@ export default function App() {
       )}
 
       {/* Content */}
-      <div style={{flex:1,overflowY:"auto",padding:"12px 12px 4px"}}>
+      <main style={{flex:1,padding:"12px 12px 16px",width:"100%",maxWidth:640,margin:"0 auto"}}>
 
         {/* חיפוש */}
         {tab === "search" && (
@@ -1027,10 +1140,14 @@ export default function App() {
             : books.length === 0
               ? <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
                   <div style={{fontSize:48,marginBottom:12}}>📭</div>
-                  <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:12}}>לא נמצאו ספרים</div>
-                  {search.trim()&&user&&!isGuest&&<button onClick={async()=>{setShowWishModal(true);setWishLoading(true);setWishResults([]);const r=await fetch("https://pageturner-production-5baf.up.railway.app/api/books/search-google?q="+encodeURIComponent(search)).catch(()=>({json:()=>[]}));const d=await r.json();setWishResults(Array.isArray(d)?d:[]);setWishLoading(false);}} style={{padding:"10px 20px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>🔔 הודע לי כשיתווסף</button>}
+                  <div style={{fontSize:16,fontWeight:700,color:C.ink,marginBottom:8}}>{search.trim()||modeFilter!=="all"?"לא נמצאו ספרים":"עוד אין כאן ספרים"}</div>
+                  {search.trim()&&<div style={{fontSize:13,marginBottom:14,lineHeight:1.6}}>אף אחד בסביבה עוד לא פרסם את "{search}"</div>}
+                  {search.trim()&&(isGuest
+                    ? <button onClick={onGuestAction} style={{padding:"11px 20px",background:C.accent,color:"#fff",border:"none",borderRadius:11,fontSize:14,fontWeight:700,cursor:"pointer"}}>הירשמו ונודיע לכם כשיגיע</button>
+                    : user&&<button onClick={async()=>{setWishQuery(search);setShowWishModal(true);setWishLoading(true);setWishResults([]);try{const d=await api.get("/api/books/search-google?q="+encodeURIComponent(search));setWishResults(Array.isArray(d)?d:[]);}catch{}setWishLoading(false);}} style={{padding:"11px 20px",background:C.accent,color:"#fff",border:"none",borderRadius:11,fontSize:14,fontWeight:700,cursor:"pointer"}}>🔔 עדכנו אותי כשיתווסף</button>)}
+                  {!search.trim()&&modeFilter==="all"&&!isGuest&&<button onClick={()=>setTab("add")} style={{padding:"11px 20px",background:C.ink,color:"#fff",border:"none",borderRadius:11,fontSize:14,fontWeight:700,cursor:"pointer"}}>פרסמו את הספר הראשון בשכונה</button>}
                 </div>
-              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)&&!b.dealstatus?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);fetch(BASE+"/api/analytics",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event:"book_view",data:{bookId:b.id,title:b.title},userId:user?.id})});}} onContact={recordContactApp} onViewUser={id=>{setViewUserId(id);navigate(`?user=${id}`);}}/>)
+              : books.map(b => <BookCard key={b.id} book={b} onEdit={String(b.ownerid)===String(user?.id)&&!b.dealstatus?setEditBook:null} isGuest={isGuest} onGuest={onGuestAction} user={user} onView={b=>{setViewBook(b);api.track("book_view",{bookId:b.id,title:b.title});}} onViewUser={id=>{setViewUserId(id);navigate(`?user=${id}`);}}/>)
         )}
 
         {/* הוספה */}
@@ -1041,7 +1158,7 @@ export default function App() {
                 <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:7}}>להוסיף ספרים נדרש חשבון</div>
                 <Btn onClick={onGuestAction} style={{padding:"11px 26px"}}>הצטרף עכשיו →</Btn>
               </div>
-            : <AddBook user={user} onDone={b=>{setBooks(p=>[b,...p]);setTab("search");}} toast_={toast_} coords={userCoords}/>
+            : <AddBook user={user} onDone={b=>{setBooks(p=>[b,...p]);setMyBooks(p=>[b,...p]);setTab("search");}} toast_={toast_} coords={userCoords} onNeedPhone={()=>setShowSettings(true)}/>
         )}
 
         {/* פרופיל */}
@@ -1072,11 +1189,13 @@ export default function App() {
                           canvas.width = img.width * ratio;
                           canvas.height = img.height * ratio;
                           canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-                          const avatar = canvas.toDataURL("image/jpeg", 0.7);
+                          const avatar = canvas.toDataURL("image/jpeg", 0.8);
                           URL.revokeObjectURL(objectUrl);
-                          const r = await fetch(BASE+"/api/users/"+user.id+"/avatar", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({avatar})});
-                          const d = await r.json();
-                          if (d.ok) { setUser(u=>({...u,avatar})); try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,avatar}));}catch{} toast_("תמונה עודכנה ✓"); }
+                          try {
+                            const d = await api.post("/api/users/"+user.id+"/avatar", {avatar});
+                            const nu = {...user, avatar: d.avatar}; setUser(nu); session.saveUser(nu);
+                            toast_("התמונה עודכנה ✓");
+                          } catch(err) { toast_(err.message, "err"); }
                         };
                         img.src = objectUrl;
                       }}/>
@@ -1086,17 +1205,28 @@ export default function App() {
                   {user?.bio
                     ? <div onClick={()=>{setBioText(user.bio);setEditBio(true);}} style={{fontSize:13,color:C.muted,fontStyle:"italic",marginBottom:6,cursor:"pointer"}}>"{user.bio}"</div>
                     : <button onClick={()=>{setBioText("");setEditBio(true);}} style={{fontSize:11,color:C.indigo,background:"none",border:"none",cursor:"pointer",padding:"2px 0 6px",fontStyle:"italic"}}>✏️ כמה מילים עלי</button>}
-                  <div style={{fontSize:12,color:C.muted,marginBottom:6}}>{user?.email}</div>
-                  {user?.phone&&<div style={{fontSize:13,color:C.muted}}>📞 {user?.phone}</div>}
+                  <div style={{fontSize:12,color:C.muted,marginBottom:6,direction:"ltr"}}>{user?.email}</div>
+                  {user?.phone ? <div style={{fontSize:13,color:C.muted,direction:"ltr"}}>📞 {user?.phone}</div>
+                    : <button onClick={()=>setShowSettings(true)} style={{fontSize:13,color:C.red,background:C.redL,border:"none",borderRadius:9,padding:"6px 12px",cursor:"pointer",fontWeight:600}}>הוסיפו טלפון כדי לפרסם ספרים</button>}
                   {user?.address&&<div style={{fontSize:13,color:C.muted,marginTop:3}}>📍 {user.address}</div>}
+                  <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:14}}>
+                    <button onClick={()=>setShowSettings(true)} style={{padding:"8px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,fontWeight:600,color:C.ink,cursor:"pointer"}}>⚙️ פרטים והגדרות</button>
+                    <button onClick={()=>setViewUserId(user.id)} style={{padding:"8px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,fontWeight:600,color:C.ink,cursor:"pointer"}}>👁️ איך אחרים רואים אותי</button>
+                  </div>
                 </div>
+                {myBooks.length===0&&<div style={{textAlign:"center",padding:"28px 16px",background:C.white,borderRadius:18,border:`1px dashed ${C.border}`,marginBottom:12}}>
+                  <div style={{fontSize:36,marginBottom:8}}>📚</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.ink,marginBottom:6}}>המדף שלך עוד ריק</div>
+                  <div style={{fontSize:13,color:C.muted,marginBottom:14}}>צלמו כריכה והפרטים יתמלאו לבד</div>
+                  <Btn onClick={()=>setTab("add")} style={{padding:"11px 22px"}}>הוספת ספר</Btn>
+                </div>}
                 {myBooks.filter(b=>b.avail).length>0&&<>
                   <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>על המדף</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
                     {myBooks.filter(b=>b.avail).map(b=>(
                       <div key={b.id} style={{position:"relative"}}>
                         <div onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer"}}>
-                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
                         </div>
                         <button onClick={e=>{e.stopPropagation();setEditBook(b);}} style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,.5)",border:"none",borderRadius:6,padding:"3px 6px",fontSize:10,color:"#fff",cursor:"pointer"}}>✏️</button>
                       </div>
@@ -1108,7 +1238,7 @@ export default function App() {
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
                     {myBooks.filter(b=>!b.avail&&b.dealstatus&&b.dealstatus!==null).map(b=>(
                       <div key={b.id} onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",filter:"grayscale(100%)",opacity:0.7}}>
-                        {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                        {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
                       </div>
                     ))}
                   </div>
@@ -1119,7 +1249,7 @@ export default function App() {
                     {myBooks.filter(b=>!b.avail&&(!b.dealstatus||b.dealstatus===null)).map(b=>(
                       <div key={b.id} style={{position:"relative"}}>
                         <div onClick={()=>setViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",opacity:0.6}}>
-                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
+                          {(b.thumbnail||b.frontimg)?<img src={b.thumbnail||b.frontimg} alt="" loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
                         </div>
                         <button onClick={e=>{e.stopPropagation();setEditBook(b);}} style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,.5)",border:"none",borderRadius:6,padding:"3px 6px",fontSize:10,color:"#fff",cursor:"pointer"}}>✏️</button>
                       </div>
@@ -1128,7 +1258,7 @@ export default function App() {
                 </>}
             </div>
           )}
-          </div>
+          </main>
         {showWishModal && (
           <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setShowWishModal(false)}>
             <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"20px",width:"100%",maxHeight:"70vh",overflowY:"auto",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
@@ -1136,12 +1266,15 @@ export default function App() {
               <div style={{fontSize:12,color:"#7a8a7a",marginBottom:10}}>נודיע לך כשהספר יתווסף לפלטפורמה</div>
               <div style={{display:"flex",gap:8,marginBottom:14}}>
                 <input value={wishQuery} onChange={e=>setWishQuery(e.target.value)} placeholder="שם ספר, מחבר..." style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #dde5d8",fontSize:13,direction:"rtl"}}/>
-                <button onClick={async()=>{setWishLoading(true);setWishResults([]);try{const r=await fetch("https://pageturner-production-5baf.up.railway.app/api/books/search-google?q="+encodeURIComponent(wishQuery));const d=await r.json();setWishResults(Array.isArray(d)?d:[]);}catch{}setWishLoading(false);}} style={{padding:"8px 14px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:8,fontSize:13,cursor:"pointer"}}>חפש</button>
+                <button onClick={async()=>{setWishLoading(true);setWishResults([]);try{const d=await api.get("/api/books/search-google?q="+encodeURIComponent(wishQuery));setWishResults(Array.isArray(d)?d:[]);}catch{}setWishLoading(false);}} style={{padding:"8px 14px",background:"#6B8F47",color:"#fff",border:"none",borderRadius:8,fontSize:13,cursor:"pointer"}}>חפש</button>
               </div>
               {wishLoading && <div style={{textAlign:"center",padding:30,color:"#7a8a7a"}}>טוען...</div>}
-              {!wishLoading && wishResults.length===0 && <div style={{textAlign:"center",padding:30,color:"#7a8a7a"}}>לא נמצאו תוצאות</div>}
+              {!wishLoading && wishResults.length===0 && <div style={{textAlign:"center",padding:"24px 10px",color:"#7a8a7a"}}>
+                <div style={{marginBottom:12}}>לא מצאנו את הספר בקטלוג</div>
+                {wishQuery.trim().length>1&&<button onClick={async()=>{try{await api.post("/api/wishlist",{query:wishQuery});toast_("🔔 נעדכן אותך כש\""+wishQuery+"\" יתפרסם");setShowWishModal(false);}catch(e){toast_(e.message,"err");}}} style={{padding:"10px 18px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>עדכנו אותי על "{wishQuery}"</button>}
+              </div>}
               {!wishLoading && wishResults.map(b=>(
-                <div key={b.googleId} onClick={async()=>{try{await fetch("https://pageturner-production-5baf.up.railway.app/api/wishlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:user.id,query:b.title,googleId:b.googleId,title:b.title,author:b.author,thumbnail:b.thumbnail})});toast_("🔔 נודיע לך כש-"+b.title+" יתווסף!");setShowWishModal(false);}catch{toast_("שגיאה","err");}}} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",cursor:"pointer",alignItems:"center"}}>
+                <div key={b.googleId} onClick={async()=>{try{await api.post("/api/wishlist",{query:b.title});toast_("🔔 נשלח לך מייל כש\""+b.title+"\" יתפרסם");setShowWishModal(false);}catch(e){toast_(e.message,"err");}}} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",cursor:"pointer",alignItems:"center"}}>
                   {b.thumbnail?<img src={b.thumbnail} alt="" style={{width:40,height:56,objectFit:"cover",borderRadius:4}}/>:<div style={{width:40,height:56,background:"#e0ddd8",borderRadius:4}}/>}
                   <div>
                     <div style={{fontSize:14,fontWeight:700,color:"#1E2D3D"}}>{b.title}</div>
@@ -1155,11 +1288,11 @@ export default function App() {
         {editBio && <div style={{position:"fixed",inset:0,zIndex:800,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end"}} onClick={()=>setEditBio(false)}>
           <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>כמה מילים עלי ✏️</div>
-            <div style={{fontSize:12,color:C.muted,marginBottom:12}}></div>
+            <div style={{fontSize:12,color:C.muted,marginBottom:12}}>יוצג בפרופיל הציבורי שלך</div>
             <textarea value={bioText} onChange={e=>setBioText(e.target.value.slice(0,150))} placeholder="" style={{width:"100%",minHeight:80,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"none",direction:"rtl",boxSizing:"border-box"}}/>
             <div style={{fontSize:11,color:C.muted,textAlign:"left",marginBottom:12}}>{bioText.length}/150</div>
             <div style={{display:"flex",gap:10}}>
-              <Btn onClick={async()=>{const r=await fetch(BASE+"/api/users/"+user.id+"/profile",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({bio:bioText,featuredBooks:user?.featuredBooks||[]})});const d=await r.json();if(d.ok){setUser(u=>({...u,bio:bioText}));try{const s=JSON.parse(localStorage.getItem("pt_user")||"{}");localStorage.setItem("pt_user",JSON.stringify({...s,bio:bioText}));}catch{}toast_("פרופיל עודכן ✓");setEditBio(false);}}} style={{flex:1}}>שמור</Btn>
+              <Btn onClick={async()=>{try{await api.put("/api/users/"+user.id+"/profile",{bio:bioText});const nu={...user,bio:bioText};setUser(nu);session.saveUser(nu);toast_("הפרופיל עודכן ✓");setEditBio(false);}catch(e){toast_(e.message,"err");}}} style={{flex:1}}>שמור</Btn>
               <Btn variant="outline" onClick={()=>setEditBio(false)} style={{flex:1}}>ביטול</Btn>
             </div>
           </div>
@@ -1167,32 +1300,63 @@ export default function App() {
           }
 
       {/* Bottom nav */}
-      <div style={{display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,boxShadow:"0 -2px 12px rgba(0,0,0,.07)",flexShrink:0}}>
+      <nav aria-label="ניווט ראשי" style={{display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,boxShadow:"0 -2px 12px rgba(0,0,0,.07)",flexShrink:0,position:"sticky",bottom:0,zIndex:60,paddingBottom:"env(safe-area-inset-bottom)"}}>
         {TABS.map(([id,ic,lb])=>{
           const a = tab===id;
           return (
-            <button key={id} onClick={()=>{setTab(id);navigate(`?tab=${id}`);}}
+            <button key={id} aria-current={a?"page":undefined} onClick={()=>{
+              setTab(id); navigate(`?tab=${id}`); window.scrollTo(0,0);
+              if (id === "add" && navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                  pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                  () => {},
+                  { enableHighAccuracy: false, timeout: 10000 }
+                );
+              }
+            }}
               style={{flex:1,padding:"10px 3px 8px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderTop:a?`2px solid ${C.ink}`:"2px solid transparent",transition:"border .12s"}}>
               {id==="profile"
                 ? (user?.avatar
                     ? <div style={{width:a?26:22,height:a?26:22,borderRadius:"50%",overflow:"hidden",border:a?`2px solid ${C.ink}`:"2px solid #ccc"}}><img src={user.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
-                    : <span style={{fontSize:a?24:21}}>👤</span>)
+                    : <span style={{fontSize:a?24:21}}><IconProfile/></span>)
                 : <span style={{fontSize:a?24:21}}>{ic}</span>}
               <span style={{fontSize:13,fontWeight:a?700:400,color:a?C.ink:C.muted}}>{lb}</span>
             </button>
           );
         })}
-      </div>
+      </nav>
 
       <Toast t={toast}/>
+      {legalSheet}
+      {showContact && <ContactSheet user={user} isGuest={isGuest} onClose={()=>setShowContact(false)} toast_={toast_}/>}
+      {showSettings && !isGuest && <SettingsSheet user={user} onClose={()=>setShowSettings(false)} toast_={toast_}
+        onSaved={u=>{setUser(u);session.saveUser(u);}}
+        onDeleted={()=>{resetUi();session.clear();setUser(null);setScreen("splash");toast_("החשבון נמחק");}}
+        onShowLegal={setLegal}/>}
+      {wishMatches.length>0 && tab==="search" && !viewBook && !pendingContact && !ownerPending && (
+        <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:590,padding:"0 16px",direction:"rtl"}}>
+          <div style={{maxWidth:480,margin:"0 auto",background:C.white,borderRadius:16,padding:"14px 16px",boxShadow:"0 6px 28px rgba(0,0,0,.18)",border:`1px solid ${C.border}`,animation:"fadeUp .25s ease"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontSize:14,fontWeight:800,color:C.ink}}>🔔 ספר שחיכית לו זמין!</div>
+              <button aria-label="סגירה" onClick={()=>setWishMatches([])} style={{background:"none",border:"none",fontSize:16,color:C.muted,cursor:"pointer"}}>✕</button>
+            </div>
+            {wishMatches.slice(0,2).map(m=>(
+              <div key={m.wish.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 0"}}>
+                <button onClick={()=>{setViewBook(m.books[0]);}} style={{background:"none",border:"none",textAlign:"right",cursor:"pointer",color:C.ink,fontSize:14,fontWeight:600,padding:0,flex:1}}>{m.books[0].title} <span style={{color:C.muted,fontWeight:400,fontSize:12}}>· {m.books[0].ownername}</span></button>
+                <button onClick={async()=>{try{await api.del(`/api/wishlist/${m.wish.id}`);}catch{}setWishMatches(p=>p.filter(x=>x.wish.id!==m.wish.id));}} style={{background:C.bg,border:"none",borderRadius:8,padding:"5px 10px",fontSize:12,color:C.muted,cursor:"pointer",whiteSpace:"nowrap"}}>הבנתי</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* תפריט המבורגר */}
       {menuOpen && (
         <div style={{position:"fixed",inset:0,zIndex:700,direction:"rtl"}} onClick={()=>setMenuOpen(false)}>
-          <div style={{position:"absolute",top:0,right:0,width:260,height:"100%",background:C.white,boxShadow:"-4px 0 24px rgba(0,0,0,.15)",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+          <div style={{position:"absolute",top:0,right:0,width:270,height:"100%",background:C.white,boxShadow:"-4px 0 24px rgba(0,0,0,.15)",display:"flex",flexDirection:"column",overflowY:"auto",animation:"slideIn .22s ease"}} onClick={e=>e.stopPropagation()}>
             <div style={{background:HDR,padding:"32px 20px 20px"}}>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Pageturner</div>
+              <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:19,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
+              <div style={{fontSize:12,color:"rgba(255,255,255,.55)",marginTop:4}}>{isGuest?"Pageturner":`שלום, ${user?.name||""}`}</div>
             </div>
             <div style={{flex:1,padding:"12px 0"}}>
               {[
@@ -1200,13 +1364,17 @@ export default function App() {
                 {ic:"➕",lb:"הוסף ספר",ac:()=>{setTab("add");setMenuOpen(false);}},
                 {ic:"👤",lb:"פרופיל",ac:()=>{setTab("profile");setMenuOpen(false);}},
                 {ic:"📖",lb:"אודות",ac:()=>{setShowAbout(true);setMenuOpen(false);}},
+                {ic:"✉️",lb:"צור קשר",ac:()=>{setShowContact(true);setMenuOpen(false);}},
+                {ic:"🔒",lb:"מדיניות פרטיות",ac:()=>{setLegal("privacy");setMenuOpen(false);}},
+                {ic:"📄",lb:"תנאי שימוש",ac:()=>{setLegal("terms");setMenuOpen(false);}},
               ].map((item,i)=>(
                 <button key={i} onClick={item.ac} style={{width:"100%",padding:"14px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:15,fontWeight:600,color:C.ink,textAlign:"right"}}>
                   <span style={{fontSize:20}}>{item.ic}</span>{item.lb}
                 </button>
               ))}
             </div>
-            {!isGuest && <button onClick={()=>{setUser(null);setScreen("splash");setMenuOpen(false);try{localStorage.removeItem("pt_user");localStorage.removeItem("pt_screen");}catch{}}} style={{padding:"16px 20px",background:"none",border:"none",borderTop:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:C.red,textAlign:"right"}}>
+            {isGuest && <button onClick={()=>{setMenuOpen(false);session.clear();setUser(null);setScreen("splash");}} style={{padding:"16px 20px",background:"none",border:"none",borderTop:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:C.ink,textAlign:"right"}}><span style={{fontSize:18}}>👋</span>הרשמה / כניסה</button>}
+            {!isGuest && <button onClick={logout} style={{padding:"16px 20px",background:"none",border:"none",borderTop:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:C.red,textAlign:"right"}}>
               <span style={{fontSize:18}}>🚪</span>יציאה
             </button>}
           </div>
@@ -1218,7 +1386,7 @@ export default function App() {
         <div style={{position:"fixed",inset:0,zIndex:700,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={()=>setShowAbout(false)}>
           <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"85vh",overflowY:"auto",padding:"24px 20px 40px"}} onClick={e=>e.stopPropagation()}>
             <div style={{width:32,height:4,borderRadius:99,background:C.border,margin:"0 auto 20px"}}/>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink,marginBottom:6}}>ספרייה שכונתית | Pageturner</div>
+            <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:22,fontWeight:900,color:C.ink,marginBottom:6}}>ספרייה שכונתית | Pageturner</div>
             <div style={{fontSize:16,fontWeight:700,color:C.ink,marginTop:20,marginBottom:8}}>הסיפור התחיל עם ספר אחד</div>
             <div style={{fontSize:14,color:C.muted,lineHeight:1.8,marginBottom:16}}>חיפשתי ספר. ידעתי שהוא קיים, ראיתי שיש אותו אצל אנשים, אבל מצוא לא מצאתי. יצרתי קשר, שלחתי הודעות, ואפילו נסעתי רק כדי לגלות שהוא כבר עבר הלאה. המסע הזה עדיין לא נגמר, אבל משהו אחר כן התחיל.</div>
             <div style={{fontSize:16,fontWeight:700,color:C.ink,marginBottom:8}}>מה זה Pageturner?</div>
@@ -1293,6 +1461,85 @@ export default function App() {
 // ── כרטיס ספר ──────────────────────────────────────────────
 
 
+function Sheet({ title, onClose, children }) {
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:850,background:"rgba(14,12,8,.6)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={onClose}>
+      <div role="dialog" aria-label={title} style={{width:"100%",maxWidth:520,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"90vh",overflowY:"auto",padding:"20px 18px 28px",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{fontSize:18,fontWeight:800,color:C.ink}}>{title}</div>
+          <button aria-label="סגירה" onClick={onClose} style={{background:C.bg,border:"none",borderRadius:9,width:32,height:32,cursor:"pointer",fontSize:16}}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ContactSheet({ user, isGuest, onClose, toast_ }) {
+  const [msg, setMsg] = useState("");
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const send = async () => {
+    setSending(true);
+    try {
+      await api.post("/api/feedback", { message: msg, email: isGuest ? email : undefined });
+      toast_("ההודעה נשלחה, תודה! נחזור אליך בהקדם"); onClose();
+    } catch(e) { toast_(e.message, "err"); }
+    setSending(false);
+  };
+  return (
+    <Sheet title="צור קשר" onClose={onClose}>
+      <div style={{fontSize:13,color:C.muted,marginBottom:14,lineHeight:1.6}}>שאלה, הצעה, בעיה באתר או בקשה לגבי המידע שלך. נחזור אליך במייל{!isGuest&&user?.email?` (${user.email})`:""}.</div>
+      {isGuest && <Inp label="המייל שלך (לתשובה)" value={email} onChange={e=>setEmail(e.target.value)} type="email" inputMode="email" placeholder="email@example.com"/>}
+      <TA label="ההודעה" value={msg} onChange={e=>setMsg(e.target.value.slice(0,3000))} placeholder="כתבו כאן..."/>
+      <Btn onClick={send} disabled={sending||msg.trim().length<3} style={{width:"100%",padding:"14px"}}>{sending?"שולח...":"שליחה"}</Btn>
+    </Sheet>
+  );
+}
+
+function SettingsSheet({ user, onClose, toast_, onSaved, onDeleted, onShowLegal }) {
+  const [name, setName] = useState(user?.name || "");
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [consent, setConsent] = useState(!!user?.emailConsent);
+  const [saving, setSaving] = useState(false);
+  const [confirmDel, setConfirmDel] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const d = await api.put("/api/me", { name, phone, emailConsent: consent });
+      onSaved(d.user); toast_("הפרטים נשמרו ✓"); onClose();
+    } catch(e) { toast_(e.message, "err"); }
+    setSaving(false);
+  };
+  const del = async () => {
+    setDeleting(true);
+    try { await api.del("/api/me"); onDeleted(); }
+    catch(e) { toast_(e.message, "err"); setDeleting(false); }
+  };
+  return (
+    <Sheet title="פרטים והגדרות" onClose={onClose}>
+      <Inp label="שם" value={name} onChange={e=>setName(e.target.value)} icon="👤" autoComplete="name"/>
+      <Inp label="טלפון" value={phone} onChange={e=>setPhone(e.target.value)} icon="📞" type="tel" inputMode="tel" placeholder="050-0000000" autoComplete="tel"/>
+      <div style={{fontSize:11,color:C.muted,marginTop:-8,marginBottom:12}}>מוצג רק למשתמשים רשומים שפונים אליך לגבי ספר</div>
+      <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:13,color:C.ink,lineHeight:1.5,cursor:"pointer",marginBottom:16}}>
+        <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} style={{marginTop:3,width:18,height:18,accentColor:C.accent,flexShrink:0}}/>
+        <span>לקבל עדכונים על ספרים חדשים בשכונה</span>
+      </label>
+      <Btn onClick={save} disabled={saving||!name.trim()} style={{width:"100%",padding:"14px"}}>{saving?"שומר...":"שמירה"}</Btn>
+      <div style={{fontSize:12,color:C.muted,textAlign:"center",marginTop:12}}>
+        <button onClick={()=>onShowLegal("privacy")} style={linkBtn}>מדיניות פרטיות</button> · <button onClick={()=>onShowLegal("terms")} style={linkBtn}>תנאי שימוש</button>
+      </div>
+      <div style={{marginTop:22,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+        <div style={{fontSize:14,fontWeight:700,color:C.red,marginBottom:6}}>מחיקת חשבון</div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:10}}>החשבון, כל הספרים שפרסמת והמשאלות יימחקו לצמיתות. אי אפשר לבטל.</div>
+        <Inp label='כדי לאשר, הקלידו "מחק"' value={confirmDel} onChange={e=>setConfirmDel(e.target.value)}/>
+        <Btn variant="red" onClick={del} disabled={confirmDel.trim()!=="מחק"||deleting} style={{width:"100%",padding:"12px"}}>{deleting?"מוחק...":"מחיקת החשבון לצמיתות"}</Btn>
+      </div>
+    </Sheet>
+  );
+}
+
 function AdminPage({ onBack }) {
   const [key, setKey] = useState("");
   const [stats, setStats] = useState(null);
@@ -1303,9 +1550,9 @@ function AdminPage({ onBack }) {
     setLoading(true);
     setError("");
     try {
-      const r = await fetch(BASE + `/api/admin/stats?key=${encodeURIComponent(key)}`);
-      const d = await r.json();
-      if (!r.ok) { setError("סיסמה שגויה"); return; }
+      const r = await fetch(BASE + "/api/admin/stats", { headers: { "x-admin-key": key } });
+      const d = await safeJson(r);
+      if (!r.ok) { setError(r.status === 401 ? "סיסמה שגויה" : d.error || "שגיאה"); return; }
       setStats(d);
     } catch(e) { setError("שגיאה: " + e.message); }
     finally { setLoading(false); }
@@ -1313,8 +1560,8 @@ function AdminPage({ onBack }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#0e0c08",padding:20,direction:"rtl",color:"#fff"}}>
-      <button onClick={onBack} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:14,marginBottom:20}}>← חזרה</button>
-      <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,fontWeight:900,marginBottom:20}}>📊 Admin Panel</div>
+      <button onClick={onBack} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:14,marginBottom:20}}>→ חזרה</button>
+      <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:24,fontWeight:900,marginBottom:20}}>📊 Admin Panel</div>
       
       {!stats ? (
         <div>
@@ -1382,7 +1629,6 @@ function AdminPage({ onBack }) {
 }
 
 function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
-  const API = "https://pageturner-production-5baf.up.railway.app";
   const [profile, setProfile] = useState(null);
   const [allBooks, setAllBooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1394,8 +1640,8 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
     setProfile(null);
     setAllBooks([]);
     Promise.all([
-      fetch(API+"/api/users/"+userId).then(r=>r.json()).catch(()=>null),
-      fetch(API+"/api/books?ownerId="+userId+"&all=true").then(r=>r.json()).catch(()=>[])
+      api.get("/api/users/"+encodeURIComponent(userId)).catch(()=>null),
+      api.get("/api/books?ownerId="+encodeURIComponent(userId)+"&all=true").catch(()=>[])
     ]).then(([u,b])=>{
       setProfile(u||{});
       setAllBooks(Array.isArray(b)?b:[]);
@@ -1410,7 +1656,7 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
     if(b.city){acc[b.city]=(acc[b.city]||0)+1;}
     return acc;
   }, {});
-  const topCity = Object.keys(city).sort((a,b)=>city[b]-city[a])[0] || profile?.address || null;
+  const topCity = Object.keys(city).sort((a,b)=>city[b]-city[a])[0] || null;
 
   const BookGrid = ({books, showAll, onShowAll, isPast}) => (
     <>
@@ -1418,7 +1664,7 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
         {(showAll?books:books.slice(0,3)).map(b=>(
           <div key={b.id} onClick={()=>onViewBook(b)} style={{aspectRatio:"2/3",borderRadius:8,overflow:"hidden",background:SPINES[parseInt(b.id)%SPINES.length]||"#888",cursor:"pointer",position:"relative",filter:isPast?"grayscale(100%)":"none",opacity:isPast?0.7:1}}>
             {(b.thumbnail||b.frontimg)
-              ? <img src={b.thumbnail||b.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>
+              ? <img src={b.thumbnail||b.frontimg} alt="" loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{if(b.frontimg&&e.target.src!==b.frontimg)e.target.src=b.frontimg;else e.target.style.display="none";}}/>
               : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
           </div>
         ))}
@@ -1436,7 +1682,7 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
       {/* Header */}
       <div style={{background:HDR,padding:"0 0 24px"}}>
         <div style={{padding:"14px 16px 0",display:"flex",alignItems:"center"}}>
-          <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",cursor:"pointer",color:"#fff",padding:"6px 14px",borderRadius:20,fontSize:14,fontWeight:600}}>← חזרה</button>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",cursor:"pointer",color:"#fff",padding:"6px 14px",borderRadius:20,fontSize:14,fontWeight:600}}>→ חזרה</button>
         </div>
         <div style={{textAlign:"center",padding:"16px 16px 0"}}>
           <div style={{width:90,height:90,borderRadius:"50%",background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,margin:"0 auto 12px",overflow:"hidden",border:"3px solid rgba(255,255,255,.4)"}}>
@@ -1495,47 +1741,50 @@ function UserPage({ userId, onClose, onViewBook, HDR, SPINES }) {
           </>
         )}
       </div>
-      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>
   );
 }
 
-function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onContactMade }) {
+function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onContactMade, onViewUser, toast_ }) {
 
   const [showCloseDeal, setShowCloseDeal] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [contactId, setContactId] = useState(null);
-  const [askDeal, setAskDeal] = useState(false);
+  const [phone, setPhone] = useState(null);
+  const isOwner = !!user?.id && String(book.ownerid)===String(user?.id);
+  const canContact = book.avail && !isGuest && !!user?.id && !isOwner;
 
-  const recordContact = async (type) => {
-    if (!user?.id || String(book.ownerid)===String(user?.id)) return;
-    try {
-      const r = await fetch(BASE + "/api/contacts", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ bookId:book.id, bookTitle:book.title, fromUserId:user?.id, toUserId:book.ownerid, type })
-      });
-      const d = await r.json();
-      if (d.contact) setContactId(d.contact.id);
-      // בדוק pending אחרי 3 שניות בלי רענון
-      if (onContactMade) onContactMade();
-    } catch {}
+  // מספר הטלפון נטען רק למשתמש מחובר שפתח את דף הספר
+  useEffect(() => {
+    if (!canContact) return;
+    api.get(`/api/books/${book.id}/phone`).then(d => setPhone(d.phone || "")).catch(e => { setPhone(""); if (e.status !== 401) toast_ && toast_(e.message, "warn"); });
+  }, [book.id, canContact]);
+
+  const recordContact = (type) => {
+    if (!canContact) return;
+    api.post("/api/contacts", { bookId: book.id, type }).then(() => onContactMade && onContactMade()).catch(() => {});
   };
 
   const closeDeal = async (status) => {
     setClosing(true);
     try {
-      const r = await fetch(BASE + `/api/books/${book.id}`, {
-        method: "PUT",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ userId: user?.id, avail: false, dealStatus: status })
-      });
-      if (!r.ok) throw new Error("שגיאה");
+      await api.put(`/api/books/${book.id}`, { avail: false, dealStatus: status });
+      toast_ && toast_("עודכן. הספר ירד מהמדף ✓");
       onBookUpdated && onBookUpdated();
       onClose();
-    } catch(e) {}
+    } catch(e) { toast_ && toast_(e.message, "err"); }
     setClosing(false);
   };
+
+  const share = async () => {
+    const url = `${location.origin}/?book=${book.id}`;
+    const text = `"${book.title}" ${MODES[book.mode]?.label ? "ל" + MODES[book.mode].label : ""} בספרייה השכונתית`;
+    api.track("share", { bookId: book.id });
+    try {
+      if (navigator.share) await navigator.share({ title: book.title, text, url });
+      else { await navigator.clipboard.writeText(url); toast_ && toast_("הקישור הועתק ✓"); }
+    } catch {}
+  };
+  const waPhone = (phone || "").replace(/\D/g, "").replace(/^0/, "972");
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
   const waMsg = book.mode==="sell"
@@ -1553,16 +1802,19 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
         <div style={{padding:"4px 17px 32px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:800,color:C.ink}}>פרטי הספר</div>
-            <button onClick={onClose} style={{background:C.bg,border:"none",borderRadius:9,width:30,height:30,cursor:"pointer",fontSize:16}}>✕</button>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={share} aria-label="שיתוף" style={{background:C.bg,border:"none",borderRadius:9,height:32,padding:"0 12px",cursor:"pointer",fontSize:13,fontWeight:600,color:C.ink}}>↗ שיתוף</button>
+              <button onClick={onClose} aria-label="סגירה" style={{background:C.bg,border:"none",borderRadius:9,width:32,height:32,cursor:"pointer",fontSize:16}}>✕</button>
+            </div>
           </div>
           <div style={{display:"flex",gap:14,marginBottom:18}}>
-            <div style={{width:70,height:100,borderRadius:"4px 10px 10px 4px",flexShrink:0,background:color,overflow:"hidden",boxShadow:`4px 4px 14px ${color}44`}}>
+            <div style={{width:92,height:132,borderRadius:"4px 10px 10px 4px",flexShrink:0,background:color,overflow:"hidden",boxShadow:`4px 4px 14px ${color}44`}}>
               {(book.thumbnail||book.frontimg)
-                ? <img src={book.thumbnail||book.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                ? <img src={book.thumbnail||book.frontimg} alt={book.title} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                 : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:28}}>📖</div>}
             </div>
             <div style={{flex:1}}>
-              <div style={{fontSize:16,fontWeight:800,color:C.ink,marginBottom:4}}>{book.title}</div>
+              <div style={{fontSize:18,fontWeight:800,color:C.ink,marginBottom:4,lineHeight:1.3}}>{book.title}</div>
               <div style={{fontSize:13,color:C.muted,marginBottom:4}}>{book.author}</div>
               {book.publisher&&<div style={{fontSize:12,color:C.muted}}>{book.publisher}{book.year?` (${book.year})`:""}</div>}
               <div style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:8,padding:"4px 10px",background:m.bg,borderRadius:99}}>
@@ -1578,23 +1830,35 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
           <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
             {book.condition&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>⭐ {book.condition}</div>}
             {book.city&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>📍 {book.city}</div>}
-            {book.km!=null&&!isNaN(book.km)&&!isGuest&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>{book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`}</div>}
+            {book.km!=null&&!isNaN(book.km)&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>{kmLabel(book,user)}</div>}
+            {book.mode==="lend"&&book.lenduntil&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>↩ להחזיר עד {new Date(book.lenduntil).toLocaleDateString("he-IL")}</div>}
+            {book.mode==="swap"&&book.swapfor&&<div style={{background:C.bg,borderRadius:99,padding:"5px 12px",fontSize:12,color:C.muted}}>⇄ מחפש: {book.swapfor}</div>}
           </div>
-          <div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:4}}>המפרסם</div>
-            <div style={{fontSize:14,fontWeight:700,color:C.ink}}>{book.ownername||"משתמש"}</div>
-          </div>
-          {book.avail&&(
-            isGuest
-              ? <Btn onClick={onGuest} style={{width:"100%",padding:"14px",fontSize:15}}>הצטרף לפנייה 📱</Btn>
-              : book.ownerid!==user?.id&&<div style={{display:"flex",gap:10}}>
-                <a href={`https://wa.me/972${(book.phone||"").replace(/^0/,"")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{flex:1,textDecoration:"none"}} onClick={()=>recordContact("whatsapp")}>
-                  <Btn style={{width:"100%",padding:"14px",fontSize:15,background:"#25D366",color:"#fff"}}>📱 וואטסאפ</Btn>
-                </a>
-                {book.phone&&<a href={`tel:${book.phone}`} style={{textDecoration:"none"}} onClick={()=>recordContact("phone")}>
-                  <Btn style={{padding:"14px 18px",fontSize:18,background:C.bg,color:C.ink,border:`1px solid ${C.border}`}}>📞</Btn>
-                </a>}
-              </div>
+          <button onClick={()=>book.ownerid&&onViewUser&&onViewUser(book.ownerid)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:C.bg,border:"none",borderRadius:12,padding:"10px 14px",marginBottom:16,cursor:book.ownerid?"pointer":"default",textAlign:"right"}}>
+            <div style={{width:36,height:36,borderRadius:"50%",background:color,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,flexShrink:0}}>
+              {book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : (book.ownername||"?")[0]}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.muted}}>המפרסם</div>
+              <div style={{fontSize:14,fontWeight:700,color:C.ink}}>{book.ownername||"משתמש"}</div>
+            </div>
+            {book.ownerid&&<span style={{fontSize:12,color:C.muted}}>לפרופיל ←</span>}
+          </button>
+          {book.avail&&!isOwner&&(
+            isGuest || !user?.id
+              ? <Btn onClick={onGuest} style={{width:"100%",padding:"15px",fontSize:15}}>הירשמו כדי לפנות למפרסם</Btn>
+              : phone === null
+                ? <div style={{textAlign:"center",padding:"14px",color:C.muted,fontSize:13}}><Spinner/></div>
+                : phone
+                  ? <div style={{display:"flex",gap:10}}>
+                      <a href={`https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{flex:1,textDecoration:"none"}} onClick={()=>recordContact("whatsapp")}>
+                        <Btn style={{width:"100%",padding:"15px",fontSize:15,background:"#25D366",color:"#fff"}}>וואטסאפ למפרסם</Btn>
+                      </a>
+                      <a href={`tel:${phone}`} aria-label="שיחת טלפון" style={{textDecoration:"none"}} onClick={()=>recordContact("phone")}>
+                        <Btn style={{padding:"15px 18px",fontSize:18,background:C.bg,color:C.ink,border:`1px solid ${C.border}`}}>📞</Btn>
+                      </a>
+                    </div>
+                  : <div style={{textAlign:"center",padding:"12px",background:C.bg,borderRadius:12,color:C.muted,fontSize:13}}>אין למפרסם מספר טלפון זמין כרגע</div>
           )}
           {!book.avail&&<div style={{textAlign:"center",padding:"12px",background:"#fef2f2",borderRadius:12,color:C.red,fontWeight:700,fontSize:13}}>⛔ הספר אינו זמין כרגע</div>}
           {String(book.ownerid)===String(user?.id) && !book.dealstatus && <>
@@ -1634,7 +1898,13 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   );
 }
 
-function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onViewUser }) {
+function kmLabel(book, user) {
+  if (String(book.ownerid) === String(user?.id)) return "הספר שלך";
+  if (book.km <= 0.5) return "פחות מק\"מ ממך";
+  return `${book.km} ק"מ ממך`;
+}
+
+function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onViewUser }) {
   const [exp, setExp] = useState(false);
   const color = SPINES[parseInt(book.id) % SPINES.length] || "#888";
   const m = MODES[book.mode] || MODES.sell;
@@ -1645,9 +1915,9 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onV
       <div style={{marginRight:11}}>
         <div style={{display:"flex",gap:11,marginBottom:10}}>
           {/* ספר thumbnail */}
-          <div style={{width:50,height:72,borderRadius:"3px 8px 8px 3px",flexShrink:0,background:book.frontImg?undefined:color,overflow:"hidden",position:"relative",boxShadow:`3px 3px 10px ${color}44`}}>
+          <div style={{width:58,height:84,borderRadius:"3px 8px 8px 3px",flexShrink:0,background:color,overflow:"hidden",position:"relative",boxShadow:`3px 3px 10px ${color}44`}}>
             {(book.thumbnail||book.frontimg)
-              ? <img src={book.thumbnail||book.frontimg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              ? <img src={book.thumbnail||book.frontimg} alt="" loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               : <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>📖</div>
             }
           </div>
@@ -1658,7 +1928,7 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onV
             </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
               <span style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:99,fontSize:11,fontWeight:700,background:m.bg,color:m.fg}}>{m.icon} {m.label}</span>
-              <span style={{fontSize:12,color:book.avail?C.green:C.red}}>● {book.avail?"זמין":"לא זמין"}</span>
+{!book.avail&&<span style={{fontSize:12,color:C.red}}>● לא זמין</span>}
               {book.mode==="sell"&&book.price&&<span style={{fontSize:12,fontWeight:800,color:C.gold}}>₪{book.price}</span>}
             </div>
           </div>
@@ -1666,12 +1936,12 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onV
 
         {book.summary && (
           <>
-            <div style={{fontSize:12,color:"#3d3830",background:C.bg,borderRadius:9,padding:"8px 11px",lineHeight:1.6,fontStyle:"italic",maxHeight:exp?"none":"3.2em",overflow:"hidden",WebkitMaskImage:exp?"none":"linear-gradient(to bottom,black 55%,transparent 100%)"}}>
+            <div style={{fontSize:12,color:"#3d3830",background:C.bg,borderRadius:9,padding:"8px 11px",lineHeight:1.6,fontStyle:"italic",maxHeight:exp||book.summary.length<=110?"none":"3.2em",overflow:"hidden",WebkitMaskImage:exp||book.summary.length<=110?"none":"linear-gradient(to bottom,black 55%,transparent 100%)"}}>
               "{book.summary}"
             </div>
-            <button onClick={e=>{e.stopPropagation();setExp(p=>!p)}} style={{fontSize:11,color:C.indigo,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:"3px 11px 0"}}>
+            {book.summary.length > 110 && <button onClick={e=>{e.stopPropagation();setExp(p=>!p)}} style={{fontSize:11,color:C.indigo,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:"3px 11px 0"}}>
               {exp?"פחות ▲":"קרא עוד ▼"}
-            </button>
+            </button>}
           </>
         )}
 
@@ -1679,27 +1949,15 @@ function BookCard({ book, onEdit, isGuest, onGuest, user, onView, onContact, onV
           <div style={{display:"flex",alignItems:"center",gap:7}}>
             <div onClick={e=>{e.stopPropagation();if(book.ownerid&&onViewUser)onViewUser(book.ownerid);}} style={{width:28,height:28,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11,overflow:"hidden",cursor:"pointer"}}>{book.owneravatar ? <img src={book.owneravatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none"}}/> : (book.ownername||book.ownerName||"?")[0]}</div>
             <div>
-              <div style={{fontSize:12,fontWeight:700,color:C.ink}}>{book.ownername||book.ownerName}</div>
-              <div style={{fontSize:12,color:C.muted}}>📍 {!isGuest&&book.km!=null&&!isNaN(book.km)?(book.km<0.1?(String(book.ownerid)===String(user?.id)?"אצלך":"פחות מ-100 מטר"):`${book.km} ק"מ`):book.city||"מרחק לא ידוע"}</div>
+              <div onClick={e=>{e.stopPropagation();if(book.ownerid&&onViewUser)onViewUser(book.ownerid);}} style={{fontSize:12,fontWeight:700,color:C.ink,cursor:"pointer"}}>{book.ownername||book.ownerName}</div>
+              <div style={{fontSize:12,color:C.muted}}>📍 {book.km!=null&&!isNaN(book.km)?kmLabel(book,user):book.city||"מיקום לא צוין"}</div>
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             {onEdit
-              ? <div style={{display:"flex",gap:5}}>
-                  <button onClick={e=>{e.stopPropagation();onEdit(book);}} style={{padding:"6px 10px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️</button>
-                </div>
+              ? <button onClick={e=>{e.stopPropagation();onEdit(book);}} aria-label="עריכה" style={{padding:"7px 12px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer",color:C.muted}}>✏️ עריכה</button>
               : book.avail && <>
-              <a href={`tel:${book.phone}`} onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}else{onContact&&onContact(book,"phone");}}} style={{padding:"7px 10px",background:C.tealL,border:`1px solid ${C.teal}30`,borderRadius:9,color:C.teal,fontSize:12,fontWeight:700,textDecoration:"none"}}>📞</a>
-              {book.phone && <a
-                href={`https://wa.me/972${(book.phone||"").replace(/^0/,"").replace(/-/g,"")}?text=${encodeURIComponent(
-                  book.mode==="sell"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין לרכישה?`:
-                  book.mode==="lend"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין להשאלה?`:
-                  book.mode==="swap"?`היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם תהיה מעוניין להחליף?`:
-                  `היי ${book.ownername||""}, פניתי דרך Pageturner לגבי "${book.title}". האם הוא זמין למסירה?`
-                )}`}
-                onClick={e=>{e.stopPropagation();if(isGuest){e.preventDefault();onGuest();}else{onContact&&onContact(book,"whatsapp");}}}
-                target="_blank"
-                style={{padding:"7px 10px",background:"#dcfce7",border:"1px solid #16a34a30",borderRadius:9,color:"#16a34a",fontSize:12,fontWeight:700,textDecoration:"none"}}><svg viewBox="0 0 24 24" width="16" height="16" fill="#16a34a"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.528 5.855L.057 23.882l6.186-1.438A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.658-.511-5.18-1.401l-.36-.214-3.795.881.925-3.701-.236-.375A9.932 9.932 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg></a>}
+              <span style={{padding:"7px 12px",background:"#dcfce7",borderRadius:9,color:"#15803d",fontSize:12,fontWeight:700}}>יצירת קשר ←</span>
             </>}
           </div>
         </div>
