@@ -1852,7 +1852,10 @@ function ContactSheet({ user, isGuest, onClose, toast_ }) {
   };
   return (
     <Sheet title="צור קשר" onClose={onClose}>
-      <div style={{fontSize:13,color:C.muted,marginBottom:14,lineHeight:1.6}}>שאלה, הצעה, בעיה באתר או בקשה לגבי המידע שלך. נחזור אליך במייל{!isGuest&&user?.email?` (${user.email})`:""}.</div>
+      <div style={{fontSize:13,color:C.muted,marginBottom:14,lineHeight:1.6}}>
+        שאלה, הצעה, בעיה באתר או בקשה לגבי המידע שלך. אפשר גם לכתוב לנו ישירות ל-<span style={{direction:"ltr",display:"inline-block",color:C.ink,fontWeight:600}}>pageturner.team@gmail.com</span>
+        {!isGuest&&user?.email&&<div style={{marginTop:6,fontSize:12}}>התשובה תישלח לכתובת שלך: <span style={{direction:"ltr",display:"inline-block"}}>{user.email}</span></div>}
+      </div>
       {isGuest && <Inp label="המייל שלך (לתשובה)" value={email} onChange={e=>setEmail(e.target.value)} type="email" inputMode="email" placeholder="email@example.com"/>}
       <TA label="ההודעה" value={msg} onChange={e=>setMsg(e.target.value.slice(0,3000))} placeholder="כתבו כאן..."/>
       <Btn onClick={send} disabled={sending||msg.trim().length<3} style={{width:"100%",padding:"14px"}}>{sending?"שולח...":"שליחה"}</Btn>
