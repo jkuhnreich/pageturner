@@ -102,6 +102,7 @@ async function initDB() {
   await pool.query(`CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS wishlist (id TEXT PRIMARY KEY, userid TEXT, query TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS sessions (tokenhash TEXT PRIMARY KEY, userid TEXT NOT NULL, createdat BIGINT, lastseen BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS favorites (userid TEXT NOT NULL, bookid TEXT NOT NULL, createdat BIGINT, PRIMARY KEY (userid, bookid))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS otps (email TEXT PRIMARY KEY, codehash TEXT, expires BIGINT, attempts INTEGER DEFAULT 0, sends INTEGER DEFAULT 0, windowstart BIGINT, tickethash TEXT, ticketexpires BIGINT)`);
   const alters = [
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT",
@@ -719,6 +720,7 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
     const existing = await ownBook(req, res);
     if (!existing) return;
     await pool.query("DELETE FROM books WHERE id=$1", [req.params.id]);
+    await pool.query("DELETE FROM favorites WHERE bookid=$1", [req.params.id]);
     res.json({ ok: true });
   } catch (e) { console.error("delete book:", e.message); res.status(500).json({ error: "המחיקה נכשלה" }); }
 });
@@ -962,6 +964,7 @@ app.delete("/api/me", requireAuth, async (req, res) => {
     await client.query("BEGIN");
     await client.query("DELETE FROM books WHERE ownerid=$1", [id]);
     await client.query("DELETE FROM wishlist WHERE userid=$1", [id]);
+    await client.query("DELETE FROM favorites WHERE userid=$1", [id]);
     await client.query("DELETE FROM contacts WHERE fromuserid=$1 OR touserid=$1", [id]);
     await client.query("DELETE FROM sessions WHERE userid=$1", [id]);
     await client.query("DELETE FROM otps WHERE email=$1", [req.user.email]);
@@ -1007,6 +1010,33 @@ app.put("/api/users/:id/profile", requireAuth, selfOnly, async (req, res) => {
     const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
     res.json({ ok: true, user: privateUser(req, user) });
   } catch { res.status(500).json({ error: "העדכון נכשל" }); }
+});
+
+// ── ספרים שמורים (לב) ─────────────────────────────────────
+app.get("/api/favorites", requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT ${BOOK_COLS} FROM favorites f JOIN books b ON b.id=f.bookid LEFT JOIN users u ON b.ownerid=u.id WHERE f.userid=$1 ORDER BY f.createdat DESC`,
+      [req.user.id]
+    );
+    res.json(r.rows.map(b => publicBook(req, b, null)));
+  } catch { res.status(500).json({ error: "שגיאה" }); }
+});
+app.put("/api/favorites/:bookId", requireAuth, async (req, res) => {
+  try {
+    const n = (await pool.query("SELECT COUNT(*) FROM favorites WHERE userid=$1", [req.user.id])).rows[0].count;
+    if (+n >= 300) return res.status(400).json({ error: "אפשר לשמור עד 300 ספרים" });
+    const b = await pool.query("SELECT 1 FROM books WHERE id=$1", [req.params.bookId]);
+    if (!b.rows.length) return res.status(404).json({ error: "הספר לא נמצא" });
+    await pool.query("INSERT INTO favorites (userid,bookid,createdat) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", [req.user.id, req.params.bookId, Date.now()]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: "שגיאה" }); }
+});
+app.delete("/api/favorites/:bookId", requireAuth, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM favorites WHERE userid=$1 AND bookid=$2", [req.user.id, req.params.bookId]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: "שגיאה" }); }
 });
 
 // ── רשימת משאלות ─────────────────────────────────────────
