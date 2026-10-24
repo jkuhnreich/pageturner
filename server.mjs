@@ -103,6 +103,7 @@ async function initDB() {
   await pool.query(`CREATE TABLE IF NOT EXISTS wishlist (id TEXT PRIMARY KEY, userid TEXT, query TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS sessions (tokenhash TEXT PRIMARY KEY, userid TEXT NOT NULL, createdat BIGINT, lastseen BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS favorites (userid TEXT NOT NULL, bookid TEXT NOT NULL, createdat BIGINT, PRIMARY KEY (userid, bookid))`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS covers (id TEXT PRIMARY KEY, key TEXT UNIQUE, img TEXT, source TEXT, uses INTEGER DEFAULT 0, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS otps (email TEXT PRIMARY KEY, codehash TEXT, expires BIGINT, attempts INTEGER DEFAULT 0, sends INTEGER DEFAULT 0, windowstart BIGINT, tickethash TEXT, ticketexpires BIGINT)`);
   const alters = [
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT",
@@ -147,6 +148,89 @@ function dataUriToBuffer(uri) {
   return m ? { mime: m[1], buf: Buffer.from(m[2], "base64") } : null;
 }
 
+// ── יישור כריכה: מתיחת ארבע פינות למלבן (כמו סורק מסמכים) ────
+function solveLinear(A, b) {
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-10) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) if (r !== c) {
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((r, i) => r[n] / r[i]);
+}
+// הומוגרפיה שממפה נקודות from → to (ארבע נקודות כל אחד)
+function homography(from, to) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = from[i], [u, v] = to[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  const h = solveLinear(A, b);
+  return h ? [...h, 1] : null;
+}
+// מסדר ארבע נקודות: למעלה-שמאל, למעלה-ימין, למטה-ימין, למטה-שמאל
+function orderCorners(pts) {
+  const cx = pts.reduce((a, p) => a + p[0], 0) / 4, cy = pts.reduce((a, p) => a + p[1], 0) / 4;
+  const sorted = [...pts].sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
+  let start = 0;
+  sorted.forEach((p, i) => { if (p[0] + p[1] < sorted[start][0] + sorted[start][1]) start = i; });
+  return [0, 1, 2, 3].map(i => sorted[(start + i) % 4]);
+}
+function quadOk(q, W, H) {
+  const area = Math.abs(q.reduce((a, p, i) => { const n = q[(i + 1) % 4]; return a + p[0] * n[1] - n[0] * p[1]; }, 0)) / 2;
+  if (area < W * H * 0.08) return false;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+    if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) <= 0) return false; // לא קמור
+  }
+  const d = (p, r) => Math.hypot(p[0] - r[0], p[1] - r[1]);
+  const w = Math.max(d(q[0], q[1]), d(q[3], q[2])), h = Math.max(d(q[0], q[3]), d(q[1], q[2]));
+  const ratio = w / h;
+  return ratio > 0.4 && ratio < 1.25;
+}
+// מקבל תמונה ופינות באחוזים, ומחזיר כריכה ישרה (data URI) או null
+async function warpCover(buf, corners) {
+  try {
+    if (!corners) return null;
+    const raw = Array.isArray(corners) ? corners : [corners.tl, corners.tr, corners.br, corners.bl];
+    if (raw.length !== 4 || raw.some(p => !Array.isArray(p) || p.length < 2 || !p.every(Number.isFinite))) return null;
+    const image = await Jimp.read(buf);
+    const W = image.bitmap.width, H = image.bitmap.height;
+    const q = orderCorners(raw.map(([x, y]) => [Math.min(100, Math.max(0, x)) / 100 * (W - 1), Math.min(100, Math.max(0, y)) / 100 * (H - 1)]));
+    if (!quadOk(q, W, H)) return null;
+    const d = (p, r) => Math.hypot(p[0] - r[0], p[1] - r[1]);
+    let w = Math.max(d(q[0], q[1]), d(q[3], q[2])), h = Math.max(d(q[0], q[3]), d(q[1], q[2]));
+    const s = Math.min(600 / w, 900 / h, 1);
+    const ow = Math.max(40, Math.round(w * s)), oh = Math.max(60, Math.round(h * s));
+    const m = homography([[0, 0], [ow - 1, 0], [ow - 1, oh - 1], [0, oh - 1]], q);
+    if (!m) return null;
+    const src = image.bitmap.data, out = Buffer.alloc(ow * oh * 4);
+    for (let v = 0; v < oh; v++) for (let u = 0; u < ow; u++) {
+      const z = m[6] * u + m[7] * v + m[8];
+      const x = (m[0] * u + m[1] * v + m[2]) / z, y = (m[3] * u + m[4] * v + m[5]) / z;
+      const x0 = Math.max(0, Math.min(W - 2, Math.floor(x))), y0 = Math.max(0, Math.min(H - 2, Math.floor(y)));
+      const fx = Math.min(1, Math.max(0, x - x0)), fy = Math.min(1, Math.max(0, y - y0));
+      const i00 = (y0 * W + x0) * 4, i10 = i00 + 4, i01 = i00 + W * 4, i11 = i01 + 4, o = (v * ow + u) * 4;
+      for (let c = 0; c < 3; c++) {
+        out[o + c] = (src[i00 + c] * (1 - fx) + src[i10 + c] * fx) * (1 - fy) + (src[i01 + c] * (1 - fx) + src[i11 + c] * fx) * fy;
+      }
+      out[o + 3] = 255;
+    }
+    const res = new Jimp({ width: ow, height: oh });
+    res.bitmap.data = out;
+    return await res.getBase64("image/jpeg", { quality: 82 });
+  } catch (e) {
+    console.log("Warp error:", e.message);
+    return null;
+  }
+}
+
 async function cropBookImage(buf, crop) {
   try {
     if (!crop) return null;
@@ -166,9 +250,58 @@ async function cropBookImage(buf, crop) {
   }
 }
 
+// ── ספריית כריכות קהילתית ─────────────────────────────────
+// כל כריכה ישרה שמשתמש מעלה נשמרת לפי ISBN ולפי שם+מחבר, ומשמשת את מי שיעלה את אותו ספר
+function normText(t) {
+  return String(t || "").toLowerCase().replace(/[\u0591-\u05C7]/g, "").replace(/["'״׳`.,:;!?()\[\]{}\-–—_/\\]/g, " ").replace(/\s+/g, " ").trim();
+}
+function normIsbn(i) {
+  let d = String(i || "").replace(/[^0-9Xx]/g, "").toUpperCase();
+  if (d.length === 10) {
+    const core = "978" + d.slice(0, 9);
+    let sum = 0;
+    for (let k = 0; k < 12; k++) sum += Number(core[k]) * (k % 2 ? 3 : 1);
+    d = core + ((10 - (sum % 10)) % 10);
+  }
+  return /^97[89]\d{10}$/.test(d) ? d : "";
+}
+function coverKeys({ isbn, title, author }) {
+  const keys = [];
+  const i = normIsbn(isbn);
+  if (i) keys.push("isbn:" + i);
+  const t = normText(title), a = normText(author);
+  if (t.length >= 2) keys.push("t:" + t + "|" + a);
+  return keys;
+}
+const coverId = key => sha256(key).slice(0, 24);
+async function findCover(meta) {
+  for (const key of coverKeys(meta)) {
+    const r = await pool.query("SELECT id FROM covers WHERE key=$1", [key]);
+    if (r.rows[0]) return r.rows[0].id;
+  }
+  return null;
+}
+async function saveCover(meta, img, source) {
+  if (!img?.startsWith("data:image/")) return;
+  for (const key of coverKeys(meta)) {
+    await pool.query("INSERT INTO covers (id,key,img,source,createdat) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING", [coverId(key), key, img, source, Date.now()]);
+  }
+}
+const coverUrl = (req, id) => id ? `${origin(req)}/api/img/cover/${id}` : null;
+// כריכה מ-Open Library לפי ISBN (רק אם באמת קיימת)
+async function openLibraryCover(isbn) {
+  const i = normIsbn(isbn);
+  if (!i) return null;
+  try {
+    const url = `https://covers.openlibrary.org/b/isbn/${i}-L.jpg?default=false`;
+    const r = await fetch(url, { method: "HEAD", headers: { "User-Agent": "Pageturner/1.0 (pageturner.co.il)" } });
+    return r.ok ? url.replace("?default=false", "") : null;
+  } catch { return null; }
+}
+
 // ── Claude Vision ─────────────────────────────────────────
 async function callClaude(model, buf, mime, prompt, maxTok) {
-  return fetch("https://api.anthropic.com/v1/messages", {
+  return fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
     method: "POST",
     headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
@@ -358,9 +491,11 @@ RULES:
 - For series/volume: look for series name or number
 - Leave "" if not clearly visible
 - confidence: 0-1 score for each field
-- crop: find the tightest bounding box containing ONLY the physical book cover, excluding any background (table, couch, hands, etc). Give coordinates as PERCENTAGES of the full image (0-100), where x,y is the top-left corner.
+- isbn: if a barcode/ISBN number is visible, copy the 13 digits, else ""
+- corners: the four corners of the FRONT COVER itself (not the spine, not the background), as PERCENTAGES of the image width (x) and height (y), 0-100. tl = top-left corner of the cover as seen in the image, tr = top-right, br = bottom-right, bl = bottom-left. If the cover is tilted or photographed at an angle, give the real tilted corner positions. If a corner is cut off by the image edge, estimate it at the edge.
+- crop: the tightest axis-aligned box containing only the cover, as PERCENTAGES (x,y = top-left).
 Return ONLY this JSON, no other text:
-{"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","confidence":{"title":0,"author":0,"publisher":0,"year":0},"crop":{"x":0,"y":0,"width":100,"height":100}}`;
+{"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","isbn":"","confidence":{"title":0,"author":0,"publisher":0,"year":0},"corners":{"tl":[0,0],"tr":[100,0],"br":[100,100],"bl":[0,100]},"crop":{"x":0,"y":0,"width":100,"height":100}}`;
 
 const P_BACK = `You are an expert OCR and bibliographic system for book back covers.
 RULES:
@@ -442,6 +577,7 @@ const BOOK_COLS = `b.id,b.title,b.author,b.publisher,b.year,b.summary,b.conditio
   CASE WHEN b.thumbnail LIKE 'http%' THEN b.thumbnail END AS thumburl,
   (COALESCE(length(b.thumbnail),0) + COALESCE(length(b.frontimg),0)) AS imgver,
   (COALESCE(b.thumbnail,'') LIKE 'data:%' OR COALESCE(b.frontimg,'') <> '') AS hasimg,
+  (COALESCE(b.thumbnail,'') <> '' AND COALESCE(b.frontimg,'') LIKE 'data:%') AS hasphoto,
   u.id AS uid, CASE WHEN u.avatar IS NOT NULL AND u.avatar <> '' THEN length(u.avatar) END AS avatarver,
   CASE WHEN u.avatar LIKE 'http%' THEN u.avatar END AS avatarurl`;
 
@@ -455,6 +591,7 @@ function publicBook(req, b, coords) {
     ownername: b.ownername, ownertype: b.ownertype, ownerid: b.ownerid, city: b.city, dealstatus: b.dealstatus,
     createdat: b.createdat,
     thumbnail: thumb, frontimg: img || thumb,
+    photo: b.hasphoto ? `${origin(req)}/api/img/book/${b.id}?which=photo&v=${b.imgver}` : null,
     owneravatar: b.avatarurl || (b.avatarver ? `${origin(req)}/api/img/avatar/${b.uid}?v=${b.avatarver}` : null),
   };
   if (coords && b.lat != null && b.lng != null) {
@@ -485,11 +622,19 @@ function sendImage(res, uri) {
   res.send(parsed.buf);
   return true;
 }
+app.get("/api/img/cover/:id", async (req, res) => {
+  try {
+    const r = await pool.query("SELECT img FROM covers WHERE id=$1", [req.params.id]);
+    if (r.rows[0] && sendImage(res, r.rows[0].img)) return;
+    res.status(404).end();
+  } catch { res.status(500).end(); }
+});
 app.get("/api/img/book/:id", async (req, res) => {
   try {
     const r = await pool.query("SELECT thumbnail, frontimg FROM books WHERE id=$1", [req.params.id]);
     const b = r.rows[0];
     if (!b) return res.status(404).end();
+    if (req.query.which === "photo" && b.frontimg?.startsWith("data:") && sendImage(res, b.frontimg)) return;
     if (b.thumbnail?.startsWith("data:") && sendImage(res, b.thumbnail)) return;
     if (b.frontimg?.startsWith("data:") && sendImage(res, b.frontimg)) return;
     const url = [b.thumbnail, b.frontimg].find(x => /^https:\/\//.test(x || ""));
@@ -531,8 +676,11 @@ app.post("/api/analyze/front", visionGuard, async (req, res) => {
     if ((conf.year || 0) < 0.7) vision.year = "";
     if ((conf.author || 0) < 0.7) vision.author = "";
     const { googleResults, enriched } = await enrich(vision);
-    const croppedImage = await cropBookImage(buf, vision.crop);
-    res.json({ ok: true, data: enriched, googleResults, croppedImage });
+    const straight = await warpCover(buf, vision.corners);
+    const croppedImage = straight || await cropBookImage(buf, vision.crop);
+    const meta = { isbn: enriched.isbn || vision.isbn, title: enriched.title, author: enriched.author };
+    const communityCover = coverUrl(req, await findCover(meta));
+    res.json({ ok: true, data: { ...enriched, isbn: normIsbn(meta.isbn) || enriched.isbn || "" }, googleResults, croppedImage, straightened: !!straight, communityCover });
   } catch (e) {
     console.error("analyze/front:", e.message);
     res.status(502).json({ error: "לא הצלחנו לנתח את התמונה, אפשר למלא את הפרטים ידנית" });
@@ -552,8 +700,9 @@ app.post("/api/analyze/back", visionGuard, async (req, res) => {
       const results = await gBooks(`isbn:${data.isbn}`, 1);
       if (results.length) googleData = { publisher: results[0].publisher, year: results[0].year, title: results[0].title, author: results[0].author, thumbnail: results[0].thumbnail };
     }
-    res.json({ ok: true, data: {
-      summary: data.summary || "", isbn: data.isbn || "", price: data.price || "", genre: data.genre || "",
+    const communityCover = coverUrl(req, await findCover({ isbn: data.isbn, title: googleData.title, author: googleData.author }));
+    res.json({ ok: true, communityCover, data: {
+      summary: data.summary || "", isbn: normIsbn(data.isbn) || data.isbn || "", price: data.price || "", genre: data.genre || "",
       publisher: googleData.publisher || data.publisher || "", year: googleData.year || data.year || "",
       googleTitle: googleData.title || "", googleAuthor: googleData.author || "", thumbnail: googleData.thumbnail || "",
     } });
@@ -608,6 +757,29 @@ app.get("/api/books/search-google", limit("gsearch", 60, 60 * 1000), async (req,
   res.json([...olResults, ...gbResults.filter(x => !seen.has(x.title.toLowerCase()))].slice(0, 8));
 });
 
+// סריקת ברקוד: פרטי ספר וכריכה לפי ISBN
+app.get("/api/books/isbn/:isbn", limit("isbn", 60, 10 * 60 * 1000), requireAuth, async (req, res) => {
+  const isbn = normIsbn(req.params.isbn);
+  if (!isbn) return res.status(400).json({ error: "הברקוד לא נראה כמו ISBN של ספר" });
+  try {
+    let info = await openLibrary(isbn);
+    const g = (await gBooks(`isbn:${isbn}`, 1))[0];
+    if (g) info = { ...(info || {}), title: g.title || info?.title, author: g.author || info?.author, publisher: g.publisher || info?.publisher, year: g.year || info?.year, description: g.description || info?.description, thumbnail: g.thumbnail || info?.thumbnail, genre: mapGenre(g.categories) };
+    const community = await findCover({ isbn, title: info?.title, author: info?.author });
+    const olCover = community ? null : await openLibraryCover(isbn);
+    res.json({ ok: true, found: !!(info?.title), data: {
+      isbn, title: info?.title || "", author: info?.author || "", publisher: info?.publisher || "", year: info?.year || "",
+      summary: info?.description || "", genre: info?.genre || "",
+      thumbnail: coverUrl(req, community) || olCover || info?.thumbnail || "",
+    } });
+  } catch (e) { console.error("isbn:", e.message); res.status(500).json({ error: "שגיאה בחיפוש הספר" }); }
+});
+
+app.get("/api/covers/lookup", limit("isbn", 60, 10 * 60 * 1000), async (req, res) => {
+  const id = await findCover({ isbn: req.query.isbn, title: req.query.title, author: req.query.author }).catch(() => null);
+  res.json({ ok: true, cover: coverUrl(req, id) });
+});
+
 // ── ספרים ────────────────────────────────────────────────
 function parseCoords(q) {
   const lat = parseFloat(q.lat), lng = parseFloat(q.lng);
@@ -649,6 +821,11 @@ app.get("/api/books/:id", async (req, res) => {
 // מקבל data URI או קישור https לתמונה, ומחזיר גרסה קטנה ובטוחה לשמירה
 async function cleanThumbnail(t) {
   if (!t) return null;
+  const own = /\/api\/img\/cover\/([a-f0-9]{24})(?:$|\?)/.exec(t);
+  if (own) {
+    const r = await pool.query("UPDATE covers SET uses=uses+1 WHERE id=$1 RETURNING img", [own[1]]);
+    return r.rows[0]?.img || null;
+  }
   if (/^https:\/\/[^\s"'<>]+$/.test(t)) return clip(t, 1000);
   const parsed = dataUriToBuffer(t);
   if (!parsed) return null;
@@ -680,6 +857,9 @@ app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, uploa
        true, u.storename || u.name || "", u.type || "private", u.phone || "", u.id,
        coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now()]
     );
+    if (b.coverQuality === "straight" && thumbnail?.startsWith("data:")) {
+      saveCover({ isbn: b.isbn, title: b.title, author: b.author }, thumbnail, "user").catch(e => console.error("saveCover:", e.message));
+    }
     track("book_publish", u.id, { bookId: id, title: b.title, mode, city });
     notifyWishlist(id, b.title, b.author, u.id).catch(e => console.error("wishlist notify:", e.message));
     res.json({ ok: true, book: publicBook(req, await getBookRow(id), coords) });

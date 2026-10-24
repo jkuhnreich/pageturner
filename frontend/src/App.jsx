@@ -376,34 +376,115 @@ function Btn({ children, onClick, disabled, variant="dark", style:s={} }) {
 }
 
 // ── CoverSlot: בוחר תמונה — מצלמה + גלריה ──────────────────
-function CoverSlot({ label, sub, icon, preview, loading, onFile }) {
-  const camRef = useRef(), galRef = useRef();
-  const handle = e => { if (e.target.files[0]) { onFile(e.target.files[0]); e.target.value = ""; } };
+// ── מצלמה בתוך האתר: מסגרת בצורת ספר, וזיהוי ברקוד בזמן אמת ──
+const canLiveCamera = () => typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+const canDetectBarcode = () => typeof window !== "undefined" && "BarcodeDetector" in window;
+
+function CameraSheet({ mode = "cover", onCapture, onBarcode, onFallback, onClose }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [hint, setHint] = useState(mode === "barcode" ? "כוונו לברקוד שבגב הספר" : "ישרו את הכריכה בתוך המסגרת");
+  const doneRef = useRef(false);
+
+  useEffect(() => {
+    let alive = true, timer;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+        if (!alive) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        const v = videoRef.current; v.srcObject = stream; await v.play(); setReady(true);
+        if (mode === "barcode" && canDetectBarcode()) {
+          const det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a"] });
+          const tick = async () => {
+            if (!alive || doneRef.current) return;
+            try {
+              const codes = await det.detect(v);
+              const c = codes.find(x => /^97[89]\d{10}$/.test(x.rawValue)) || codes[0];
+              if (c && /^97[89]/.test(c.rawValue)) { doneRef.current = true; navigator.vibrate?.(60); onBarcode(c.rawValue); return; }
+              if (c) setHint("זה לא ברקוד של ספר. חפשו את המספר שמתחיל ב-978");
+            } catch {}
+            timer = setTimeout(tick, 280);
+          };
+          tick();
+        }
+      } catch {
+        if (alive) onFallback();
+      }
+    })();
+    return () => { alive = false; clearTimeout(timer); streamRef.current?.getTracks().forEach(t => t.stop()); };
+  }, []);
+
+  const shoot = () => {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth) return;
+    const c = document.createElement("canvas");
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v, 0, 0);
+    c.toBlob(b => { if (b) { doneRef.current = true; onCapture(new File([b], "camera.jpg", { type: "image/jpeg" })); } }, "image/jpeg", 0.9);
+  };
+
+  const frame = mode === "barcode" ? { w: "78%", aspect: "2.2/1" } : { w: "62%", aspect: "2/3" };
   return (
-    <div style={{flex:1,border:`2px dashed ${preview?C.teal:C.border}`,borderRadius:14,minHeight:140,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:preview?C.tealL:loading?"#f9f8f5":C.white,overflow:"hidden",position:"relative"}}>
+    <div style={{position:"fixed",inset:0,zIndex:1000,background:"#000",direction:"rtl"}}>
+      <video ref={videoRef} playsInline muted style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+      {/* מסגרת */}
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+        <div style={{width:frame.w,maxWidth:mode==="barcode"?420:300,aspectRatio:frame.aspect,borderRadius:16,boxShadow:"0 0 0 9999px rgba(0,0,0,.55)",border:"2px solid rgba(255,255,255,.9)",position:"relative"}}>
+          {mode==="barcode" && ready && <div style={{position:"absolute",left:"6%",right:"6%",top:"50%",height:2,background:"#7BD389",boxShadow:"0 0 12px #7BD389",animation:"pulse 1.2s ease infinite"}}/>}
+        </div>
+      </div>
+      <div style={{position:"absolute",top:0,left:0,right:0,padding:"calc(14px + env(safe-area-inset-top)) 16px 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <button onClick={onClose} aria-label="סגירה" style={{width:42,height:42,borderRadius:"50%",border:"none",background:"rgba(0,0,0,.5)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><Icon name="close" size={20}/></button>
+        <div style={{color:"#fff",fontSize:15,fontWeight:600,background:"rgba(0,0,0,.45)",padding:"8px 14px",borderRadius:99}}>{hint}</div>
+        <div style={{width:42}}/>
+      </div>
+      <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"0 24px calc(28px + env(safe-area-inset-bottom))",display:"flex",justifyContent:"center",alignItems:"center",gap:28}}>
+        {mode === "cover" ? (
+          <button onClick={shoot} disabled={!ready} aria-label="צילום" style={{width:76,height:76,borderRadius:"50%",border:"4px solid #fff",background:"rgba(255,255,255,.25)",cursor:"pointer",padding:0}}>
+            <span style={{display:"block",width:58,height:58,borderRadius:"50%",background:"#fff",margin:"0 auto"}}/>
+          </button>
+        ) : !canDetectBarcode() ? (
+          <button onClick={shoot} disabled={!ready} style={{padding:"14px 22px",borderRadius:99,border:"none",background:"#fff",fontSize:15,fontWeight:700,cursor:"pointer"}}>צלמו את גב הספר</button>
+        ) : <div style={{color:"rgba(255,255,255,.75)",fontSize:13}}>הזיהוי אוטומטי, אין צורך ללחוץ</div>}
+      </div>
+    </div>
+  );
+}
+
+// משבצת צילום: מצלמה מובנית (עם מסגרת) או גלריה
+function CoverSlot({ label, sub, icon, preview, loading, onFile, badge }) {
+  const camRef = useRef(), galRef = useRef();
+  const [cam, setCam] = useState(false);
+  const handle = e => { if (e.target.files[0]) { onFile(e.target.files[0]); e.target.value = ""; } };
+  const openCam = () => canLiveCamera() ? setCam(true) : camRef.current.click();
+  const pill = {display:"inline-flex",alignItems:"center",gap:4,fontSize:12,fontWeight:700,padding:"6px 10px",borderRadius:9,cursor:"pointer",border:"none"};
+  return (
+    <div style={{flex:1,border:`2px dashed ${preview?C.accent:C.border}`,borderRadius:16,minHeight:170,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:preview?C.tealL:C.white,overflow:"hidden",position:"relative"}}>
+      {cam && <CameraSheet mode="cover" onClose={()=>setCam(false)} onFallback={()=>{setCam(false);camRef.current.click();}} onCapture={f=>{setCam(false);onFile(f);}}/>}
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handle}/>
       <input ref={galRef} type="file" accept="image/*" style={{display:"none"}} onChange={handle}/>
       {loading
-        ? <div style={{textAlign:"center"}}><Spinner/><div style={{fontSize:12,color:C.muted,marginTop:8,fontWeight:600}}>המערכת מנתחת את התמונה...</div></div>
+        ? <div style={{textAlign:"center",padding:10}}><Spinner/><div style={{fontSize:12,color:C.muted,marginTop:8,fontWeight:600}}>מזהים את הספר ומיישרים את הכריכה...</div></div>
         : preview
           ? <>
               <img src={preview} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
-              <div style={{position:"absolute",inset:0,background:"rgba(15,118,110,.52)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-                <div style={{color:"#fff",fontSize:26,marginBottom:4}}>✓</div>
-                <div style={{fontSize:11,color:"#fff",fontWeight:700,marginBottom:8}}>נותח</div>
+              <div style={{position:"absolute",inset:0,background:"linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,.05) 60%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",padding:10}}>
+                {badge && <div style={{position:"absolute",top:8,right:8,background:"#fff",color:C.accent,fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:3}}><Icon name="check" size={12} stroke={2.6}/>{badge}</div>}
                 <div style={{display:"flex",gap:6}}>
-                  <span onClick={()=>camRef.current.click()} style={{fontSize:10,color:"rgba(255,255,255,.9)",background:"rgba(0,0,0,.35)",padding:"3px 8px",borderRadius:7,cursor:"pointer"}}>📷 מחדש</span>
-                  <span onClick={()=>galRef.current.click()} style={{fontSize:10,color:"rgba(255,255,255,.9)",background:"rgba(0,0,0,.35)",padding:"3px 8px",borderRadius:7,cursor:"pointer"}}>🖼️ גלריה</span>
+                  <button onClick={openCam} style={{...pill,background:"rgba(255,255,255,.9)",color:C.ink}}><Icon name="camera" size={14}/>שוב</button>
+                  <button onClick={()=>galRef.current.click()} style={{...pill,background:"rgba(255,255,255,.9)",color:C.ink}}><Icon name="image" size={14}/>גלריה</button>
                 </div>
               </div>
             </>
           : <div style={{textAlign:"center",padding:"0 10px"}}>
               <div style={{color:C.accent,display:"flex",justifyContent:"center",marginBottom:6}}><Icon name={icon} size={30}/></div>
-              <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:2}}>{label}</div>
-              <div style={{fontSize:10,color:C.muted,marginBottom:10}}>{sub}</div>
+              <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:2}}>{label}</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>{sub}</div>
               <div style={{display:"flex",gap:6,justifyContent:"center"}}>
-                <span onClick={()=>camRef.current.click()} style={{fontSize:11,fontWeight:700,color:C.indigo,background:C.indigoL,padding:"5px 10px",borderRadius:8,cursor:"pointer"}}>📷 צלם</span>
-                <span onClick={()=>galRef.current.click()} style={{fontSize:11,fontWeight:700,color:"#6d28d9",background:"#f5f3ff",padding:"5px 10px",borderRadius:8,cursor:"pointer"}}>🖼️ גלריה</span>
+                <button onClick={openCam} style={{...pill,background:C.ink,color:"#fff"}}><Icon name="camera" size={14}/>צילום</button>
+                <button onClick={()=>galRef.current.click()} style={{...pill,background:C.bg,color:C.ink}}><Icon name="image" size={14}/>גלריה</button>
               </div>
             </div>
       }
@@ -426,9 +507,36 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
   });
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [coverNote, setCoverNote] = useState("");
+  const [barcodeCam, setBarcodeCam] = useState(false);
+  const barcodeInputRef = useRef(null);
+  const copyInputRef = useRef(null);
+  const [copyPreview, setCopyPreview] = useState(null);
+  const [isbnBusy, setIsbnBusy] = useState(false);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
+  // סריקת ברקוד → פרטי הספר והכריכה לפי ISBN
+  const lookupIsbn = async code => {
+    setBarcodeCam(false); setIsbnBusy(true); setStep("camera");
+    try {
+      const res = await api.get(`/api/books/isbn/${encodeURIComponent(code)}`);
+      const d = res.data;
+      setForm(f => ({ ...f, isbn: d.isbn, title: d.title || f.title, author: d.author || f.author, publisher: d.publisher || f.publisher,
+        year: d.year || f.year, summary: d.summary || f.summary, genre: d.genre || f.genre,
+        thumbnail: d.thumbnail || f.thumbnail, coverQuality: d.thumbnail?.includes("/api/img/cover/") ? "community" : f.coverQuality }));
+      if (d.thumbnail) setCoverNote(d.thumbnail.includes("/api/img/cover/") ? "כריכה מהספרייה" : "כריכה מהקטלוג");
+      toast_(res.found ? `מצאנו: ${d.title} ✓` : "הברקוד נקרא, אבל הספר לא בקטלוג. צלמו את הכריכה", res.found ? "ok" : "warn");
+    } catch (e) { toast_(e.message, "err"); }
+    setIsbnBusy(false);
+  };
+  // בלי זיהוי ברקוד בדפדפן: צילום הגב ו-Claude קורא את המספר
+  const barcodeFromPhoto = async file => {
+    setBarcodeCam(false); setStep("camera");
+    await scanBack(file);
+  };
+
   const scanFront = async raw => {
+    setCoverNote("");
     setFp(URL.createObjectURL(raw));
     setFl(true);
     const file = await compressImage(raw);
@@ -438,17 +546,23 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
       fd.append("image", file);
       const res = await api.upload("/api/analyze/front", fd);
       const d = res.data;
+      // סדר עדיפויות לכריכה: ספריית הקהילה ← הצילום שלכם אחרי יישור ← מאגר חיצוני ← חיתוך פשוט
+      const thumb = res.communityCover || (res.straightened && res.croppedImage) || d.thumbnail || res.croppedImage || "";
+      const quality = res.communityCover ? "community" : res.straightened ? "straight" : "";
       setForm(f => ({
         ...f,
         title:     d.title     || f.title,
         author:    d.author    || f.author,
         publisher: d.publisher || f.publisher,
         year:      d.year      || f.year,
-        thumbnail: d.thumbnail || res.croppedImage || f.thumbnail,
+        isbn:      d.isbn      || f.isbn,
+        thumbnail: thumb || f.thumbnail,
+        coverQuality: thumb ? quality : f.coverQuality,
         genre:     d.genre     || f.genre,
       }));
+      setCoverNote(res.communityCover ? "כריכה מהספרייה" : res.straightened ? "הכריכה יושרה" : "");
       const cnt = [d.title, d.author, d.publisher].filter(Boolean).length;
-      toast_(`✓ כריכה קדמית — ${cnt} פרטים חולצו`);
+      toast_(cnt ? `זיהינו ${cnt} פרטים מהכריכה ✓` : "לא הצלחנו לקרוא את הכריכה, אפשר להשלים ידנית", cnt ? "ok" : "warn");
     } catch (e) {
       toast_(e.message, "err");
     } finally { setFl(false); }
@@ -472,8 +586,9 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
       // אם Google Books החזיר נתונים מהISBN — עדיפות גבוהה
       if (d.googleTitle) updates.title = d.googleTitle;
       if (d.googleAuthor) updates.author = d.googleAuthor;
+      if (res.communityCover) { updates.thumbnail = res.communityCover; updates.coverQuality = "community"; setCoverNote("כריכה מהספרייה"); }
       if (Object.keys(updates).length) {
-        setForm(f => ({ ...f, ...updates }));
+        setForm(f => ({ ...f, ...updates, thumbnail: f.coverQuality === "community" ? f.thumbnail : (updates.thumbnail || f.thumbnail) }));
         toast_("✓ פרטי הספר עודכנו מהכריכה האחורית");
       } else {
         toast_("כריכה נותחה — לא נמצאו פרטים", "warn");
@@ -523,16 +638,24 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
         <div style={{width:170}}><BookTile book={pb} onOpen={()=>{}} user={null}/></div>
       </div>
       {form.summary && <div className="clamp4" style={{fontSize:13.5,color:C.muted,lineHeight:1.7,margin:"16px 8px 0",textAlign:"center"}}>{form.summary}</div>}
-      <label className="press" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,margin:"18px auto 14px",cursor:"pointer",color:C.accent,fontSize:14,fontWeight:700,width:"fit-content"}}>
-        <Icon name="image" size={18}/>{(form.thumbnail||fp)?"החלפת תמונה":"הוספת תמונה"}
-        <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
-          const file = e.target.files[0];
-          if(!file) return;
-          setFp(URL.createObjectURL(file));
+      {/* תמונה של העותק עצמו: הקונה רואה את המצב האמיתי */}
+      <div style={{display:"flex",alignItems:"center",gap:12,background:"#fff",border:`1px solid ${C.border}`,borderRadius:16,padding:12,margin:"18px 0 14px"}}>
+        <div style={{width:54,height:72,borderRadius:10,overflow:"hidden",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:C.faint}}>
+          {(copyPreview || (frontFile && fp)) ? <img src={copyPreview || fp} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <Icon name="camera" size={22}/>}
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.ink}}>צילום של העותק שלך</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:2}}>{frontFile ? "יוצג בדף הספר לצד הכריכה" : "מומלץ: מראה את המצב האמיתי של הספר"}</div>
+        </div>
+        <button onClick={()=>copyInputRef.current.click()} style={{padding:"8px 12px",borderRadius:10,border:"none",background:C.ink,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{frontFile?"החלפה":"הוספה"}</button>
+        <input ref={copyInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
+          const file = e.target.files[0]; e.target.value = "";
+          if (!file) return;
+          setCopyPreview(URL.createObjectURL(file));
           setFrontFile(await compressImage(file));
-          setForm(f=>({...f,thumbnail:""}));
+          if (!form.thumbnail) setFp(URL.createObjectURL(file));
         }}/>
-      </label>
+      </div>
       <div style={{display:"flex",gap:10}}>
         <Btn variant="outline" onClick={()=>setPreview(false)} style={{flex:1,padding:"14px",borderRadius:14}}>עריכה</Btn>
         <Btn variant="accent" onClick={save} disabled={saving} style={{flex:2,padding:"14px",borderRadius:14,fontSize:15}}>
@@ -584,6 +707,16 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
         </span>
         <Icon name="forward" size={20}/>
       </button>
+      <button className="press" onClick={()=>canLiveCamera()?setBarcodeCam(true):barcodeInputRef.current.click()} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"16px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.ink,cursor:"pointer",textAlign:"right",marginBottom:12}}>
+        <span style={{width:52,height:52,borderRadius:16,background:C.tealL,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="scan" size={24}/></span>
+        <span style={{flex:1}}>
+          <span style={{display:"block",fontSize:16,fontWeight:700}}>סריקת ברקוד</span>
+          <span style={{display:"block",fontSize:13,color:C.muted,marginTop:3}}>הכי מדויק לספרים עם ISBN בגב</span>
+        </span>
+        <Icon name="forward" size={20} color={C.muted}/>
+      </button>
+      <input ref={barcodeInputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>{const f=e.target.files[0]; e.target.value=""; if(f) barcodeFromPhoto(f);}}/>
+      {barcodeCam && <CameraSheet mode="barcode" onBarcode={lookupIsbn} onCapture={barcodeFromPhoto} onClose={()=>setBarcodeCam(false)} onFallback={()=>{setBarcodeCam(false);barcodeInputRef.current.click();}}/>}
       <button className="press" onClick={()=>setStep("manual")} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"16px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.ink,cursor:"pointer",textAlign:"right"}}>
         <span style={{width:52,height:52,borderRadius:16,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="pencil" size={24}/></span>
         <span style={{flex:1}}>
@@ -606,12 +739,12 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
           <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:4}}>צלמו את שתי הכריכות</div>
           <div style={{fontSize:12,color:C.muted,marginBottom:12}}>המערכת תחלץ את הפרטים ותזין לטופס אוטומטית</div>
           <div style={{display:"flex",gap:10,marginBottom:10}}>
-            <CoverSlot label="קדמית" sub="שם · מחבר · הוצאה" icon="novel" preview={fp} loading={fl} onFile={scanFront}/>
-            <CoverSlot label="אחורית" sub="תקציר · ISBN" icon="doc" preview={bp} loading={bl} onFile={scanBack}/>
+            <CoverSlot label="כריכה קדמית" sub="שם · מחבר · הוצאה" icon="novel" preview={(coverNote&&form.thumbnail)||fp} loading={fl||isbnBusy} onFile={scanFront} badge={coverNote}/>
+            <CoverSlot label="גב הספר" sub="תקציר · ברקוד" icon="doc" preview={bp} loading={bl} onFile={scanBack}/>
           </div>
           {(fp||bp) && !fl && !bl && (
             <div style={{background:C.tealL,borderRadius:10,padding:"9px 12px",fontSize:12,color:C.teal,fontWeight:600}}>
-              ✓ פרטים הוזנו לטופס למטה — בדוק ועדכן לפי הצורך
+              הפרטים מולאו בטופס למטה. כדאי לעבור עליהם רגע
             </div>
           )}
         </div>
@@ -1931,13 +2064,14 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   const [closing, setClosing] = useState(false);
   const [phone, setPhone] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  const [showPhoto, setShowPhoto] = useState(false);
   const scrollRef = useRef(null);
   const isOwner = !!user?.id && String(book.ownerid)===String(user?.id);
   const canContact = book.avail && !isGuest && !!user?.id && !isOwner;
   const src = book.thumbnail || book.frontimg;
   const color = hashColor(book.id);
 
-  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); setExpanded(false); setShowCloseDeal(false); }, [book.id]);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); setExpanded(false); setShowCloseDeal(false); setShowPhoto(false); }, [book.id]);
   // מספר הטלפון נטען רק למשתמש מחובר שפתח את דף הספר
   useEffect(() => {
     setPhone(null);
@@ -1991,9 +2125,19 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
                 {!isOwner && <HeartButton active={fav} onToggle={onFav} size={38} floating/>}
               </div>
             </div>
-            <div style={{position:"relative",width:150,aspectRatio:"2/3",margin:"6px auto 0",borderRadius:12,boxShadow:"0 18px 40px rgba(0,0,0,.45)",filter:book.avail===false?"grayscale(.6)":"none"}}>
-              <Cover book={book} radius={12} titleSize={17} eager/>
+            <div style={{position:"relative",width:showPhoto?220:150,aspectRatio:showPhoto?"3/4":"2/3",margin:"6px auto 0",borderRadius:12,boxShadow:"0 18px 40px rgba(0,0,0,.45)",filter:book.avail===false?"grayscale(.6)":"none",transition:"width .25s ease"}}>
+              <Cover key={showPhoto?"p":"c"} book={showPhoto?{...book,thumbnail:book.photo}:book} radius={12} titleSize={17} eager/>
             </div>
+            {book.photo && (
+              <div style={{position:"relative",display:"flex",justifyContent:"center",gap:4,marginTop:14}}>
+                <div style={{display:"flex",background:"rgba(0,0,0,.35)",borderRadius:99,padding:3,backdropFilter:"blur(6px)"}}>
+                  {[[false,"כריכה"],[true,"צילום העותק"]].map(([v,l])=>(
+                    <button key={l} onClick={()=>setShowPhoto(v)} aria-pressed={showPhoto===v}
+                      style={{padding:"6px 13px",borderRadius:99,border:"none",cursor:"pointer",fontSize:12.5,fontWeight:700,background:showPhoto===v?"#fff":"transparent",color:showPhoto===v?C.ink:"#fff"}}>{l}</button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{padding:"18px 20px 24px"}}>
