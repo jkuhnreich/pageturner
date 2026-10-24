@@ -3,6 +3,13 @@ const BASE = import.meta.env.VITE_API_URL || "";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useParams, Routes, Route } from "react-router-dom";
 
+// קורא תשובה כ-JSON גם כשהשרת מחזיר HTML, בלי להציג למשתמש שגיאה טכנית
+async function safeJson(r) {
+  const text = await r.text();
+  try { return JSON.parse(text); }
+  catch { return { error: r.status === 413 ? "התמונה גדולה מדי" : "השרת לא זמין כרגע, נסו שוב בעוד רגע" }; }
+}
+
 // ── כל קריאות ה-API עוברות דרך /api (proxy ל-3001) ─────────
 const api = {
   async get(path) {
@@ -16,13 +23,13 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await r.json();
+    const data = await safeJson(r);
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
     return data;
   },
   async upload(path, formData) {
     const r = await fetch(BASE + path, { method: "POST", body: formData });
-    const data = await r.json();
+    const data = await safeJson(r);
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
     return data;
   },

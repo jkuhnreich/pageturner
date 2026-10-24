@@ -14,7 +14,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, fieldSize: 5 * 1024 * 1024 } });
 
 app.use(cors());
 app.use(express.json());
@@ -109,7 +109,8 @@ async function cropBookImage(buf, crop) {
     const h = Math.min(H - y, Math.round((crop.height||100)/100 * H));
     if (w < 20 || h < 20) return null;
     image.crop({ x, y, w, h });
-    const base64 = await image.getBase64("image/jpeg");
+    image.scaleToFit({ w: 600, h: 900 });
+    const base64 = await image.getBase64("image/jpeg", { quality: 80 });
     return base64;
   } catch (e) {
     console.log("Crop error:", e.message);
@@ -818,6 +819,13 @@ cron.schedule("0 9 * * 0", () => sendReport("weekly"), { timezone: "Asia/Jerusal
 cron.schedule("0 10 1 * *", () => sendReport("monthly"), { timezone: "Asia/Jerusalem" });
 
 console.log("✅ Cron jobs registered");
+
+// שגיאות (כולל multer) תמיד חוזרות כ-JSON ולא כדף HTML
+app.use((err, req, res, next) => {
+  console.error("Request error:", err.code || "", err.message);
+  const tooBig = err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE" || err.type === "entity.too.large";
+  res.status(tooBig ? 413 : 500).json({ error: tooBig ? "התמונה גדולה מדי" : "שגיאת שרת" });
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`\n📚 ספרייה שכונתית v4 — port ${PORT}`);
