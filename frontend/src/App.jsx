@@ -746,16 +746,6 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
         </span>
         <Icon name="forward" size={20}/>
       </button>
-      <button className="press" onClick={()=>canLiveCamera()?setBarcodeCam(true):barcodeInputRef.current.click()} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"16px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.ink,cursor:"pointer",textAlign:"right",marginBottom:12}}>
-        <span style={{width:52,height:52,borderRadius:16,background:C.tealL,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="scan" size={24}/></span>
-        <span style={{flex:1}}>
-          <span style={{display:"block",fontSize:16,fontWeight:700}}>סריקת ברקוד</span>
-          <span style={{display:"block",fontSize:13,color:C.muted,marginTop:3}}>מכוונים לברקוד בגב הספר, ואם הספר בקטלוג הפרטים מתמלאים מיד</span>
-        </span>
-        <Icon name="forward" size={20} color={C.muted}/>
-      </button>
-      <input ref={barcodeInputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>{const f=e.target.files[0]; e.target.value=""; if(f) barcodeFromPhoto(f);}}/>
-      {barcodeCam && <CameraSheet mode="barcode" onBarcode={lookupIsbn} onCapture={barcodeFromPhoto} onClose={()=>setBarcodeCam(false)} onFallback={()=>{setBarcodeCam(false);barcodeInputRef.current.click();}}/>}
       <button className="press" onClick={()=>setStep("manual")} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"16px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.ink,cursor:"pointer",textAlign:"right"}}>
         <span style={{width:52,height:52,borderRadius:16,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="pencil" size={24}/></span>
         <span style={{flex:1}}>
