@@ -391,7 +391,7 @@ function CameraSheet({ mode = "cover", onCapture, onBarcode, onFallback, onClose
     let alive = true, timer;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false });
         if (!alive) { stream.getTracks().forEach(t => t.stop()); return; }
         streamRef.current = stream;
         const v = videoRef.current; v.srcObject = stream; await v.play(); setReady(true);
@@ -416,13 +416,42 @@ function CameraSheet({ mode = "cover", onCapture, onBarcode, onFallback, onClose
     return () => { alive = false; clearTimeout(timer); streamRef.current?.getTracks().forEach(t => t.stop()); };
   }, []);
 
-  const shoot = () => {
+  const frameRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [isbnText, setIsbnText] = useState("");
+  // מצלם ברזולוציה המלאה של המצלמה, וחותך בדיוק את מה שבתוך המסגרת (עם שוליים קטנים)
+  const shoot = async () => {
     const v = videoRef.current;
-    if (!v || !v.videoWidth) return;
+    if (!v || !v.videoWidth || busy) return;
+    setBusy(true);
+    let src = v, sw = v.videoWidth, sh = v.videoHeight;
+    try {
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (track && "ImageCapture" in window) {
+        const blob = await new window.ImageCapture(track).takePhoto();
+        const bmp = await createImageBitmap(blob);
+        // takePhoto מחזיר תמונה בשדה ראייה זהה לווידאו, ברזולוציה גבוהה יותר
+        if (Math.abs(bmp.width / bmp.height - sw / sh) < 0.05) { src = bmp; sw = bmp.width; sh = bmp.height; }
+      }
+    } catch {}
+    // מיפוי המסגרת שעל המסך לקואורדינטות בתמונה (הווידאו מוצג ב-object-fit: cover)
+    const vr = v.getBoundingClientRect(), fr = frameRef.current?.getBoundingClientRect();
+    const scale = Math.max(vr.width / sw, vr.height / sh);
+    const offX = (sw * scale - vr.width) / 2, offY = (sh * scale - vr.height) / 2;
+    let x = 0, y = 0, w = sw, h = sh;
+    if (fr && mode === "cover") {
+      const m = 0.06; // שוליים קטנים, כדי לא לחתוך את קצה הכריכה
+      x = (fr.left - vr.left + offX) / scale - fr.width / scale * m;
+      y = (fr.top - vr.top + offY) / scale - fr.height / scale * m;
+      w = fr.width / scale * (1 + 2 * m); h = fr.height / scale * (1 + 2 * m);
+      x = Math.max(0, x); y = Math.max(0, y); w = Math.min(sw - x, w); h = Math.min(sh - y, h);
+    }
+    const out = Math.min(1, 2000 / Math.max(w, h));
     const c = document.createElement("canvas");
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d").drawImage(v, 0, 0);
-    c.toBlob(b => { if (b) { doneRef.current = true; onCapture(new File([b], "camera.jpg", { type: "image/jpeg" })); } }, "image/jpeg", 0.9);
+    c.width = Math.round(w * out); c.height = Math.round(h * out);
+    c.getContext("2d").drawImage(src, x, y, w, h, 0, 0, c.width, c.height);
+    c.toBlob(b => { setBusy(false); if (b) { doneRef.current = true; onCapture(new File([b], "camera.jpg", { type: "image/jpeg" })); } }, "image/jpeg", 0.92);
   };
 
   const frame = mode === "barcode" ? { w: "78%", aspect: "2.2/1" } : { w: "62%", aspect: "2/3" };
@@ -431,7 +460,7 @@ function CameraSheet({ mode = "cover", onCapture, onBarcode, onFallback, onClose
       <video ref={videoRef} playsInline muted style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
       {/* מסגרת */}
       <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-        <div style={{width:frame.w,maxWidth:mode==="barcode"?420:300,aspectRatio:frame.aspect,borderRadius:16,boxShadow:"0 0 0 9999px rgba(0,0,0,.55)",border:"2px solid rgba(255,255,255,.9)",position:"relative"}}>
+        <div ref={frameRef} style={{width:frame.w,maxWidth:mode==="barcode"?420:300,aspectRatio:frame.aspect,borderRadius:16,boxShadow:"0 0 0 9999px rgba(0,0,0,.55)",border:"2px solid rgba(255,255,255,.9)",position:"relative"}}>
           {mode==="barcode" && ready && <div style={{position:"absolute",left:"6%",right:"6%",top:"50%",height:2,background:"#7BD389",boxShadow:"0 0 12px #7BD389",animation:"pulse 1.2s ease infinite"}}/>}
         </div>
       </div>
@@ -442,12 +471,22 @@ function CameraSheet({ mode = "cover", onCapture, onBarcode, onFallback, onClose
       </div>
       <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"0 24px calc(28px + env(safe-area-inset-bottom))",display:"flex",justifyContent:"center",alignItems:"center",gap:28}}>
         {mode === "cover" ? (
-          <button onClick={shoot} disabled={!ready} aria-label="צילום" style={{width:76,height:76,borderRadius:"50%",border:"4px solid #fff",background:"rgba(255,255,255,.25)",cursor:"pointer",padding:0}}>
+          <button onClick={shoot} disabled={!ready||busy} aria-label="צילום" style={{width:76,height:76,borderRadius:"50%",border:"4px solid #fff",background:"rgba(255,255,255,.25)",cursor:"pointer",padding:0,opacity:busy?.5:1}}>
             <span style={{display:"block",width:58,height:58,borderRadius:"50%",background:"#fff",margin:"0 auto"}}/>
           </button>
-        ) : !canDetectBarcode() ? (
-          <button onClick={shoot} disabled={!ready} style={{padding:"14px 22px",borderRadius:99,border:"none",background:"#fff",fontSize:15,fontWeight:700,cursor:"pointer"}}>צלמו את גב הספר</button>
-        ) : <div style={{color:"rgba(255,255,255,.75)",fontSize:13}}>הזיהוי אוטומטי, אין צורך ללחוץ</div>}
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,width:"100%"}}>
+            {canDetectBarcode() && <div style={{color:"rgba(255,255,255,.85)",fontSize:13,textAlign:"center"}}>מזהים אוטומטית, אין צורך ללחוץ.<br/>הברקוד הוא הפסים עם המספר שמתחיל ב-978</div>}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={shoot} disabled={!ready||busy} style={{padding:"12px 18px",borderRadius:99,border:"none",background:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>{canDetectBarcode()?"לא מזהה? צלמו":"צלמו את גב הספר"}</button>
+              <button onClick={()=>setTyping(t=>!t)} style={{padding:"12px 18px",borderRadius:99,border:"1.5px solid rgba(255,255,255,.7)",background:"transparent",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>הקלדה ידנית</button>
+            </div>
+            {typing && <form onSubmit={e=>{e.preventDefault();const d=isbnText.replace(/\D/g,"");if(d.length>=10){doneRef.current=true;onBarcode(d);}}} style={{display:"flex",gap:8,width:"100%",maxWidth:340}}>
+              <input autoFocus value={isbnText} onChange={e=>setIsbnText(e.target.value)} inputMode="numeric" placeholder="978..." style={{flex:1,padding:"12px 14px",borderRadius:12,border:"none",fontSize:17,direction:"ltr",textAlign:"center"}}/>
+              <button type="submit" style={{padding:"0 18px",borderRadius:12,border:"none",background:C.accent,color:"#fff",fontWeight:700,fontSize:15}}>חיפוש</button>
+            </form>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -711,7 +750,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
         <span style={{width:52,height:52,borderRadius:16,background:C.tealL,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="scan" size={24}/></span>
         <span style={{flex:1}}>
           <span style={{display:"block",fontSize:16,fontWeight:700}}>סריקת ברקוד</span>
-          <span style={{display:"block",fontSize:13,color:C.muted,marginTop:3}}>הכי מדויק לספרים עם ISBN בגב</span>
+          <span style={{display:"block",fontSize:13,color:C.muted,marginTop:3}}>מכוונים לברקוד בגב הספר, ואם הספר בקטלוג הפרטים מתמלאים מיד</span>
         </span>
         <Icon name="forward" size={20} color={C.muted}/>
       </button>
@@ -739,7 +778,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
           <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:4}}>צלמו את שתי הכריכות</div>
           <div style={{fontSize:12,color:C.muted,marginBottom:12}}>המערכת תחלץ את הפרטים ותזין לטופס אוטומטית</div>
           <div style={{display:"flex",gap:10,marginBottom:10}}>
-            <CoverSlot label="כריכה קדמית" sub="שם · מחבר · הוצאה" icon="novel" preview={(coverNote&&form.thumbnail)||fp} loading={fl||isbnBusy} onFile={scanFront} badge={coverNote}/>
+            <CoverSlot label="כריכה קדמית" sub="שם · מחבר · הוצאה" icon="novel" preview={form.thumbnail||fp} loading={fl||isbnBusy} onFile={scanFront} badge={coverNote}/>
             <CoverSlot label="גב הספר" sub="תקציר · ברקוד" icon="doc" preview={bp} loading={bl} onFile={scanBack}/>
           </div>
           {(fp||bp) && !fl && !bl && (

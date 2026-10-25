@@ -313,6 +313,12 @@ async function callClaude(model, buf, mime, prompt, maxTok) {
     }),
   });
 }
+async function callClaudeText(model, buf, mime, prompt, maxTok) {
+  const r = await callClaude(model, buf, mime, prompt, maxTok);
+  if (!r.ok) { const t = await r.text(); throw new Error(`Vision ${r.status}: ${t.slice(0, 200)}`); }
+  const d = await r.json();
+  return (d?.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+}
 async function claudeVision(buf, mime, prompt, maxTok = 600) {
   let r = await callClaude(VISION_MODEL, buf, mime, prompt, maxTok);
   if ((r.status === 400 || r.status === 404) && VISION_MODEL !== VISION_FALLBACK_MODEL) {
@@ -324,7 +330,7 @@ async function claudeVision(buf, mime, prompt, maxTok = 600) {
   }
   if (!r.ok) { const t = await r.text(); throw new Error(`Vision ${r.status}: ${t.slice(0, 200)}`); }
   const d = await r.json();
-  return d?.content?.[0]?.text || "";
+  return (d?.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 }
 // מכין תמונה לניתוח: מקטין ל-1568px לכל היותר (מהיר וזול יותר)
 async function prepForVision(file) {
@@ -483,7 +489,8 @@ async function enrich(vision) {
   };
 }
 
-const P_FRONT = `You are an expert OCR and bibliographic system for book covers. Analyze this FRONT COVER image carefully.
+const P_FRONT = `You are an expert OCR and bibliographic system for book covers, specializing in Hebrew books sold in Israel. Analyze this FRONT COVER image carefully.
+HEBREW: most covers are in Hebrew (right-to-left). Titles often use decorative, handwritten-style or very bold display fonts — read them anyway, letter by letter if needed. Use your knowledge of real published books and authors (including translated books, e.g. Pema Chödrön = פמה צ'ודרון) to correct likely misreads, but only output a title/author that matches what is printed. Write Hebrew names in Hebrew as printed.
 RULES:
 - Copy ALL text EXACTLY as it appears, including subtitles
 - For publisher: look for small text at bottom of cover, spine edge, or logo
@@ -667,9 +674,17 @@ app.post("/api/analyze/front", visionGuard, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "לא הועלתה תמונה" });
   try {
     const { buf, mime } = await prepForVision(req.file);
-    const raw = await claudeVision(buf, mime, P_FRONT, 600);
-    let vision = {};
-    try { vision = parseJ(raw); } catch {}
+    const readFront = async model => {
+      const raw = model ? await callClaudeText(model, buf, mime, P_FRONT, 1500) : await claudeVision(buf, mime, P_FRONT, 1500);
+      try { return parseJ(raw); } catch { console.error("front: unparseable answer:", String(raw).slice(0, 300)); return {}; }
+    };
+    let vision = await readFront();
+    if (!String(vision.title || "").trim() && VISION_MODEL !== VISION_FALLBACK_MODEL) {
+      console.log("front: no title from", VISION_MODEL, "— retrying with", VISION_FALLBACK_MODEL);
+      const v2 = await readFront(VISION_FALLBACK_MODEL).catch(e => { console.error("front retry:", e.message); return {}; });
+      if (String(v2.title || "").trim()) vision = v2;
+    }
+    console.log(`front: title="${vision.title || ""}" author="${vision.author || ""}" corners=${vision.corners ? "yes" : "no"} img=${buf.length}b`);
     Object.keys(vision).forEach(k => { if (typeof vision[k] === "string") vision[k] = vision[k].trim(); });
     const conf = vision.confidence || {};
     if ((conf.publisher || 0) < 0.7) vision.publisher = "";
@@ -677,6 +692,7 @@ app.post("/api/analyze/front", visionGuard, async (req, res) => {
     if ((conf.author || 0) < 0.7) vision.author = "";
     const { googleResults, enriched } = await enrich(vision);
     const straight = await warpCover(buf, vision.corners);
+    if (!straight && vision.corners) console.log("front: corners rejected", JSON.stringify(vision.corners));
     const croppedImage = straight || await cropBookImage(buf, vision.crop);
     const meta = { isbn: enriched.isbn || vision.isbn, title: enriched.title, author: enriched.author };
     const communityCover = coverUrl(req, await findCover(meta));
@@ -691,7 +707,7 @@ app.post("/api/analyze/back", visionGuard, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "לא הועלתה תמונה" });
   try {
     const { buf, mime } = await prepForVision(req.file);
-    const raw = await claudeVision(buf, mime, P_BACK, 900);
+    const raw = await claudeVision(buf, mime, P_BACK, 1500);
     let data = {};
     try { data = parseJ(raw); } catch { data = { summary: raw.trim() }; }
     Object.keys(data).forEach(k => { if (typeof data[k] === "string") data[k] = data[k].trim(); });
