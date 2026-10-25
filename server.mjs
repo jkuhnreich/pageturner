@@ -3,6 +3,7 @@ import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
 import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual } from "crypto";
+import { gzipSync } from "zlib";
 import cron from "node-cron";
 import pg from "pg";
 import { Jimp } from "jimp";
@@ -1022,12 +1023,12 @@ app.put("/api/contacts/:id", requireAuth, async (req, res) => {
 });
 
 // ── קוד כניסה במייל (OTP) ─────────────────────────────────
-async function sendEmail(to, subject, html) {
-  if (!process.env.RESEND_API_KEY) { console.log(`[email skipped] to=${to} subject=${subject}`); return; }
+async function sendEmail(to, subject, html, attachments) {
+  if (!process.env.RESEND_API_KEY) { console.log(`[email skipped] to=${to} subject=${subject}${attachments ? " attachments=" + attachments.map(a => a.filename + ":" + a.content.length).join(",") : ""}`); return; }
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [to], subject, html }),
+    body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [to], subject, html, ...(attachments ? { attachments } : {}) }),
   });
   if (!r.ok) { const t = await r.text(); throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`); }
 }
@@ -1409,6 +1410,47 @@ async function sendReport(type) {
     console.log(`✅ דוח ${periodHe} נשלח`);
   } catch (e) { console.error("Report error:", e.message); }
 }
+
+// ── גיבוי יומי במייל (Railway Hobby לא כולל גיבויים) ─────────
+// קובץ JSON דחוס עם כל הטבלאות; שחזור: node scripts/restore-backup.mjs <file>
+const BACKUP_TABLES = ["users", "books", "contacts", "book_history", "wishlist", "favorites", "covers", "analytics"];
+async function makeBackup() {
+  const data = { version: 1, createdAt: new Date().toISOString(), tables: {} };
+  for (const t of BACKUP_TABLES) {
+    try { data.tables[t] = (await pool.query(`SELECT * FROM ${t}`)).rows; } catch (e) { data.tables[t] = []; console.error("backup", t, e.message); }
+  }
+  return data;
+}
+async function sendBackup() {
+  const to = process.env.BACKUP_EMAIL || "pageturner.team@gmail.com";
+  try {
+    const data = await makeBackup();
+    let gz = gzipSync(Buffer.from(JSON.stringify(data)));
+    let note = "גיבוי מלא, כולל תמונות.";
+    // Resend מגביל קבצים מצורפים ל-40MB; אם גדול מדי — בלי התמונות (הן הכבדות)
+    if (gz.length > 30 * 1024 * 1024) {
+      for (const b of data.tables.books) { if (b.frontimg?.startsWith("data:")) b.frontimg = null; if (b.thumbnail?.startsWith("data:")) b.thumbnail = null; }
+      data.tables.covers = [];
+      data.imagesOmitted = true;
+      gz = gzipSync(Buffer.from(JSON.stringify(data)));
+      note = "גיבוי ללא תמונות (המסד גדל מעבר למגבלת הקובץ המצורף — הגיע הזמן לגיבוי בתשלום או לאחסון קבצים).";
+    }
+    const date = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+    const counts = Object.entries(data.tables).map(([t, r]) => `${t}: ${r.length}`).join(" · ");
+    if (process.env.BACKUP_DIR) { const fs = await import("fs"); fs.writeFileSync(`${process.env.BACKUP_DIR}/pageturner-backup-${date}.json.gz`, gz); }
+    await sendEmail(to, `🗄️ גיבוי Pageturner ${date}`, `<div dir="rtl" style="font-family:sans-serif">
+      <p>${note}</p><p style="color:#666;font-size:13px">${counts}</p>
+      <p style="color:#999;font-size:12px">גודל: ${(gz.length / 1024).toFixed(0)}KB. הקובץ מכיל פרטים אישיים של משתמשים — אין להעביר אותו הלאה.</p></div>`,
+      [{ filename: `pageturner-backup-${date}.json.gz`, content: gz.toString("base64") }]);
+    console.log(`🗄️ backup sent (${(gz.length / 1024).toFixed(0)}KB)`);
+    return { ok: true, size: gz.length, counts };
+  } catch (e) { console.error("backup failed:", e.message); return { ok: false, error: e.message }; }
+}
+cron.schedule("15 4 * * *", () => sendBackup(), { timezone: "Asia/Jerusalem" });
+app.post("/api/admin/backup", limit("admin", 20, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
+  res.json(await sendBackup());
+});
 
 cron.schedule("0 8 * * *", () => sendReport("daily"), { timezone: "Asia/Jerusalem" });
 cron.schedule("0 9 * * 0", () => sendReport("weekly"), { timezone: "Asia/Jerusalem" });
