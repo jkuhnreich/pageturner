@@ -103,6 +103,8 @@ async function initDB() {
   await pool.query(`CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS wishlist (id TEXT PRIMARY KEY, userid TEXT, query TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS sessions (tokenhash TEXT PRIMARY KEY, userid TEXT NOT NULL, createdat BIGINT, lastseen BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS daily_stats (day DATE PRIMARY KEY, data JSONB, createdat BIGINT)`);
+  await pool.query("CREATE INDEX IF NOT EXISTS analytics_created_idx ON analytics (createdat)");
   await pool.query(`CREATE TABLE IF NOT EXISTS blocked_attempts (id TEXT PRIMARY KEY, userid TEXT, title TEXT, author TEXT, category TEXT, reason TEXT, at TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS reports (bookid TEXT NOT NULL, userid TEXT NOT NULL, reason TEXT, createdat BIGINT, PRIMARY KEY (bookid, userid))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS favorites (userid TEXT NOT NULL, bookid TEXT NOT NULL, createdat BIGINT, PRIMARY KEY (userid, bookid))`);
@@ -119,6 +121,7 @@ async function initDB() {
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerConfirmed BOOLEAN DEFAULT false",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended BOOLEAN DEFAULT false",
+    "ALTER TABLE otps ADD COLUMN IF NOT EXISTS ticketvia TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false",
@@ -1314,6 +1317,8 @@ async function sendEmail(to, subject, html, attachments) {
     body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [to], subject, html, ...(attachments ? { attachments } : {}) }),
   });
   if (!r.ok) { const t = await r.text(); throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`); }
+  const kind = /קוד הכניסה/.test(subject) ? "otp" : /גיבוי/.test(subject) ? "backup" : /דוח/.test(subject) ? "report" : /זמין עכשיו/.test(subject) ? "wishlist" : "admin";
+  track("email_sent", null, { kind });
 }
 
 app.post("/api/auth/send-otp", limit("otp-send", 40, 15 * 60 * 1000), async (req, res) => {
@@ -1369,7 +1374,7 @@ app.post("/api/auth/verify-otp", limit("otp-verify", 80, 15 * 60 * 1000), async 
     }
     // משתמש חדש: כרטיס הרשמה חד-פעמי שתקף ל-30 דקות
     const ticket = randomBytes(24).toString("base64url");
-    await pool.query("UPDATE otps SET codehash=NULL, tickethash=$2, ticketexpires=$3 WHERE email=$1", [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
+    await pool.query("UPDATE otps SET codehash=NULL, tickethash=$2, ticketexpires=$3, ticketvia='email' WHERE email=$1", [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
     res.json({ ok: true, user: null, isNew: true, ticket });
   } catch (e) { console.error("OTP verify:", e.message); res.status(500).json({ error: "שגיאה באימות, נסו שוב" }); }
 });
@@ -1418,8 +1423,8 @@ app.post("/api/auth/google", limit("google", 60, 15 * 60 * 1000), async (req, re
     }
     const ticket = randomBytes(24).toString("base64url");
     await pool.query(
-      `INSERT INTO otps (email, tickethash, ticketexpires) VALUES ($1,$2,$3)
-       ON CONFLICT (email) DO UPDATE SET tickethash=$2, ticketexpires=$3`,
+      `INSERT INTO otps (email, tickethash, ticketexpires, ticketvia) VALUES ($1,$2,$3,'google')
+       ON CONFLICT (email) DO UPDATE SET tickethash=$2, ticketexpires=$3, ticketvia='google'`,
       [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
     res.json({ ok: true, user: null, isNew: true, ticket, email, name: clip(g.name || "", 80) });
   } catch (e) { console.error("google login:", e.message); res.status(500).json({ error: "שגיאה בכניסה, נסו שוב" }); }
@@ -1437,7 +1442,7 @@ app.post("/api/users/register", limit("register", 40, 60 * 60 * 1000), async (re
   const phoneDigits = phone.replace(/[^\d+]/g, "");
   if (!/^(\+972|0)\d{8,9}$/.test(phoneDigits)) return res.status(400).json({ error: "מספר הטלפון לא תקין" });
   try {
-    const row = (await pool.query("SELECT tickethash, ticketexpires FROM otps WHERE email=$1", [email])).rows[0];
+    const row = (await pool.query("SELECT tickethash, ticketexpires, ticketvia FROM otps WHERE email=$1", [email])).rows[0];
     if (!ticket || !row?.tickethash || Date.now() > Number(row.ticketexpires) || !safeEqual(row.tickethash, sha256(ticket)))
       return res.status(401).json({ error: "צריך לאמת את המייל מחדש", code: "verify" });
     const ex = (await pool.query("SELECT * FROM users WHERE email=$1", [email])).rows[0];
@@ -1453,7 +1458,7 @@ app.post("/api/users/register", limit("register", 40, 60 * 60 * 1000), async (re
          clip(storeName, 120), clip(address, 200), clip(storeType, 60), lat, lng, Date.now(), !!emailConsent]
       );
       user = (await pool.query("SELECT * FROM users WHERE id=$1", [id])).rows[0];
-      track("register", id, { type: user.type });
+      track("register", id, { type: user.type, method: row.ticketvia || "email", src: clip(req.body.src, 40) || undefined });
     }
     await pool.query("UPDATE otps SET tickethash=NULL WHERE email=$1", [email]);
     const token = await createSession(user.id);
@@ -1580,7 +1585,10 @@ app.post("/api/wishlist", requireAuth, async (req, res) => {
     const count = (await pool.query("SELECT COUNT(*) FROM wishlist WHERE userid=$1", [req.user.id])).rows[0].count;
     if (+count >= 50) return res.status(400).json({ error: "אפשר לשמור עד 50 משאלות" });
     const dup = await pool.query("SELECT id FROM wishlist WHERE userid=$1 AND query=$2", [req.user.id, query]);
-    if (!dup.rows.length) await pool.query("INSERT INTO wishlist (id,userid,query,createdat,notified) VALUES ($1,$2,$3,$4,false)", [randomUUID(), req.user.id, clip(query, 200), Date.now()]);
+    if (!dup.rows.length) {
+      await pool.query("INSERT INTO wishlist (id,userid,query,createdat,notified) VALUES ($1,$2,$3,$4,false)", [randomUUID(), req.user.id, clip(query, 200), Date.now()]);
+      track("wishlist_add", req.user.id, { q: clip(query, 80) });
+    }
     res.json({ ok: true });
   } catch (e) { console.error("wishlist:", e.message); res.status(500).json({ error: "שגיאה" }); }
 });
@@ -1648,7 +1656,7 @@ app.post("/api/feedback", limit("feedback", 5, 60 * 60 * 1000), async (req, res)
 });
 
 // ── אנליטיקס ─────────────────────────────────────────────
-const CLIENT_EVENTS = new Set(["search", "book_view", "page_load", "guest_login", "book_contact", "share"]);
+const CLIENT_EVENTS = new Set(["search", "book_view", "page_load", "guest_login", "book_contact", "share", "visit", "signup_start", "add_start", "pwa_install"]);
 app.post("/api/analytics", limit("analytics", 120, 60 * 1000), async (req, res) => {
   const { event, data } = req.body;
   if (!CLIENT_EVENTS.has(event)) return res.status(400).json({ error: "event לא מוכר" });
@@ -1697,55 +1705,237 @@ app.post("/api/admin/send-report", limit("admin", 20, 15 * 60 * 1000), async (re
   res.json({ ok: true });
 });
 
+// ── מדדים: חישוב לכל טווח זמן, צילום יומי ומגמות ─────────────────
+const TZ = "Asia/Jerusalem";
+async function dayBounds(day) { // day = 'YYYY-MM-DD' (שעון ישראל) → [תחילת היום, תחילת היום הבא] במילישניות
+  const r = await pool.query(`SELECT (EXTRACT(EPOCH FROM ($1::date::timestamp AT TIME ZONE '${TZ}'))*1000)::bigint a,
+    (EXTRACT(EPOCH FROM (($1::date + 1)::timestamp AT TIME ZONE '${TZ}'))*1000)::bigint b`, [day]);
+  return [Number(r.rows[0].a), Number(r.rows[0].b)];
+}
+async function israelDay(offsetDays = 0) {
+  const r = await pool.query(`SELECT to_char((now() AT TIME ZONE '${TZ}')::date + $1::int, 'YYYY-MM-DD') d`, [offsetDays]);
+  return r.rows[0].d;
+}
+const STAT_FIELDS = [
+  ["visitors", "מבקרים ייחודיים"], ["new_visitors", "מבקרים חדשים"], ["visits", "כניסות"], ["app_visits", "כניסות מהאפליקציה המותקנת"],
+  ["signup_starts", "התחילו הרשמה"], ["signups", "נרשמו"], ["signups_google", "נרשמו עם Google"], ["active_users", "משתמשים פעילים"], ["guests", "כניסות כאורח"],
+  ["books_new", "ספרים חדשים"], ["new_publishers", "מפרסמים חדשים"], ["book_views", "צפיות בספרים"], ["searches", "חיפושים"], ["zero_searches", "חיפושים בלי תוצאות"],
+  ["contacts", "פניות למפרסמים"], ["deals", "עסקאות שנסגרו"], ["shares", "שיתופים"], ["wishlist_adds", "משאלות חדשות"], ["pwa_installs", "התקנות לטלפון"],
+  ["scans", "סריקות כריכה"], ["image_rejected", "תמונות שנחסמו"], ["books_blocked", "ספרים אסורים שנחסמו"], ["reports", "דיווחים על מודעות"], ["hidden", "מודעות שהוסתרו"],
+  ["emails", "מיילים שנשלחו"], ["users_total", "סה״כ משתמשים"], ["books_total", "סה״כ ספרים פעילים"],
+];
+async function computeStats(a, b) {
+  const q = async (sql, p = []) => (await pool.query(sql, [a, b, ...p])).rows;
+  const one = async (sql, p) => Number((await q(sql, p))[0]?.n || 0);
+  const ev = e => one("SELECT COUNT(*) n FROM analytics WHERE event=$3 AND createdat>=$1 AND createdat<$2", [e]);
+  const [visitors, newVisitors, visits, appVisits, signupStarts, signups, signupsGoogle, active, guests, booksNew, newPublishers, views, searches, zero,
+    contacts, deals, shares, wish, installs, scans, imgRej, blocked, reports, hidden, emails, usersTotal, booksTotal] = await Promise.all([
+    one("SELECT COUNT(DISTINCT data->>'vid') n FROM analytics WHERE event='visit' AND createdat>=$1 AND createdat<$2"),
+    one("SELECT COUNT(DISTINCT data->>'vid') n FROM analytics WHERE event='visit' AND data->>'new'='true' AND createdat>=$1 AND createdat<$2"),
+    ev("visit"),
+    one("SELECT COUNT(*) n FROM analytics WHERE event='visit' AND data->>'app'='true' AND createdat>=$1 AND createdat<$2"),
+    one("SELECT COUNT(DISTINCT COALESCE(data->>'vid', id)) n FROM analytics WHERE event='signup_start' AND createdat>=$1 AND createdat<$2"),
+    one("SELECT COUNT(*) n FROM users WHERE createdat>=$1 AND createdat<$2"),
+    one("SELECT COUNT(*) n FROM analytics WHERE event='register' AND data->>'method'='google' AND createdat>=$1 AND createdat<$2"),
+    one("SELECT COUNT(DISTINCT userid) n FROM analytics WHERE userid IS NOT NULL AND createdat>=$1 AND createdat<$2"),
+    ev("guest_login"),
+    one("SELECT COUNT(*) n FROM books WHERE createdat>=$1 AND createdat<$2"),
+    one("SELECT COUNT(*) n FROM (SELECT ownerid, MIN(createdat) m FROM books GROUP BY ownerid) x WHERE m>=$1 AND m<$2"),
+    ev("book_view"), ev("search"),
+    one("SELECT COUNT(*) n FROM analytics WHERE event='search' AND data->>'results'='0' AND createdat>=$1 AND createdat<$2"),
+    ev("book_contact"), ev("book_deal"), ev("share"), ev("wishlist_add"), ev("pwa_install"), ev("vision"), ev("image_rejected"), ev("book_blocked"), ev("book_report"), ev("book_hidden"), ev("email_sent"),
+    one("SELECT COUNT(*) n FROM users WHERE createdat<$2 AND $1::bigint IS NOT NULL"),
+    one("SELECT COUNT(*) n FROM books WHERE createdat<$2 AND avail=true AND NOT COALESCE(hidden,false) AND $1::bigint IS NOT NULL"),
+  ]);
+  const list = async (sql, p) => (await q(sql, p)).map(r => ({ k: r.k, n: Number(r.n) }));
+  const [sources, topSearches, zeroSearches, topViewed, booksByMode, emailKinds, wishTop] = await Promise.all([
+    list(`SELECT COALESCE(NULLIF(data->>'src',''), CASE WHEN COALESCE(data->>'ref','')<>'' THEN data->>'ref' ELSE 'ישיר / וואטסאפ' END) k, COUNT(DISTINCT data->>'vid') n
+          FROM analytics WHERE event='visit' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 10`),
+    list("SELECT LOWER(TRIM(data->>'q')) k, COUNT(*) n FROM analytics WHERE event='search' AND COALESCE(data->>'q','')<>'' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 10"),
+    list("SELECT LOWER(TRIM(data->>'q')) k, COUNT(*) n FROM analytics WHERE event='search' AND data->>'results'='0' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 10"),
+    list("SELECT data->>'title' k, COUNT(*) n FROM analytics WHERE event='book_view' AND COALESCE(data->>'title','')<>'' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 5"),
+    list("SELECT mode k, COUNT(*) n FROM books WHERE createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC"),
+    list("SELECT data->>'kind' k, COUNT(*) n FROM analytics WHERE event='email_sent' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC"),
+    list("SELECT data->>'q' k, COUNT(*) n FROM analytics WHERE event='wishlist_add' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 5"),
+  ]);
+  return {
+    visitors, new_visitors: newVisitors, visits, app_visits: appVisits, signup_starts: signupStarts, signups, signups_google: signupsGoogle, active_users: active, guests,
+    books_new: booksNew, new_publishers: newPublishers, book_views: views, searches, zero_searches: zero, contacts, deals, shares, wishlist_adds: wish, pwa_installs: installs,
+    scans, image_rejected: imgRej, books_blocked: blocked, reports, hidden, emails, users_total: usersTotal, books_total: booksTotal,
+    lists: { sources, topSearches, zeroSearches, topViewed, booksByMode, emailKinds, wishTop },
+  };
+}
+async function dayStats(day, { fresh = false } = {}) {
+  const today = await israelDay(0);
+  if (!fresh && day < today) {
+    const r = await pool.query("SELECT data FROM daily_stats WHERE day=$1", [day]);
+    if (r.rows[0]) return r.rows[0].data;
+  }
+  const [a, b] = await dayBounds(day);
+  const st = await computeStats(a, Math.min(b, Date.now() + 1));
+  if (day < today) await pool.query("INSERT INTO daily_stats (day,data,createdat) VALUES ($1,$2,$3) ON CONFLICT (day) DO UPDATE SET data=$2, createdat=$3", [day, st, Date.now()]);
+  return st;
+}
+// צילום יומי של אתמול (ומילוי ימים חסרים)
+async function snapshotDays(back = 45) {
+  for (let i = back; i >= 1; i--) {
+    const d = await israelDay(-i);
+    const have = await pool.query("SELECT 1 FROM daily_stats WHERE day=$1", [d]);
+    if (!have.rows.length) await dayStats(d).catch(e => console.error("snapshot", d, e.message));
+  }
+}
+cron.schedule("5 0 * * *", async () => { try { await dayStats(await israelDay(-1), { fresh: true }); } catch (e) { console.error("daily snapshot:", e.message); } }, { timezone: TZ });
+setTimeout(() => snapshotDays().catch(e => console.error("backfill:", e.message)), 20000);
+
+async function trendRows(days) {
+  const rows = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = await israelDay(-i);
+    const st = await dayStats(day);
+    const { lists, ...nums } = st;
+    rows.push({ day, ...nums });
+  }
+  return rows;
+}
+app.get("/api/admin/trends", limit("admin", 60, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
+  try {
+    const days = Math.min(90, Math.max(7, Number(req.query.days) || 30));
+    const rows = await trendRows(days);
+    const today = await dayStats(await israelDay(0), { fresh: true });
+    const [a] = await dayBounds(await israelDay(-6));
+    const week = await computeStats(a, Date.now() + 1);
+    res.json({ rows, today, week, fields: STAT_FIELDS, emailDailyLimit: Number(process.env.EMAIL_DAILY_LIMIT || 100) });
+  } catch (e) { console.error("trends:", e.message); res.status(500).json({ error: e.message }); }
+});
+app.get("/api/admin/trends.csv", limit("admin", 30, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).send("unauthorized");
+  try {
+    const rows = await trendRows(Math.min(365, Math.max(7, Number(req.query.days) || 90)));
+    const head = ["תאריך", ...STAT_FIELDS.map(f => f[1])];
+    const csv = "﻿" + [head, ...rows.map(r => [r.day, ...STAT_FIELDS.map(f => r[f[0]] ?? 0)])].map(l => l.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    res.set("Content-Type", "text/csv; charset=utf-8").set("Content-Disposition", `attachment; filename="pageturner-stats-${await israelDay(0)}.csv"`).send(csv);
+  } catch (e) { console.error("csv:", e.message); res.status(500).send("error"); }
+});
+
 // ── דוחות במייל ──────────────────────────────────────────
 async function sendReport(type) {
   const adminEmail = process.env.ADMIN_EMAIL;
   if (!adminEmail) return;
-  const now = Date.now();
-  const period = type === "daily" ? DAY : type === "weekly" ? DAY * 7 : DAY * 30;
   try {
-    const q = (sql, p) => pool.query(sql, p);
-    const [users, books, deals, newUsers, newBooks, newDeals, logins, guestLogins, views, searches, contacts, cities, hours] = await Promise.all([
-      q("SELECT COUNT(*) FROM users"),
-      q("SELECT COUNT(*) FROM books WHERE avail=true"),
-      q("SELECT COUNT(*) FROM book_history"),
-      q("SELECT COUNT(*) FROM users WHERE createdat>$1", [now - period]),
-      q("SELECT COUNT(*) FROM books WHERE createdat>$1", [now - period]),
-      q("SELECT COUNT(*) FROM analytics WHERE event='book_deal' AND createdat>$1", [now - period]),
-      q("SELECT COUNT(DISTINCT userid) FROM analytics WHERE event IN ('login','page_load') AND userid IS NOT NULL AND createdat>$1", [now - period]),
-      q("SELECT COUNT(*) FROM analytics WHERE event='guest_login' AND createdat>$1", [now - period]),
-      q("SELECT COUNT(*) FROM analytics WHERE event='book_view' AND createdat>$1", [now - period]),
-      q("SELECT COUNT(*) FROM analytics WHERE event='search' AND createdat>$1", [now - period]),
-      q("SELECT COUNT(*) FROM analytics WHERE event='book_contact' AND createdat>$1", [now - period]),
-      q("SELECT city, COUNT(*) as cnt FROM books WHERE city IS NOT NULL AND city!='' GROUP BY city ORDER BY cnt DESC LIMIT 5"),
-      q("SELECT EXTRACT(HOUR FROM to_timestamp(createdat/1000) AT TIME ZONE 'Asia/Jerusalem') as hour, COUNT(*) as cnt FROM analytics WHERE createdat>$1 GROUP BY hour ORDER BY cnt DESC LIMIT 5", [now - period]),
-    ]);
+    const html = await buildReport(type);
     const periodHe = type === "daily" ? "יומי" : type === "weekly" ? "שבועי" : "חודשי";
-    const peakHours = hours.rows.map(h => `${h.hour}:00 (${h.cnt} אירועים)`).join(", ");
-    const topCities = cities.rows.map(c => `${escapeHtml(c.city)}: ${c.cnt}`).join(", ");
-    const row = (label, v, shade) => `<tr${shade ? ' style="background:#f0ebe0"' : ""}><td style="padding:10px;border:1px solid #ddd">${label}</td><td style="padding:10px;border:1px solid #ddd;font-weight:bold;text-align:center">${v}</td></tr>`;
-    const html = `
-<div dir="rtl" style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f0e8">
-  <h1 style="color:#1E2D3D;font-size:24px;border-bottom:2px solid #6B8F47;padding-bottom:12px">📚 Pageturner — דוח ${periodHe}</h1>
-  <p style="color:#888;font-size:13px">${new Date().toLocaleDateString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Jerusalem" })}</p>
-  <h2 style="color:#6B8F47;font-size:16px">📊 סיכום כולל</h2>
-  <table style="width:100%;border-collapse:collapse">
-    ${row("👥 סה\"כ משתמשים", users.rows[0].count, 1)}${row("📚 ספרים פעילים", books.rows[0].count)}${row("🤝 עסקאות שבוצעו", deals.rows[0].count, 1)}
-  </table>
-  <h2 style="color:#6B8F47;font-size:16px;margin-top:20px">📈 פעילות בתקופה</h2>
-  <table style="width:100%;border-collapse:collapse">
-    ${row("✅ הרשמות חדשות", newUsers.rows[0].count, 1)}${row("🔑 משתמשים פעילים", logins.rows[0].count)}${row("👀 כניסות כאורח", guestLogins.rows[0].count, 1)}
-    ${row("📖 ספרים חדשים", newBooks.rows[0].count)}${row("👁️ צפיות בספרים", views.rows[0].count, 1)}${row("🔍 חיפושים", searches.rows[0].count)}
-    ${row("📱 פניות למפרסמים", contacts.rows[0].count, 1)}${row("🤝 עסקאות חדשות", newDeals.rows[0].count)}
-  </table>
-  ${topCities ? `<h2 style="color:#6B8F47;font-size:16px;margin-top:20px">📍 ערים פעילות</h2><p style="color:#444">${topCities}</p>` : ""}
-  ${peakHours ? `<h2 style="color:#6B8F47;font-size:16px;margin-top:20px">⏰ שעות שיא</h2><p style="color:#444">${peakHours}</p>` : ""}
-  <p style="color:#aaa;font-size:11px;margin-top:30px;border-top:1px solid #ddd;padding-top:12px">Pageturner — ספרייה שכונתית | דוח אוטומטי</p>
-</div>`;
-    await sendEmail(adminEmail, `📊 Pageturner — דוח ${periodHe} | ${new Date().toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" })}`, html);
+    await sendEmail(adminEmail, `📊 Pageturner — דוח ${periodHe} | ${html.label}`, html.body);
     console.log(`✅ דוח ${periodHe} נשלח`);
   } catch (e) { console.error("Report error:", e.message); }
 }
+// בונה את הדוח: יומי = אתמול (יום קלנדרי), שבועי = 7 ימים מלאים, חודשי = 30 ימים מלאים, עם השוואה לתקופה הקודמת
+async function buildReport(type) {
+  const days = type === "daily" ? 1 : type === "weekly" ? 7 : 30;
+  const firstDay = await israelDay(-days), prevFirst = await israelDay(-2 * days), today = await israelDay(0);
+  const [a] = await dayBounds(firstDay), [pa] = await dayBounds(prevFirst), [b] = await dayBounds(today);
+  const cur = days === 1 ? await dayStats(firstDay, { fresh: true }) : await computeStats(a, b);
+  const prev = days === 1 ? await dayStats(prevFirst) : await computeStats(pa, a);
+  const trend = await trendRows(days === 1 ? 9 : days === 7 ? 14 : 30);
+  const past = trend.filter(r => r.day < today);
+  const avg7 = {};
+  if (days === 1) { const w = past.slice(-8, -1); for (const [k] of STAT_FIELDS) avg7[k] = w.length ? w.reduce((x, r) => x + (r[k] || 0), 0) / w.length : 0; }
+  const fmtDay = d => new Date(d + "T12:00:00Z").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric", year: "numeric", timeZone: "UTC" });
+  const short = d => d.slice(8, 10) + "." + d.slice(5, 7);
+  const label = days === 1 ? fmtDay(firstDay) : `${short(firstDay)}–${short(await israelDay(-1))}`;
+  const prevName = days === 1 ? "מאתמול" : days === 7 ? "מהשבוע הקודם" : "מהחודש הקודם";
+  const delta = (v, p) => {
+    if (!p && !v) return `<span style="color:#9aa">—</span>`;
+    if (!p) return `<span style="color:#15803D">חדש ▲</span>`;
+    const d = Math.round((v - p) / p * 100);
+    return d === 0 ? `<span style="color:#9aa">ללא שינוי</span>` : `<span style="color:${d > 0 ? "#15803D" : "#B91C1C"}">${d > 0 ? "▲" : "▼"} ${Math.abs(d)}%</span>`;
+  };
+  const C = { ink: "#1E2D3D", muted: "#5A655E", line: "#E6E0D4", bg: "#F6F2EA", green: "#527236" };
+  const card = (icon, title, k) => `<td style="width:50%;padding:6px;vertical-align:top"><div style="background:#fff;border:1px solid ${C.line};border-radius:14px;padding:14px">
+      <div style="font-size:13px;color:${C.muted}">${icon} ${title}</div>
+      <div style="font-size:30px;font-weight:800;color:${C.ink};margin:4px 0">${cur[k] ?? 0}</div>
+      <div style="font-size:12px">${delta(cur[k] || 0, prev[k] || 0)} <span style="color:${C.muted}">${prevName}</span></div>
+      ${days === 1 ? `<div style="font-size:12px;color:${C.muted}">ממוצע שבועי: ${(+avg7[k] || 0).toFixed(1)}</div>` : ""}</div></td>`;
+  const h2 = t => `<h2 style="font-size:16px;color:${C.green};margin:26px 0 8px">${t}</h2>`;
+  const tbl = (rows, cols) => `<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid ${C.line};border-radius:10px;font-size:14px">
+      ${cols ? `<tr>${cols.map(c => `<th style="padding:8px;border-bottom:1px solid ${C.line};text-align:right;color:${C.muted};font-weight:600;font-size:12px">${c}</th>`).join("")}</tr>` : ""}
+      ${rows.map((r, i) => `<tr style="${i % 2 ? `background:${C.bg}` : ""}">${r.map((c, j) => `<td style="padding:8px;border-bottom:1px solid ${C.line};${j ? "text-align:center;font-weight:700" : ""}">${c}</td>`).join("")}</tr>`).join("")}</table>`;
+  const listTbl = (arr, empty, unit = "") => arr?.length ? tbl(arr.map(x => [escapeHtml(x.k || "—"), x.n + unit])) : `<p style="color:${C.muted};font-size:13px;margin:0">${empty}</p>`;
+  const pct = (x, y) => y ? Math.round(x / y * 100) + "%" : "—";
+  const L = cur.lists || {};
+  const modeHe = { sell: "מכירה", lend: "השאלה", swap: "החלפה", give: "מסירה" };
+  // משפט סיכום
+  const summary = cur.visitors || cur.signups || cur.books_new
+    ? `${cur.visitors} מבקרים, ${cur.signups} נרשמו, ${cur.books_new} ספרים חדשים ו-${cur.contacts} פניות למפרסמים.`
+    : "תקופה שקטה: לא היו כניסות חדשות.";
+  const safetyTotal = (cur.image_rejected || 0) + (cur.books_blocked || 0) + (cur.reports || 0) + (cur.hidden || 0);
+  const emailLimit = Number(process.env.EMAIL_DAILY_LIMIT || 100);
+  const maxDayEmails = Math.max(0, ...past.slice(-days).map(r => r.emails || 0));
+  const body = `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px;background:${C.bg};color:${C.ink}">
+  <div style="font-size:22px;font-weight:800">📚 Pageturner · דוח ${days === 1 ? "יומי" : days === 7 ? "שבועי" : "חודשי"}</div>
+  <div style="color:${C.muted};font-size:14px;margin-top:2px">${label}</div>
+  <div style="background:${C.ink};color:#fff;border-radius:14px;padding:14px 16px;margin:16px 0 6px;font-size:15px;line-height:1.6">${summary}</div>
+  <table style="width:100%;border-collapse:collapse"><tr>${card("👀", "מבקרים ייחודיים", "visitors")}${card("✅", "נרשמו", "signups")}</tr>
+    <tr>${card("📖", "ספרים חדשים", "books_new")}${card("📱", "פניות למפרסמים", "contacts")}</tr></table>
+
+  ${h2("🔻 המשפך: מכניסה ועד פנייה")}
+  ${tbl([
+    ["מבקרים ייחודיים", cur.visitors, ""],
+    ["התחילו הרשמה", cur.signup_starts, pct(cur.signup_starts, cur.visitors)],
+    ["נרשמו", `${cur.signups}${cur.signups_google ? ` (${cur.signups_google} עם Google)` : ""}`, pct(cur.signups, cur.visitors)],
+    ["העלו ספר ראשון", cur.new_publishers, pct(cur.new_publishers, cur.signups)],
+    ["פניות למפרסמים", cur.contacts, ""],
+    ["עסקאות שנסגרו", cur.deals, ""],
+  ], ["שלב", "כמה", "המרה"])}
+  <p style="font-size:12px;color:${C.muted};margin:6px 0 0">המרה = מתוך השלב שמעליו (העלו ספר ראשון: מתוך מי שנרשם).</p>
+
+  ${h2("📣 מאיפה הגיעו")}
+  ${listTbl(L.sources, "אין נתונים עדיין.", " מבקרים")}
+  <p style="font-size:12px;color:${C.muted};margin:6px 0 0">טיפ: לכל קבוצה קישור משלה, למשל pageturner.co.il/?s=bima — ואז תראו כאן כמה הגיעו מכל קבוצה.</p>
+
+  ${h2("🔍 מה מחפשים")}
+  ${listTbl(L.topSearches, "לא היו חיפושים.")}
+  ${h2("💡 מחפשים ולא מוצאים — הזדמנות")}
+  ${listTbl(L.zeroSearches, "כל החיפושים מצאו תוצאות 👌")}
+  ${L.wishTop?.length ? h2("⭐ משאלות חדשות") + listTbl(L.wishTop, "") : ""}
+
+  ${h2("👁️ הספרים הנצפים ביותר")}
+  ${listTbl(L.topViewed, "לא היו צפיות.", " צפיות")}
+  ${h2("📚 ספרים חדשים לפי סוג")}
+  ${L.booksByMode?.length ? tbl(L.booksByMode.map(x => [modeHe[x.k] || x.k, x.n])) : `<p style="color:${C.muted};font-size:13px;margin:0">לא נוספו ספרים.</p>`}
+
+  ${h2("📈 מגמה")}
+  ${tbl(past.slice(days === 1 ? -7 : -days).map(r => [short(r.day), r.visitors, r.signups, r.books_new, r.contacts]), ["יום", "מבקרים", "נרשמו", "ספרים", "פניות"])}
+
+  ${h2("🧮 פעילות נוספת")}
+  ${tbl([
+    ["משתמשים פעילים", cur.active_users], ["צפיות בספרים", cur.book_views], ["חיפושים", `${cur.searches} (${cur.zero_searches} בלי תוצאות)`],
+    ["שיתופים", cur.shares], ["כניסות כאורח", cur.guests], ["התקנות לטלפון", cur.pwa_installs], ["סריקות כריכה (AI)", cur.scans],
+  ])}
+
+  ${h2("🛡️ בטיחות")}
+  ${safetyTotal ? tbl([["תמונות שנחסמו", cur.image_rejected], ["ספרים אסורים שנחסמו", cur.books_blocked], ["דיווחים על מודעות", cur.reports], ["מודעות שהוסתרו", cur.hidden]])
+    : `<p style="font-size:14px;margin:0">הכל שקט ✓ לא היו חסימות או דיווחים.</p>`}
+
+  ${h2("⚙️ מערכת")}
+  ${tbl([
+    ["מיילים שנשלחו", `${cur.emails}${(L.emailKinds || []).length ? ` (${L.emailKinds.map(x => `${({ otp: "קודים", backup: "גיבוי", report: "דוחות", wishlist: "משאלות", admin: "התראות" })[x.k] || x.k}: ${x.n}`).join(", ")})` : ""}`],
+    ["שיא יומי מול המכסה של Resend", `${maxDayEmails} / ${emailLimit}${maxDayEmails >= emailLimit * 0.7 ? " ⚠️ מתקרבים למכסה" : ""}`],
+  ])}
+
+  ${h2("🗂️ סה״כ באתר")}
+  ${tbl([["משתמשים", cur.users_total], ["ספרים פעילים", cur.books_total]])}
+
+  <p style="margin-top:26px;font-size:13px"><a href="${siteUrl()}/?admin=1" style="color:${C.green}">לפאנל הניהול, עם גרפים וייצוא לאקסל ←</a></p>
+  <p style="color:#9aa;font-size:11px;margin-top:20px;border-top:1px solid ${C.line};padding-top:10px">Pageturner — ספרייה שכונתית · דוח אוטומטי · הימים לפי שעון ישראל</p>
+</div>`;
+  return { label, body };
+}
+app.get("/api/admin/report-preview", limit("admin", 30, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).send("unauthorized");
+  try { const r = await buildReport(["daily", "weekly", "monthly"].includes(req.query.type) ? req.query.type : "daily"); res.set("Content-Type", "text/html; charset=utf-8").send(r.body); }
+  catch (e) { res.status(500).send(e.message); }
+});
 
 // ── גיבוי יומי במייל (Railway Hobby לא כולל גיבויים) ─────────
 // קובץ JSON דחוס עם כל הטבלאות; שחזור: node scripts/restore-backup.mjs <file>

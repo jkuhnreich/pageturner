@@ -994,9 +994,11 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
 
   const [otpStep, setOtpStep] = useState(false);
   const [otp, setOtp] = useState("");
+  useEffect(() => { if (!prefill) api.track("signup_start", { vid: visitInfo().vid }); }, []);
 
   const finish = async (tk) => {
-    const res = await api.post("/api/users/register", { ...form, type, ticket: tk, emailConsent: consent });
+    let src = ""; try { src = sessionStorage.getItem("pt_src") || ""; } catch {}
+    const res = await api.post("/api/users/register", { ...form, type, ticket: tk, emailConsent: consent, src });
     onDone(res.user, res.token);
   };
 
@@ -1146,7 +1148,7 @@ const LEGAL_UPDATED = "26.10.2026";
 const LEGAL = {
   privacy: { title: "מדיניות פרטיות", sections: [
     ["מי אנחנו", "Pageturner (\"ספרייה שכונתית\", pageturner.co.il) היא פלטפורמה ישראלית שמחברת בין שכנים שרוצים למכור, להשאיל, להחליף או למסור ספרים. לכל שאלה או בקשה בנוגע למידע שלכם אפשר לפנות אלינו דרך \"צור קשר\" בתפריט האתר, או במייל pageturner.team@gmail.com."],
-    ["איזה מידע אנחנו אוספים", "שם, מספר טלפון וכתובת מייל שמסרתם בהרשמה. אם נכנסתם עם Google, אנחנו מקבלים מ-Google רק את כתובת המייל והשם שלכם, ולא שום מידע אחר מהחשבון. פרטי הספרים שפרסמתם ותמונות שצילמתם. מיקום משוער של הספר, רק אם אישרתם גישה למיקום. תמונת פרופיל ומשפט על עצמכם, אם הוספתם. נתוני שימוש בסיסיים: חיפושים, צפייה בספרים ופניות למפרסמים, כדי לשפר את השירות."],
+    ["איזה מידע אנחנו אוספים", "שם, מספר טלפון וכתובת מייל שמסרתם בהרשמה. אם נכנסתם עם Google, אנחנו מקבלים מ-Google רק את כתובת המייל והשם שלכם, ולא שום מידע אחר מהחשבון. פרטי הספרים שפרסמתם ותמונות שצילמתם. מיקום משוער של הספר, רק אם אישרתם גישה למיקום. תמונת פרופיל ומשפט על עצמכם, אם הוספתם. נתוני שימוש בסיסיים: חיפושים, צפייה בספרים ופניות למפרסמים, כדי לשפר את השירות. כדי לספור ביקורים נשמר בדפדפן מזהה אקראי, שלא מכיל שום פרט אישי ולא מאפשר לזהות אתכם."],
     ["מה רואים משתמשים אחרים", "כל מי שנכנס לאתר רואה את פרטי הספר, את השם שלכם ואת העיר. המרחק מוצג בעיגול, כך שאי אפשר לדעת את הכתובת המדויקת. מספר הטלפון מוצג רק למשתמש רשום שפותח את דף הספר כדי לפנות אליכם. כתובת המייל לא מוצגת לאף אחד."],
     ["תמונות", "כשאתם מצלמים כריכה לזיהוי אוטומטי, התמונה נשלחת לשירות בינה מלאכותית חיצוני (Anthropic) כדי לחלץ את פרטי הספר. כל תמונה שמועלית לאתר (תמונות ספרים ותמונת פרופיל) נבדקת אוטומטית באותו שירות, כדי לוודא שאין בה תוכן לא הולם ושתמונות הספרים באמת מציגות ספר. אנחנו לא שולחים עם התמונות שום פרט מזהה עליכם."],
     ["ספקים שעובדים איתנו", "כניסה עם חשבון Google (Google), אחסון השרת ומסד הנתונים (Railway), אחסון האתר (Vercel), שליחת מיילים (Resend), זיהוי ספרים מתמונה (Anthropic), חיפוש פרטי ספרים (Google Books, Open Library) ותרגום מיקום לשם עיר (OpenStreetMap). חלק מהספקים פועלים מחוץ לישראל. אנחנו לא מוכרים מידע אישי לאף אחד."],
@@ -1229,8 +1231,33 @@ function LegalSheet({ kind, onClose }) {
 }
 
 // ── App ראשי ────────────────────────────────────────────────
+// ── מדידה: מזהה מבקר אנונימי (בלי פרטים אישיים) ומקור ההגעה ──────────
+function visitInfo() {
+  let vid = null, isNew = false, src = "";
+  try { vid = localStorage.getItem("pt_vid"); if (!vid) { vid = (crypto.randomUUID?.() || String(Math.random()).slice(2)); localStorage.setItem("pt_vid", vid); isNew = true; } } catch {}
+  try {
+    const p = new URLSearchParams(window.location.search);
+    src = (p.get("s") || p.get("src") || p.get("utm_source") || "").slice(0, 40);
+    if (src) sessionStorage.setItem("pt_src", src); else src = sessionStorage.getItem("pt_src") || "";
+  } catch {}
+  let ref = "";
+  try { ref = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, "") : ""; if (ref === window.location.hostname.replace(/^www\./, "")) ref = ""; } catch {}
+  const app = typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches;
+  return { vid, isNew, src, ref, app };
+}
+let visitSent = false;
+
 export default function App() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (visitSent) return; visitSent = true;
+    const v = visitInfo();
+    api.track("visit", { vid: v.vid, new: v.isNew, src: v.src || undefined, ref: v.ref || undefined, app: v.app || undefined, path: window.location.search.includes("book=") ? "book" : undefined });
+    const onInstall = () => api.track("pwa_install", { vid: v.vid });
+    window.addEventListener("appinstalled", onInstall);
+    return () => window.removeEventListener("appinstalled", onInstall);
+  }, []);
 
   useEffect(() => {
     const handlePop = () => {
@@ -1325,6 +1352,7 @@ export default function App() {
 
   // כל הספרים נטענים פעם אחת; חיפוש וסינון קורים מיד בדפדפן
   const lastSearch = useRef("");
+  const searchCount = useRef(0);
   const loadBooks = useCallback(async (quiet) => {
     if (!quiet) setLoading(true);
     try {
@@ -1344,7 +1372,7 @@ export default function App() {
   useEffect(() => {
     const q = search.trim();
     if (!q || q === lastSearch.current) return;
-    const t = setTimeout(() => { lastSearch.current = q; api.track("search", { q }); }, 1200);
+    const t = setTimeout(() => { lastSearch.current = q; api.track("search", { q: q.slice(0, 80), results: searchCount.current }); }, 1200);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -1357,6 +1385,7 @@ export default function App() {
       (!q || norm(b.title).includes(q) || norm(b.author).includes(q) || norm(b.ownername).includes(q))
     );
   }, [books, search, modeFilter, genreFilter]);
+  searchCount.current = filtered.length;
   const browsing = !search.trim() && modeFilter === "all" && genreFilter === "all";
 
   // ספרים שמורים
@@ -1553,6 +1582,7 @@ export default function App() {
   const clearFilters = () => { setSearch(""); setModeFilter("all"); setGenreFilter("all"); };
   const goTab = id => {
     setTab(id); navigate(`?tab=${id}`); window.scrollTo({top:0});
+    if (id === "add") api.track("add_start");
     if (id === "add" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }), () => {}, { enableHighAccuracy: false, timeout: 10000 });
     }
@@ -2057,88 +2087,147 @@ function SettingsSheet({ user, onClose, toast_, onSaved, onDeleted, onShowLegal 
 
 function AdminPage({ onBack }) {
   const [key, setKey] = useState("");
-  const [stats, setStats] = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [metric, setMetric] = useState("visitors");
+  const [days, setDays] = useState(30);
+  const [msg, setMsg] = useState("");
 
-  const load = async () => {
-    setLoading(true);
-    setError("");
+  const load = async (d = days) => {
+    setLoading(true); setError("");
     try {
-      const r = await fetch(BASE + "/api/admin/stats", { headers: { "x-admin-key": key } });
-      const d = await safeJson(r);
-      if (!r.ok) { setError(r.status === 401 ? "סיסמה שגויה" : d.error || "שגיאה"); return; }
-      setStats(d);
+      const r = await fetch(`${BASE}/api/admin/trends?days=${d}`, { headers: { "x-admin-key": key } });
+      const j = await safeJson(r);
+      if (!r.ok) { setError(r.status === 401 ? "סיסמה שגויה" : j.error || "שגיאה"); return; }
+      setData(j);
     } catch(e) { setError("שגיאה: " + e.message); }
     finally { setLoading(false); }
   };
+  const post = async (path, body, ok) => {
+    setMsg("");
+    try { const r = await fetch(BASE + path, { method: "POST", headers: { "x-admin-key": key, "content-type": "application/json" }, body: JSON.stringify(body || {}) }); setMsg(r.ok ? ok : "שגיאה"); }
+    catch { setMsg("שגיאה"); }
+  };
+
+  const box = { background:"rgba(255,255,255,.07)", borderRadius:14, padding:14, marginBottom:12 };
+  const h = t => <div style={{fontSize:14,fontWeight:700,marginBottom:10}}>{t}</div>;
+  const muted = "rgba(255,255,255,.62)";
+  const List = ({ items, empty, unit = "" }) => items?.length
+    ? items.map((x,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.07)",fontSize:13}}><span>{x.k||"—"}</span><b>{x.n}{unit}</b></div>)
+    : <div style={{fontSize:13,color:muted}}>{empty}</div>;
+
+  if (!data) return (
+    <div style={{minHeight:"100vh",background:"#0e0c08",padding:20,direction:"rtl",color:"#fff"}}>
+      <button onClick={onBack} style={{background:"none",border:"none",color:muted,cursor:"pointer",fontSize:14,marginBottom:20}}>→ חזרה</button>
+      <h1 style={{fontFamily:HEAD,fontSize:24,fontWeight:700,marginBottom:20}}>📊 Admin Panel</h1>
+      <input value={key} onChange={e=>setKey(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()} placeholder="הכנס סיסמת Admin" type="password" aria-label="סיסמת Admin"
+        style={{width:"100%",padding:12,borderRadius:10,border:"1px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:14,marginBottom:10,boxSizing:"border-box"}}/>
+      <button onClick={()=>load()} disabled={loading} style={{width:"100%",padding:12,borderRadius:10,background:"#b5390e",color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:"pointer"}}>{loading ? "טוען..." : "כניסה"}</button>
+      {error && <div role="alert" style={{color:"#f87171",marginTop:10,fontSize:13}}>{error}</div>}
+    </div>
+  );
+
+  const T = data.today, W = data.week, rows = data.rows;
+  const label = Object.fromEntries(data.fields);
+  const limitE = data.emailDailyLimit || 100;
+  const vals = rows.map(r => r[metric] || 0);
+  const max = Math.max(1, ...vals);
+  const sum = vals.reduce((a,b)=>a+b,0);
+  const half = Math.floor(rows.length/2);
+  const first = vals.slice(0, half).reduce((a,b)=>a+b,0), second = vals.slice(half).reduce((a,b)=>a+b,0);
+  const change = first >= 5 ? Math.round((second-first)/first*100) : null;
+  const pct = (x, y) => y ? Math.round(x / y * 100) + "%" : "—";
+  const csvUrl = `${BASE}/api/admin/trends.csv?days=${Math.max(days,90)}&key=${encodeURIComponent(key)}`;
+  const previewUrl = t => `${BASE}/api/admin/report-preview?type=${t}&key=${encodeURIComponent(key)}`;
+  const tile = (ic, l, v, sub) => (
+    <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:12,textAlign:"center"}}>
+      <div style={{fontSize:20}} aria-hidden="true">{ic}</div>
+      <div style={{fontSize:24,fontWeight:900,marginTop:2}}>{v}</div>
+      <div style={{fontSize:11,color:muted,marginTop:2}}>{l}</div>
+      {sub && <div style={{fontSize:10,color:muted,marginTop:2}}>{sub}</div>}
+    </div>
+  );
+  const METRICS = ["visitors","signups","books_new","contacts","book_views","searches","zero_searches","emails"];
 
   return (
-    <div style={{minHeight:"100vh",background:"#0e0c08",padding:20,direction:"rtl",color:"#fff"}}>
-      <button onClick={onBack} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:14,marginBottom:20}}>→ חזרה</button>
-      <div style={{fontFamily:HEAD,fontSize:24,fontWeight:700,marginBottom:20}}>📊 Admin Panel</div>
-      
-      {!stats ? (
-        <div>
-          <input value={key} onChange={e=>setKey(e.target.value)} placeholder="הכנס סיסמת Admin" type="password"
-            style={{width:"100%",padding:12,borderRadius:10,border:"1px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:14,marginBottom:10,boxSizing:"border-box"}}/>
-          <button onClick={load} disabled={loading} style={{width:"100%",padding:12,borderRadius:10,background:"#b5390e",color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:"pointer"}}>
-            {loading ? "טוען..." : "כניסה"}
-          </button>
-          {error && <div style={{color:"#f87171",marginTop:10,fontSize:13}}>{error}</div>}
+    <div style={{minHeight:"100vh",background:"#0e0c08",padding:"20px 16px 40px",direction:"rtl",color:"#fff",maxWidth:760,margin:"0 auto"}}>
+      <button onClick={onBack} style={{background:"none",border:"none",color:muted,cursor:"pointer",fontSize:14,marginBottom:14}}>→ חזרה</button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h1 style={{fontFamily:HEAD,fontSize:24,fontWeight:700}}>📊 לוח בקרה</h1>
+        <button onClick={()=>load()} disabled={loading} style={{background:"rgba(255,255,255,.1)",color:"#fff",border:"none",borderRadius:10,padding:"8px 12px",fontSize:13,cursor:"pointer"}}>{loading?"...":"🔄 רענון"}</button>
+      </div>
+
+      <div style={box}>
+        {h("⏱️ היום עד עכשיו")}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+          {tile("👀","מבקרים",T.visitors)}{tile("✅","נרשמו",T.signups)}{tile("📖","ספרים",T.books_new)}{tile("📱","פניות",T.contacts)}
         </div>
-      ) : (
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
-            {[
-              {l:"משתמשים",v:stats.totals.users,ic:"👥"},
-              {l:"ספרים פעילים",v:stats.totals.books,ic:"📚"},
-              {l:"עסקאות",v:stats.totals.deals,ic:"🤝"},
-            ].map(s=>(
-              <div key={s.l} style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,textAlign:"center"}}>
-                <div style={{fontSize:24}}>{s.ic}</div>
-                <div style={{fontSize:22,fontWeight:900,marginTop:4}}>{s.v}</div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:2}}>{s.l}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📅 היום</div>
-            <div style={{display:"flex",justifyContent:"space-between"}}>
-              <span>הרשמות חדשות: <b>{stats.today.users}</b></span>
-              <span>ספרים חדשים: <b>{stats.today.books}</b></span>
-            </div>
-          </div>
-
-          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📆 שבוע אחרון</div>
-            <div style={{display:"flex",justifyContent:"space-between"}}>
-              <span>הרשמות: <b>{stats.week.users}</b></span>
-              <span>ספרים: <b>{stats.week.books}</b></span>
-            </div>
-          </div>
-
-          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🗓️ חודש אחרון</div>
-            <div style={{display:"flex",justifyContent:"space-between"}}>
-              <span>הרשמות: <b>{stats.month.users}</b></span>
-              <span>ספרים: <b>{stats.month.books}</b></span>
-            </div>
-          </div>
-
-          <div style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:14,marginBottom:12}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📍 ערים פעילות</div>
-            {stats.cities.map(c=>(
-              <div key={c.city} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
-                <span>{c.city}</span><span style={{fontWeight:700}}>{c.cnt}</span>
-              </div>
-            ))}
-          </div>
-
-          <button onClick={load} style={{width:"100%",padding:10,borderRadius:10,background:"rgba(255,255,255,.1)",color:"#fff",border:"none",fontSize:13,cursor:"pointer",marginBottom:10}}>🔄 רענן</button>
+        <div style={{marginTop:12,fontSize:13}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span>✉️ מיילים שנשלחו היום</span><b style={{color:T.emails>=limitE*.7?"#fbbf24":"#fff"}}>{T.emails} / {limitE}</b></div>
+          <div style={{height:8,background:"rgba(255,255,255,.1)",borderRadius:99,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,T.emails/limitE*100)}%`,background:T.emails>=limitE*.7?"#f59e0b":"#6a9444"}}/></div>
+          {T.emails>=limitE*.7 && <div style={{fontSize:12,color:"#fbbf24",marginTop:6}}>מתקרבים למכסה היומית של Resend. כדאי לשקול שדרוג.</div>}
         </div>
-      )}
+      </div>
+
+      <div style={box}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          {h(`📈 מגמה: ${label[metric]}`)}
+          <select value={days} onChange={e=>{const d=+e.target.value;setDays(d);load(d);}} aria-label="טווח ימים" style={{background:"rgba(255,255,255,.1)",color:"#fff",border:"none",borderRadius:8,padding:"4px 6px"}}>
+            {[14,30,60,90].map(d=><option key={d} value={d} style={{color:"#000"}}>{d} ימים</option>)}
+          </select>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+          {METRICS.map(m=><button key={m} onClick={()=>setMetric(m)} aria-pressed={metric===m} style={{padding:"5px 10px",borderRadius:99,border:"none",fontSize:12,cursor:"pointer",background:metric===m?"#6a9444":"rgba(255,255,255,.1)",color:"#fff"}}>{label[m]}</button>)}
+        </div>
+        <svg viewBox={`0 0 ${rows.length*12} 110`} preserveAspectRatio="none" style={{width:"100%",height:140,direction:"ltr"}} role="img" aria-label={`${label[metric]} ב-${rows.length} הימים האחרונים`}>
+          {vals.map((v,i)=><rect key={i} x={i*12+1} y={100-v/max*95} width={10} height={Math.max(v?1.5:0,v/max*95)} rx={2} fill={i===vals.length-1?"#93c5fd":"#6a9444"}><title>{rows[i].day}: {v}</title></rect>)}
+          <line x1="0" y1="100.5" x2={rows.length*12} y2="100.5" stroke="rgba(255,255,255,.2)" strokeWidth=".5"/>
+        </svg>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:muted,direction:"ltr"}}><span>{rows[0]?.day.slice(5).split("-").reverse().join(".")}</span><span>היום</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginTop:10}}>
+          <span>סה״כ בתקופה: <b>{sum}</b> · ממוצע ליום: <b>{(sum/rows.length).toFixed(1)}</b></span>
+          {change!==null && <span style={{color:change>=0?"#86efac":"#fca5a5"}}>{change>=0?"▲":"▼"} {Math.abs(change)}% לעומת {Math.floor(rows.length/2)} הימים שלפני</span>}
+        </div>
+      </div>
+
+      <div style={box}>
+        {h("🔻 משפך: 7 ימים אחרונים")}
+        {[["מבקרים ייחודיים",W.visitors,""],["התחילו הרשמה",W.signup_starts,pct(W.signup_starts,W.visitors)],["נרשמו",W.signups,pct(W.signups,W.visitors)],["העלו ספר ראשון",W.new_publishers,pct(W.new_publishers,W.signups)],["פניות למפרסמים",W.contacts,""],["עסקאות שנסגרו",W.deals,""]].map(([l,v,p],i)=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",fontSize:13}}>
+            <span style={{flex:1}}>{l}</span>
+            <div style={{flex:2,height:10,background:"rgba(255,255,255,.08)",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${W.visitors?Math.min(100,v/W.visitors*100):0}%`,background:"#6a9444"}}/></div>
+            <b style={{width:34,textAlign:"left"}}>{v}</b><span style={{width:38,textAlign:"left",color:muted,fontSize:12}}>{p}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+        <div style={{...box,marginBottom:0}}>{h("📣 מאיפה הגיעו (7 ימים)")}<List items={W.lists?.sources} empty="אין נתונים עדיין" unit=" מבקרים"/>
+          <div style={{fontSize:11,color:muted,marginTop:8}}>לכל קבוצה קישור משלה: pageturner.co.il/?s=שם</div></div>
+        <div style={{...box,marginBottom:0}}>{h("💡 מחפשים ולא מוצאים (7 ימים)")}<List items={W.lists?.zeroSearches} empty="כל החיפושים מצאו תוצאות 👌"/></div>
+        <div style={{...box,marginBottom:0}}>{h("🔍 חיפושים מובילים (7 ימים)")}<List items={W.lists?.topSearches} empty="לא היו חיפושים"/></div>
+        <div style={{...box,marginBottom:0}}>{h("👁️ ספרים נצפים (7 ימים)")}<List items={W.lists?.topViewed} empty="לא היו צפיות" unit=" צפיות"/></div>
+        <div style={{...box,marginBottom:0}}>{h("🛡️ בטיחות (7 ימים)")}
+          <List items={[{k:"תמונות שנחסמו",n:W.image_rejected},{k:"ספרים אסורים שנחסמו",n:W.books_blocked},{k:"דיווחים על מודעות",n:W.reports},{k:"מודעות שהוסתרו",n:W.hidden}]}/></div>
+        <div style={{...box,marginBottom:0}}>{h("🗂️ סה״כ")}
+          <List items={[{k:"משתמשים",n:T.users_total},{k:"ספרים פעילים",n:T.books_total},{k:"התקנות לטלפון (7 ימים)",n:W.pwa_installs},{k:"סריקות AI (7 ימים)",n:W.scans}]}/></div>
+      </div>
+
+      <div style={{...box,marginTop:12}}>
+        {h("🧰 פעולות")}
+        <div style={{display:"grid",gap:8}}>
+          <a href={csvUrl} style={{display:"block",textAlign:"center",padding:11,borderRadius:10,background:"#6a9444",color:"#fff",textDecoration:"none",fontWeight:700,fontSize:14}}>⬇️ הורדת נתונים יומיים לאקסל (CSV)</a>
+          <div style={{display:"flex",gap:8}}>
+            {[["daily","דוח יומי"],["weekly","שבועי"],["monthly","חודשי"]].map(([t,l])=><a key={t} href={previewUrl(t)} target="_blank" rel="noreferrer" style={{flex:1,textAlign:"center",padding:9,borderRadius:10,background:"rgba(255,255,255,.1)",color:"#fff",textDecoration:"none",fontSize:13}}>👁️ {l}</a>)}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>post("/api/admin/send-report",{type:"daily"},"הדוח נשלח למייל ✓")} style={{flex:1,padding:9,borderRadius:10,background:"rgba(255,255,255,.1)",color:"#fff",border:"none",fontSize:13,cursor:"pointer"}}>✉️ שליחת דוח עכשיו</button>
+            <button onClick={()=>post("/api/admin/backup",{},"הגיבוי נשלח ✓")} style={{flex:1,padding:9,borderRadius:10,background:"rgba(255,255,255,.1)",color:"#fff",border:"none",fontSize:13,cursor:"pointer"}}>🗄️ גיבוי עכשיו</button>
+          </div>
+          {msg && <div role="status" style={{fontSize:13,color:"#86efac"}}>{msg}</div>}
+        </div>
+      </div>
     </div>
   );
 }
