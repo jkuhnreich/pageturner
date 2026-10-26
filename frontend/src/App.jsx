@@ -1572,7 +1572,7 @@ export default function App() {
   if (screen === "register") return <><style>{CSS}</style><main><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);setScreen(user?"app":"splash");}} onDone={(u,t)=>handleAuth(u,t,true)} onGooglePrefill={setRegPrefill} onShowLegal={setLegal}/></main>{legalSheet}</>;
 
   const TABS = [["search","home","גילוי"],["add","plus","הוספה"],["profile","user","פרופיל"]];
-  const greet = (()=>{const h=new Date().getHours();return h>=5&&h<12?"בוקר טוב":h<17?"צהריים טובים":h<21?"ערב טוב":"לילה טוב";})();
+  const greet = (()=>{const h=new Date().getHours();return h>=5&&h<12?"בוקר טוב":h>=12&&h<17?"צהריים טובים":h>=17&&h<21?"ערב טוב":"לילה טוב";})();
   const others = books.filter(b => String(b.ownerid) !== String(user?.id));
   const nearby = userCoords ? others.filter(b => b.km != null).sort((a,b) => a.km - b.km).slice(0, 14) : [];
   const newest = [...others].sort((a,b) => Number(b.createdat) - Number(a.createdat)).slice(0, 14);
