@@ -618,6 +618,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
       toast_(cnt ? `זיהינו ${cnt} פרטים מהכריכה ✓` : "לא הצלחנו לקרוא את הכריכה, אפשר להשלים ידנית", cnt ? "ok" : "warn");
     } catch (e) {
       toast_(e.message, "err");
+      if (String(e.code || "").startsWith("image_")) { setFp(null); setFrontFile(null); }
     } finally { setFl(false); }
   };
 
@@ -648,6 +649,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
       }
     } catch (e) {
       toast_(e.message, "err");
+      if (String(e.code || "").startsWith("image_")) setBp(null);
     } finally { setBl(false); }
   };
 

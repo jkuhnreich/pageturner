@@ -389,6 +389,10 @@ const MOD_ERRORS = {
   unsafe: "התמונה לא מתאימה לפרסום באתר. אפשר להעלות רק תמונות של ספרים",
   notbook: "התמונה לא נראית כמו ספר. צלמו את כריכת הספר או את העותק שלכם ונסו שוב",
 };
+// תשובת הסריקה עצמה אומרת אם זה ספר ואם התמונה בסדר — עוצרים כבר בשלב הצילום
+const isFalse = v => v === false || v === "false";
+const isTrue = v => v === true || v === "true";
+function imageGate(v) { if (isTrue(v?.unsafe)) return "unsafe"; if (isFalse(v?.is_book)) return "notbook"; return null; }
 const COVER_HOSTS = /^https:\/\/(covers\.openlibrary\.org|books\.google\.com|books\.googleusercontent\.com|[a-z0-9-]+\.googleusercontent\.com)\//i;
 const hideToken = id => createHmac("sha256", process.env.ADMIN_KEY || "pt-hide").update("hide:" + id).digest("base64url").slice(0, 32);
 function siteUrl() { return process.env.SITE_URL || "https://pageturner.co.il"; }
@@ -594,6 +598,9 @@ async function enrich(vision) {
 }
 
 const P_FRONT = `You are an expert OCR and bibliographic system for book covers, specializing in Hebrew books sold in Israel. Analyze this FRONT COVER image carefully.
+FIRST, check the image:
+- "is_book": true only if the image shows a book (front or back cover, spine, a book held in hand or lying on a surface, an open book). Set false for any other object or product — bottles, cans, sprays, food or cosmetics packaging, boxes, electronics, documents, receipts, screenshots, people, animals, places — even if it has printed text on it. If false, leave all other fields empty.
+- "unsafe": true if the image contains nudity or sexual content, graphic violence or gore, or other content inappropriate for a family audience.
 HEBREW: most covers are in Hebrew (right-to-left). Titles often use decorative, handwritten-style or very bold display fonts — read them anyway, letter by letter if needed. Use your knowledge of real published books and authors (including translated books, e.g. Pema Chödrön = פמה צ'ודרון) to correct likely misreads, but only output a title/author that matches what is printed. Write Hebrew names in Hebrew as printed.
 RULES:
 - Copy ALL text EXACTLY as it appears, including subtitles
@@ -607,9 +614,12 @@ RULES:
 - crop: the tightest axis-aligned box containing only the cover, as PERCENTAGES (x,y = top-left).
 FORMAT: inside values, write Hebrew abbreviations with ״ and ׳ (e.g. צה״ל, צ׳ודרון) — never a plain " character.
 Return ONLY raw JSON, no code fences, no other text:
-{"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","isbn":"","confidence":{"title":0,"author":0,"publisher":0,"year":0},"corners":{"tl":[0,0],"tr":[100,0],"br":[100,100],"bl":[0,100]},"crop":{"x":0,"y":0,"width":100,"height":100}}`;
+{"is_book":true,"unsafe":false,"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","isbn":"","confidence":{"title":0,"author":0,"publisher":0,"year":0},"corners":{"tl":[0,0],"tr":[100,0],"br":[100,100],"bl":[0,100]},"crop":{"x":0,"y":0,"width":100,"height":100}}`;
 
 const P_BACK = `You are an expert OCR and bibliographic system for book back covers.
+FIRST, check the image:
+- "is_book": true only if the image shows a book (front or back cover, spine, a book held in hand or lying on a surface, an open book). Set false for any other object or product — bottles, cans, sprays, food or cosmetics packaging, boxes, electronics, documents, receipts, screenshots, people, animals, places — even if it has printed text on it. If false, leave all other fields empty.
+- "unsafe": true if the image contains nudity or sexual content, graphic violence or gore, or other content inappropriate for a family audience.
 RULES:
 - isbn: look for barcode area, find 13-digit number starting with 978 or 979
 - publisher: look for publisher name/logo anywhere
@@ -619,7 +629,7 @@ RULES:
 - genre: category of the book
 Leave "" if not clearly visible.
 FORMAT: inside values, write Hebrew abbreviations with the Hebrew gershayim ״ and geresh ׳ (e.g. צה״ל, ד״ר, צ׳ודרון) — never a plain " character. Keep the summary under 900 characters. Return ONLY raw JSON, no code fences, no other text:
-{"summary":"","isbn":"","publisher":"","year":"","price":"","genre":""}`;
+{"is_book":true,"unsafe":false,"summary":"","isbn":"","publisher":"","year":"","price":"","genre":""}`;
 
 const P_SHELF = `You are an expert at reading book spines on a bookshelf.
 Spines are narrow vertical strips — text is ROTATED 90°.
@@ -786,6 +796,8 @@ app.post("/api/analyze/front", visionGuard, async (req, res) => {
       try { return parseJ(raw); } catch { console.error("front: unparseable answer:", String(raw).slice(0, 300)); return {}; }
     };
     let vision = await readFront();
+    const gate = imageGate(vision);
+    if (gate) { track("image_rejected", req.user.id, { reason: gate, at: "scan_front" }); return res.status(422).json({ error: MOD_ERRORS[gate], code: "image_" + gate }); }
     if (!String(vision.title || "").trim() && VISION_MODEL !== VISION_FALLBACK_MODEL) {
       console.log("front: no title from", VISION_MODEL, "— retrying with", VISION_FALLBACK_MODEL);
       const v2 = await readFront(VISION_FALLBACK_MODEL).catch(e => { console.error("front retry:", e.message); return {}; });
@@ -822,6 +834,8 @@ app.post("/api/analyze/back", visionGuard, async (req, res) => {
       const plain = stripFences(raw);
       data = /^[{\[]/.test(plain) ? {} : { summary: plain };
     }
+    const gate = imageGate(data);
+    if (gate) { track("image_rejected", req.user.id, { reason: gate, at: "scan_back" }); return res.status(422).json({ error: MOD_ERRORS[gate], code: "image_" + gate }); }
     Object.keys(data).forEach(k => { if (typeof data[k] === "string") data[k] = cleanText(data[k]); });
     let googleData = {};
     if (data.isbn && /^97[89]/.test(data.isbn)) {
