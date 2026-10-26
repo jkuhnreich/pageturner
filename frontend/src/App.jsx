@@ -81,13 +81,16 @@ const C = {
   green: "#527236", greenL: "#EEF3E8", red: "#C2412D", redL: "#FBEDEA",
 };
 const HDR = "#1E2D3D";
+// פונט הכותרות: כתב יד מודרני וקריא
+const HEAD = "'Playpen Sans Hebrew','Rubik',sans-serif";
 // פלטת כריכות — גוונים עמוקים שמתאימים למותג
 const SPINES = ["#2F4858","#6B8F47","#B5653A","#8C3B4A","#3D6A8C","#C9A14A","#5B4B8A","#2E7D6B"];
+// כל סוג עסקה בצבע מלא ושונה, כדי שהעין תסנן מהר (ניגודיות AA עם טקסט לבן)
 const MODES = {
-  sell:  { label:"מכירה",  icon:"tag",  bg:"#FBF1DF", fg:"#9A5B12" },
-  lend:  { label:"השאלה",  icon:"loop", bg:"#E8EEF7", fg:"#2F5A8C" },
-  swap:  { label:"החלפה",  icon:"swap", bg:"#E6F2EE", fg:"#22705C" },
-  give:  { label:"מסירה",  icon:"gift", bg:"#EEF3E8", fg:"#4B6E2C" },
+  sell:  { label:"מכירה",  icon:"tag",  bg:"#FBF1DF", fg:"#9A4A0B", solid:"#B45309" },
+  lend:  { label:"השאלה",  icon:"loop", bg:"#E8EEF7", fg:"#1D4ED8", solid:"#1D4ED8" },
+  swap:  { label:"החלפה",  icon:"swap", bg:"#F1ECFD", fg:"#6D28D9", solid:"#7C3AED" },
+  give:  { label:"מסירה",  icon:"gift", bg:"#EAF5EE", fg:"#166534", solid:"#15803D" },
 };
 const GENRES = [
   ["ספרות ורומנים","novel","#E9E2F5"], ["מתח","mask","#E3E8EF"], ["מדע בדיוני ופנטזיה","rocket","#E2EEF4"],
@@ -220,7 +223,7 @@ function Cover({ book, radius = 12, titleSize = 15, eager }) {
 function ModeBadge({ mode, small }) {
   const m = MODES[mode] || MODES.sell;
   return (
-    <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:small?"3px 8px 3px 9px":"5px 11px 5px 12px",borderRadius:99,background:m.bg,color:m.fg,fontSize:small?11:12,fontWeight:700,whiteSpace:"nowrap"}}>
+    <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:small?"3px 8px 3px 9px":"5px 11px 5px 12px",borderRadius:99,background:m.solid,color:"#fff",fontSize:small?11:12,fontWeight:700,whiteSpace:"nowrap",boxShadow:"0 0 0 1.5px rgba(255,255,255,.92), 0 2px 6px rgba(0,0,0,.18)"}}>
       <Icon name={m.icon} size={small?12:14} stroke={2.1}/>{m.label}
     </span>
   );
@@ -286,7 +289,7 @@ function SectionHead({ title, sub, action, onAction }) {
   return (
     <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",margin:"26px 0 12px"}}>
       <div>
-        <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:22,fontWeight:900,color:C.ink,lineHeight:1.1}}>{title}</h2>
+        <h2 style={{fontFamily:HEAD,fontSize:22,fontWeight:700,color:C.ink,lineHeight:1.1}}>{title}</h2>
         {sub && <div style={{fontSize:12.5,color:C.muted,marginTop:4}}>{sub}</div>}
       </div>
       {action && <button onClick={onAction} style={{display:"flex",alignItems:"center",gap:2,background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:"4px 0"}}>{action}<Icon name="forward" size={16} stroke={2.2}/></button>}
@@ -681,7 +684,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
     const pb = { id: form.title, title: form.title, author: form.author, thumbnail: form.thumbnail || fp, mode: form.mode, price: form.price };
     return (
     <div style={{padding:"4px 0 20px",direction:"rtl",animation:"fadeUp .2s ease"}}>
-      <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:24,fontWeight:900,color:C.ink,textAlign:"center"}}>ככה זה ייראה</h2>
+      <h2 style={{fontFamily:HEAD,fontSize:24,fontWeight:700,color:C.ink,textAlign:"center"}}>ככה זה ייראה</h2>
       <div style={{fontSize:13,color:C.muted,textAlign:"center",marginTop:4,marginBottom:18}}>אפשר לחזור ולתקן לפני הפרסום</div>
       <div style={{display:"flex",justifyContent:"center"}}>
         <div style={{width:170}}><BookTile book={pb} onOpen={()=>{}} user={null}/></div>
@@ -746,7 +749,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
 
   if (step === "choose") return (
     <div style={{animation:"fadeUp .2s ease"}}>
-      <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,fontWeight:900,color:C.ink,marginBottom:4}}>ספר חדש למדף</h2>
+      <h2 style={{fontFamily:HEAD,fontSize:26,fontWeight:700,color:C.ink,marginBottom:4}}>ספר חדש למדף</h2>
       <div style={{fontSize:14,color:C.muted,marginBottom:18}}>הדרך הכי מהירה: לצלם את הכריכה</div>
       <button className="press" onClick={()=>setStep("camera")} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"18px 16px",borderRadius:20,border:"none",background:"linear-gradient(135deg,#2F4858,#1E2D3D)",color:"#fff",cursor:"pointer",textAlign:"right",marginBottom:12,boxShadow:"0 10px 24px rgba(30,45,61,.25)"}}>
         <span style={{width:52,height:52,borderRadius:16,background:"rgba(255,255,255,.12)",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="scan" size={28}/></span>
@@ -950,7 +953,7 @@ function Login({ onBack, onDone, onRegister }) {
     <div style={{minHeight:"100vh",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",padding:24,direction:"rtl"}}>
       <div style={{background:C.white,borderRadius:22,padding:"26px 24px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:"fadeUp .25s ease"}}>
         <button onClick={step==="code"?()=>{setStep("email");setErr("");}:onBack} style={{background:C.bg,border:"none",borderRadius:9,padding:"6px 12px",fontSize:13,color:C.muted,cursor:"pointer",marginBottom:18}}>→ חזרה</button>
-        <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,color:C.ink,marginBottom:6}}>{step==="email"?"התחברות":"הקוד שלך"}</h1>
+        <h1 style={{fontFamily:HEAD,fontSize:26,color:C.ink,marginBottom:6}}>{step==="email"?"התחברות":"הקוד שלך"}</h1>
         {step==="email" ? <>
           <p style={{fontSize:14,color:C.muted,marginBottom:18,lineHeight:1.6}}>בלי סיסמאות. נכנסים עם Google או עם קוד שנשלח למייל.</p>
           <GoogleButton onError={setErr} onResult={res => res.isNew ? onRegister({ email: res.email, ticket: res.ticket, name: res.name }) : onDone(res.user, res.token)}/>
@@ -1030,7 +1033,7 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
     <div style={{minHeight:"100vh",background:C.bg,direction:"rtl"}}>
       <div style={{background:HDR,padding:"22px 18px 22px"}}>
         {onBack && <button onClick={onBack} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:9,padding:"6px 12px",color:"rgba(255,255,255,.8)",fontSize:13,cursor:"pointer",marginBottom:14}}>→ חזרה</button>}
-        <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,fontWeight:900,color:"#fff"}}>
+        <h1 style={{fontFamily:HEAD,fontSize:26,fontWeight:700,color:"#fff"}}>
           {otpStep ? "כמעט שם" : type ? "הרשמה" : "מדפדפים לפרק הבא"}
         </h1>
         {!type && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",marginTop:6,fontStyle:"italic"}}>{q}</div>}
@@ -1115,7 +1118,7 @@ function Splash({ onReg, onGuest, onLogin, onShowLegal }) {
           <div key={i} style={{width:14,height:52+Math.sin(i*.9)*9,borderRadius:"3px 5px 5px 3px",background:c,boxShadow:`2px 2px 10px ${c}66`,animation:`spineRise .5s ${i*.07}s both ease`}}/>
         ))}
       </div>
-      <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:36,fontWeight:900,color:"#fff",textAlign:"center",lineHeight:1.12,marginBottom:12}}>ספרייה<br/>שכונתית</h1>
+      <h1 style={{fontFamily:HEAD,fontSize:36,fontWeight:700,color:"#fff",textAlign:"center",lineHeight:1.12,marginBottom:12}}>ספרייה<br/>שכונתית</h1>
       <div style={{color:"rgba(255,255,255,.7)",fontSize:15,marginBottom:10,textAlign:"center",lineHeight:1.6,maxWidth:300}}>הספרים שכבר קראת, אצל השכנים שמחפשים אותם</div>
       <div style={{color:"rgba(255,255,255,.7)",fontSize:13,marginBottom:40,letterSpacing:".5px"}}>השאלה · מכירה · החלפה · מסירה</div>
       <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
@@ -1204,7 +1207,7 @@ function LegalSheet({ kind, onClose }) {
     <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={onClose}>
       <div ref={dref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={doc.title} style={{outline:"none",width:"100%",maxWidth:560,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"88vh",overflowY:"auto",padding:"22px 20px 32px",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}} onClick={e=>e.stopPropagation()}>
         <div style={{width:32,height:4,borderRadius:99,background:C.border,margin:"0 auto 18px"}}/>
-        <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:24,fontWeight:900,color:C.ink}}>{doc.title}</h2>
+        <h2 style={{fontFamily:HEAD,fontSize:24,fontWeight:700,color:C.ink}}>{doc.title}</h2>
         <div style={{fontSize:12,color:C.muted,marginTop:4,marginBottom:18}}>עודכן לאחרונה: {LEGAL_UPDATED}</div>
         {doc.sections.map(([h,t])=>(
           <div key={h} style={{marginBottom:16}}>
@@ -1590,7 +1593,7 @@ export default function App() {
         <div style={{maxWidth:900,margin:"0 auto",padding:"12px 16px 0",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
           <button onClick={()=>{clearFilters();goTab("search");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0,color:"#fff"}}>
             <img src="/favicon.svg" alt="" width="30" height="30" style={{borderRadius:8}}/>
-            <span style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:21,fontWeight:900}}>ספרייה שכונתית</span>
+            <span style={{fontFamily:HEAD,fontSize:21,fontWeight:700}}>ספרייה שכונתית</span>
           </button>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {isGuest
@@ -1622,8 +1625,8 @@ export default function App() {
               return (
                 <button key={k} className="press" onClick={()=>setModeFilter(k)} aria-pressed={on}
                   style={{display:"flex",alignItems:"center",gap:6,padding:"9px 15px",borderRadius:99,fontSize:14,fontWeight:on?700:500,cursor:"pointer",whiteSpace:"nowrap",
-                    border:on?"1.5px solid "+C.ink:"1.5px solid "+C.border,background:on?C.ink:"#fff",color:on?"#fff":C.ink,transition:"background .15s,color .15s"}}>
-                  <Icon name={ic} size={16} stroke={2}/>{l}
+                    border:"1.5px solid "+(on?(MODES[k]?.solid||C.ink):C.border),background:on?(MODES[k]?.solid||C.ink):"#fff",color:on?"#fff":C.ink,transition:"background .15s,color .15s"}}>
+                  <Icon name={ic} size={16} stroke={2} color={on?"#fff":(MODES[k]?.solid||C.ink)}/>{l}
                 </button>
               );
             })}
@@ -1644,7 +1647,7 @@ export default function App() {
                 {["#6B8F47","#F5F0E8","#C9822F","#8C3B4A"].map((c,i)=><div key={i} style={{width:16,height:[58,74,50,66][i],background:c,borderRadius:"3px 6px 2px 2px",transform:i===3?"rotate(-12deg)":"none",transformOrigin:"bottom"}}/>)}
               </div>
               <div style={{fontSize:14,opacity:.75}}>{greet}{!isGuest&&user?.name?`, ${user.name}`:""}</div>
-              <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,fontWeight:900,lineHeight:1.15,marginTop:4,maxWidth:"72%"}}>{books.length ? `${books.length} ספרים מחכים לקוראים חדשים` : "הספרייה של השכונה מתחילה כאן"}</div>
+              <div style={{fontFamily:HEAD,fontSize:26,fontWeight:700,lineHeight:1.15,marginTop:4,maxWidth:"72%"}}>{books.length ? `${books.length} ספרים מחכים לקוראים חדשים` : "הספרייה של השכונה מתחילה כאן"}</div>
               <button className="press" onClick={()=>isGuest?onGuestAction():goTab("add")} style={{marginTop:14,display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",borderRadius:99,border:"none",background:"#fff",color:C.ink,fontSize:14,fontWeight:700,cursor:"pointer"}}>
                 <Icon name="camera" size={18}/> צלמו ספר והעלו אותו
               </button>
@@ -1856,7 +1859,7 @@ export default function App() {
         <Overlay onClose={()=>setMenuOpen(false)} label="תפריט" outerStyle={{position:"fixed",inset:0,zIndex:700,direction:"rtl"}}
           panelStyle={{position:"absolute",top:0,right:0,width:270,height:"100%",background:C.white,boxShadow:"-4px 0 24px rgba(0,0,0,.15)",display:"flex",flexDirection:"column",overflowY:"auto",animation:"slideIn .22s ease"}}>
             <div style={{background:HDR,padding:"32px 20px 20px"}}>
-              <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:19,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</h2>
+              <h2 style={{fontFamily:HEAD,fontSize:19,fontWeight:700,color:"#fff"}}>ספרייה שכונתית</h2>
               <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:4}}>{isGuest?"Pageturner":`שלום, ${user?.name||""}`}</div>
             </div>
             <div style={{flex:1,padding:"12px 0"}}>
@@ -1887,7 +1890,7 @@ export default function App() {
         <Overlay onClose={()=>setShowAbout(false)} label="אודות" outerStyle={{position:"fixed",inset:0,zIndex:700,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}}
           panelStyle={{width:"100%",maxWidth:480,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"85vh",overflowY:"auto",padding:"24px 20px 40px"}}>
             <div style={{width:32,height:4,borderRadius:99,background:C.border,margin:"0 auto 20px"}}/>
-            <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:22,fontWeight:900,color:C.ink,marginBottom:6}}>ספרייה שכונתית | Pageturner</div>
+            <div style={{fontFamily:HEAD,fontSize:22,fontWeight:700,color:C.ink,marginBottom:6}}>ספרייה שכונתית | Pageturner</div>
             <div style={{fontSize:16,fontWeight:700,color:C.ink,marginTop:20,marginBottom:8}}>הסיפור התחיל עם ספר אחד</div>
             <div style={{fontSize:14,color:C.muted,lineHeight:1.8,marginBottom:16}}>חיפשתי ספר. ידעתי שהוא קיים, ראיתי שיש אותו אצל אנשים, אבל מצוא לא מצאתי. יצרתי קשר, שלחתי הודעות, ואפילו נסעתי רק כדי לגלות שהוא כבר עבר הלאה. המסע הזה עדיין לא נגמר, אבל משהו אחר כן התחיל.</div>
             <div style={{fontSize:16,fontWeight:700,color:C.ink,marginBottom:8}}>מה זה Pageturner?</div>
@@ -2065,7 +2068,7 @@ function AdminPage({ onBack }) {
   return (
     <div style={{minHeight:"100vh",background:"#0e0c08",padding:20,direction:"rtl",color:"#fff"}}>
       <button onClick={onBack} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:14,marginBottom:20}}>→ חזרה</button>
-      <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:24,fontWeight:900,marginBottom:20}}>📊 Admin Panel</div>
+      <div style={{fontFamily:HEAD,fontSize:24,fontWeight:700,marginBottom:20}}>📊 Admin Panel</div>
       
       {!stats ? (
         <div>
@@ -2169,7 +2172,7 @@ function UserPage({ userId, me, onClose, onViewBook, favs, onFav }) {
             {loading ? null : profile?.avatar ? <img src={profile.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <Icon name="user" size={48} stroke={1.8}/>}
           </div>
           {loading ? <div className="skel" style={{width:140,height:22,borderRadius:8,margin:"12px auto 0",opacity:.3}}/> : <>
-            <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,fontWeight:900,marginTop:10}}>{profile?.storeName||profile?.name||"משתמש"}</div>
+            <div style={{fontFamily:HEAD,fontSize:26,fontWeight:700,marginTop:10}}>{profile?.storeName||profile?.name||"משתמש"}</div>
             {profile?.bio && <div style={{fontSize:14,opacity:.8,marginTop:6,padding:"0 20px",lineHeight:1.5}}>{profile.bio}</div>}
             <div style={{display:"flex",justifyContent:"center",gap:14,marginTop:8,fontSize:12.5,opacity:.65}}>
               {topCity && <span style={{display:"flex",alignItems:"center",gap:4}}><Icon name="pin" size={13}/>{topCity}</span>}
@@ -2285,7 +2288,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
 
           <div style={{padding:"18px 20px 24px"}}>
             <div style={{textAlign:"center"}}>
-              <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:27,fontWeight:900,lineHeight:1.15,color:C.ink}}>{book.title}</h1>
+              <h1 style={{fontFamily:HEAD,fontSize:27,fontWeight:700,lineHeight:1.15,color:C.ink}}>{book.title}</h1>
               {book.author && <div style={{fontSize:15,color:C.muted,marginTop:6}}>{book.author}</div>}
               {(book.publisher||book.year) && <div style={{fontSize:12.5,color:C.faint,marginTop:3}}>{[book.publisher,book.year].filter(Boolean).join(" · ")}</div>}
               <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginTop:14}}>
