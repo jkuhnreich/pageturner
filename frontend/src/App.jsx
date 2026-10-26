@@ -913,7 +913,8 @@ function Login({ onBack, onDone, onRegister }) {
 
 // ── מסך הרשמה: פרטים ← קוד במייל ← סיום ─────────────────────
 function Register({ onBack, onDone, prefill, onShowLegal }) {
-  const [type, setType] = useState(prefill ? "private" : null);
+  // הרשמה כחנות מוסתרת כרגע — כולם נרשמים כאנשים פרטיים (הקוד לחנויות נשאר להמשך)
+  const [type, setType] = useState("private");
   const [form, setForm] = useState({ name:"", phone:"", email: prefill?.email || "", storeName:"", address:"" });
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1008,7 +1009,7 @@ function Register({ onBack, onDone, prefill, onShowLegal }) {
               </div>
             </>
           : <>
-              {!prefill && <button onClick={()=>setType(null)} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:9,padding:"6px 13px",cursor:"pointer",fontSize:13,marginBottom:14,color:C.muted}}>→ סוג חשבון</button>}
+              {false && <button onClick={()=>setType(null)} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:9,padding:"6px 13px",cursor:"pointer",fontSize:13,marginBottom:14,color:C.muted}}>→ סוג חשבון</button>}
               <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"16px",marginBottom:12}}>
                 <div style={{fontSize:12,color:C.muted,marginBottom:14}}>שדות עם * הם חובה</div>
                 <Inp label="שם" required value={form.name}  onChange={upd("name")}  placeholder="השם שלך" icon="user" autoComplete="name"/>
