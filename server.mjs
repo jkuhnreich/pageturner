@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
-import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual } from "crypto";
+import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual, createPublicKey, verify as cryptoVerify } from "crypto";
 import { gzipSync } from "zlib";
 import cron from "node-cron";
 import pg from "pg";
@@ -1138,6 +1138,57 @@ app.post("/api/auth/verify-otp", limit("otp-verify", 80, 15 * 60 * 1000), async 
     await pool.query("UPDATE otps SET codehash=NULL, tickethash=$2, ticketexpires=$3 WHERE email=$1", [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
     res.json({ ok: true, user: null, isNew: true, ticket });
   } catch (e) { console.error("OTP verify:", e.message); res.status(500).json({ error: "שגיאה באימות, נסו שוב" }); }
+});
+
+// ── כניסה עם Google: אימות ה-ID token מול המפתחות הציבוריים של Google (בלי ספריות) ──
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "558837526271-at1k2c514u1bj7h7n6pjbq3n0genks6m.apps.googleusercontent.com";
+let googleKeys = { keys: [], exp: 0 };
+async function googleKey(kid, retry = true) {
+  if (Date.now() > googleKeys.exp || (retry && !googleKeys.keys.find(k => k.kid === kid))) {
+    const r = await fetch("https://www.googleapis.com/oauth2/v3/certs");
+    if (!r.ok) throw new Error("google certs " + r.status);
+    const maxAge = Number((r.headers.get("cache-control") || "").match(/max-age=(\d+)/)?.[1] || 3600);
+    googleKeys = { keys: (await r.json()).keys || [], exp: Date.now() + maxAge * 1000 };
+  }
+  return googleKeys.keys.find(k => k.kid === kid);
+}
+async function verifyGoogleToken(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) throw new Error("bad token");
+  const dec = x => JSON.parse(Buffer.from(x, "base64url").toString("utf8"));
+  const header = dec(parts[0]), payload = dec(parts[1]);
+  if (header.alg !== "RS256") throw new Error("bad alg");
+  const jwk = await googleKey(header.kid);
+  if (!jwk) throw new Error("unknown key");
+  const ok = cryptoVerify("RSA-SHA256", Buffer.from(parts[0] + "." + parts[1]), createPublicKey({ key: jwk, format: "jwk" }), Buffer.from(parts[2], "base64url"));
+  if (!ok) throw new Error("bad signature");
+  if (!["accounts.google.com", "https://accounts.google.com"].includes(payload.iss)) throw new Error("bad iss");
+  if (payload.aud !== GOOGLE_CLIENT_ID) throw new Error("bad aud");
+  if (!payload.exp || payload.exp * 1000 < Date.now() - 60000) throw new Error("expired");
+  if (!payload.email || payload.email_verified !== true && payload.email_verified !== "true") throw new Error("email not verified");
+  return payload;
+}
+
+app.post("/api/auth/google", limit("google", 60, 15 * 60 * 1000), async (req, res) => {
+  let g;
+  try { g = await verifyGoogleToken(req.body.credential); }
+  catch (e) { console.warn("google auth:", e.message); return res.status(401).json({ error: "הכניסה עם Google לא הצליחה, נסו שוב" }); }
+  try {
+    const email = normEmail(g.email);
+    if (!email) return res.status(400).json({ error: "כתובת המייל לא תקינה" });
+    const existing = (await pool.query("SELECT * FROM users WHERE email=$1", [email])).rows[0];
+    if (existing) {
+      const token = await createSession(existing.id);
+      track("login", existing.id, { via: "google" });
+      return res.json({ ok: true, user: privateUser(req, existing), token, isNew: false });
+    }
+    const ticket = randomBytes(24).toString("base64url");
+    await pool.query(
+      `INSERT INTO otps (email, tickethash, ticketexpires) VALUES ($1,$2,$3)
+       ON CONFLICT (email) DO UPDATE SET tickethash=$2, ticketexpires=$3`,
+      [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
+    res.json({ ok: true, user: null, isNew: true, ticket, email, name: clip(g.name || "", 80) });
+  } catch (e) { console.error("google login:", e.message); res.status(500).json({ error: "שגיאה בכניסה, נסו שוב" }); }
 });
 
 // הרשמה: רק אחרי אימות המייל (עם הכרטיס מ-verify-otp)

@@ -857,6 +857,55 @@ function CodeInput({ value, onChange, onEnter }) {
   );
 }
 
+// ── כפתור "המשך עם Google" (Google Identity Services) ─────────────────
+const GOOGLE_CLIENT_ID = "558837526271-at1k2c514u1bj7h7n6pjbq3n0genks6m.apps.googleusercontent.com";
+let gsiPromise = null;
+function loadGsi() {
+  if (window.google?.accounts?.id) return Promise.resolve();
+  if (!gsiPromise) gsiPromise = new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+    s.onload = ok; s.onerror = () => { gsiPromise = null; fail(new Error("gsi")); };
+    document.head.appendChild(s);
+  });
+  return gsiPromise;
+}
+function GoogleButton({ onResult, onError }) {
+  const ref = useRef(null);
+  const cb = useRef({ onResult, onError });
+  cb.current = { onResult, onError };
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    loadGsi().then(() => {
+      if (!alive || !ref.current) return;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID, ux_mode: "popup", use_fedcm_for_button: true,
+        callback: async ({ credential }) => {
+          setBusy(true);
+          try { cb.current.onResult(await api.post("/api/auth/google", { credential })); }
+          catch (e) { cb.current.onError(e.message); }
+          finally { if (alive) setBusy(false); }
+        },
+      });
+      const w = Math.min(380, Math.max(220, Math.round(ref.current.getBoundingClientRect().width || 320)));
+      window.google.accounts.id.renderButton(ref.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "pill", locale: "he", width: w, logo_alignment: "center" });
+    }).catch(() => alive && setFailed(true));
+    return () => { alive = false; };
+  }, []);
+  if (failed) return null;
+  return (
+    <div style={{position:"relative",minHeight:44,marginBottom:4}}>
+      <div ref={ref} style={{display:"flex",justifyContent:"center",width:"100%",opacity:busy?.4:1}}/>
+      {busy && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:C.muted}}><Spinner/>&nbsp;מתחברים...</div>}
+    </div>
+  );
+}
+function OrDivider() {
+  return <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0",color:C.muted,fontSize:12}}><div style={{flex:1,height:1,background:C.border}}/>או עם קוד למייל<div style={{flex:1,height:1,background:C.border}}/></div>;
+}
+
 function Login({ onBack, onDone, onRegister }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -893,8 +942,10 @@ function Login({ onBack, onDone, onRegister }) {
         <button onClick={step==="code"?()=>{setStep("email");setErr("");}:onBack} style={{background:C.bg,border:"none",borderRadius:9,padding:"6px 12px",fontSize:13,color:C.muted,cursor:"pointer",marginBottom:18}}>→ חזרה</button>
         <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,color:C.ink,marginBottom:6}}>{step==="email"?"התחברות":"הקוד שלך"}</h2>
         {step==="email" ? <>
-          <p style={{fontSize:14,color:C.muted,marginBottom:20,lineHeight:1.6}}>בלי סיסמאות. נשלח לך קוד כניסה למייל.</p>
-          <input type="email" inputMode="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendOtp()} placeholder="כתובת מייל" autoFocus
+          <p style={{fontSize:14,color:C.muted,marginBottom:18,lineHeight:1.6}}>בלי סיסמאות. נכנסים עם Google או עם קוד שנשלח למייל.</p>
+          <GoogleButton onError={setErr} onResult={res => res.isNew ? onRegister({ email: res.email, ticket: res.ticket, name: res.name }) : onDone(res.user, res.token)}/>
+          <OrDivider/>
+          <input type="email" inputMode="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendOtp()} placeholder="כתובת מייל"
             style={{width:"100%",padding:"15px 16px",borderRadius:12,border:`1.5px solid ${C.border}`,marginBottom:14,fontSize:17,background:C.bg,color:C.ink,outline:"none",direction:"ltr",textAlign:"right"}} />
           {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
           <Btn onClick={sendOtp} disabled={loading} style={{width:"100%",padding:"16px",borderRadius:14,fontSize:16}}>{loading?"שולח...":"שלחו לי קוד"}</Btn>
@@ -912,10 +963,10 @@ function Login({ onBack, onDone, onRegister }) {
 }
 
 // ── מסך הרשמה: פרטים ← קוד במייל ← סיום ─────────────────────
-function Register({ onBack, onDone, prefill, onShowLegal }) {
+function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
   // הרשמה כחנות מוסתרת כרגע — כולם נרשמים כאנשים פרטיים (הקוד לחנויות נשאר להמשך)
   const [type, setType] = useState("private");
-  const [form, setForm] = useState({ name:"", phone:"", email: prefill?.email || "", storeName:"", address:"" });
+  const [form, setForm] = useState({ name: prefill?.name || "", phone:"", email: prefill?.email || "", storeName:"", address:"" });
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -1010,6 +1061,10 @@ function Register({ onBack, onDone, prefill, onShowLegal }) {
             </>
           : <>
               {false && <button onClick={()=>setType(null)} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:9,padding:"6px 13px",cursor:"pointer",fontSize:13,marginBottom:14,color:C.muted}}>→ סוג חשבון</button>}
+              {!ticket && <>
+                <GoogleButton onError={setErr} onResult={res => res.isNew ? onGooglePrefill({ email: res.email, ticket: res.ticket, name: res.name }) : onDone(res.user, res.token)}/>
+                <OrDivider/>
+              </>}
               <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"16px",marginBottom:12}}>
                 <div style={{fontSize:12,color:C.muted,marginBottom:14}}>שדות עם * הם חובה</div>
                 <Inp label="שם" required value={form.name}  onChange={upd("name")}  placeholder="השם שלך" icon="user" autoComplete="name"/>
@@ -1068,17 +1123,17 @@ function Splash({ onReg, onGuest, onLogin, onShowLegal }) {
 }
 
 // ── מדיניות פרטיות ותנאי שימוש ──────────────────────────────
-const LEGAL_UPDATED = "24.10.2026";
+const LEGAL_UPDATED = "26.10.2026";
 const LEGAL = {
   privacy: { title: "מדיניות פרטיות", sections: [
     ["מי אנחנו", "Pageturner (\"ספרייה שכונתית\", pageturner.co.il) היא פלטפורמה ישראלית שמחברת בין שכנים שרוצים למכור, להשאיל, להחליף או למסור ספרים. לכל שאלה או בקשה בנוגע למידע שלכם אפשר לפנות אלינו דרך \"צור קשר\" בתפריט האתר, או במייל pageturner.team@gmail.com."],
-    ["איזה מידע אנחנו אוספים", "שם, מספר טלפון וכתובת מייל שמסרתם בהרשמה. פרטי הספרים שפרסמתם ותמונות שצילמתם. מיקום משוער של הספר, רק אם אישרתם גישה למיקום. תמונת פרופיל ומשפט על עצמכם, אם הוספתם. נתוני שימוש בסיסיים: חיפושים, צפייה בספרים ופניות למפרסמים, כדי לשפר את השירות."],
+    ["איזה מידע אנחנו אוספים", "שם, מספר טלפון וכתובת מייל שמסרתם בהרשמה. אם נכנסתם עם Google, אנחנו מקבלים מ-Google רק את כתובת המייל והשם שלכם, ולא שום מידע אחר מהחשבון. פרטי הספרים שפרסמתם ותמונות שצילמתם. מיקום משוער של הספר, רק אם אישרתם גישה למיקום. תמונת פרופיל ומשפט על עצמכם, אם הוספתם. נתוני שימוש בסיסיים: חיפושים, צפייה בספרים ופניות למפרסמים, כדי לשפר את השירות."],
     ["מה רואים משתמשים אחרים", "כל מי שנכנס לאתר רואה את פרטי הספר, את השם שלכם ואת העיר. המרחק מוצג בעיגול, כך שאי אפשר לדעת את הכתובת המדויקת. מספר הטלפון מוצג רק למשתמש רשום שפותח את דף הספר כדי לפנות אליכם. כתובת המייל לא מוצגת לאף אחד."],
     ["צילומי כריכה", "כשאתם מצלמים כריכה לזיהוי אוטומטי, התמונה נשלחת לשירות בינה מלאכותית חיצוני (Anthropic) רק כדי לחלץ את פרטי הספר. אנחנו לא שולחים איתה שום פרט מזהה עליכם."],
-    ["ספקים שעובדים איתנו", "אחסון השרת ומסד הנתונים (Railway), אחסון האתר (Vercel), שליחת מיילים (Resend), זיהוי ספרים מתמונה (Anthropic), חיפוש פרטי ספרים (Google Books, Open Library) ותרגום מיקום לשם עיר (OpenStreetMap). חלק מהספקים פועלים מחוץ לישראל. אנחנו לא מוכרים מידע אישי לאף אחד."],
+    ["ספקים שעובדים איתנו", "כניסה עם חשבון Google (Google), אחסון השרת ומסד הנתונים (Railway), אחסון האתר (Vercel), שליחת מיילים (Resend), זיהוי ספרים מתמונה (Anthropic), חיפוש פרטי ספרים (Google Books, Open Library) ותרגום מיקום לשם עיר (OpenStreetMap). חלק מהספקים פועלים מחוץ לישראל. אנחנו לא מוכרים מידע אישי לאף אחד."],
     ["מיילים", "נשלח לכם קודי כניסה, ועדכון כשספר שביקשתם להתעדכן עליו מתפרסם. עדכונים שיווקיים יישלחו רק אם הסכמתם לכך בהרשמה, ואפשר לבטל בכל רגע בהגדרות הפרופיל."],
     ["הזכויות שלכם", "אפשר לעיין במידע שלכם ולתקן אותו בפרופיל. אפשר למחוק את החשבון בכל רגע מתוך הפרופיל: החשבון, הספרים והמשאלות נמחקים מיד, ונתוני השימוש נשמרים ללא זיהוי. לבקשות נוספות אפשר לפנות אלינו דרך \"צור קשר\" בתפריט או במייל pageturner.team@gmail.com."],
-    ["אבטחה", "הכניסה לאתר נעשית בקוד חד-פעמי שנשלח למייל, בלי סיסמאות. החיבור לאתר מוצפן, והגישה לפעולות בחשבון מחייבת זיהוי. שום מערכת אינה חסינה לחלוטין, ואנחנו פועלים כדי לצמצם סיכונים."],
+    ["אבטחה", "הכניסה לאתר נעשית עם חשבון Google או בקוד חד-פעמי שנשלח למייל, בלי סיסמאות. החיבור לאתר מוצפן, והגישה לפעולות בחשבון מחייבת זיהוי. שום מערכת אינה חסינה לחלוטין, ואנחנו פועלים כדי לצמצם סיכונים."],
   ]},
   terms: { title: "תנאי שימוש", sections: [
     ["השירות", "Pageturner מאפשרת לפרסם ספרים ולמצוא ספרים אצל אנשים בסביבה. אנחנו לוח מודעות שמחבר בין אנשים, ולא צד לעסקאות. התשלום, המסירה וההחזרה של ספרים נעשים ישירות בין המשתמשים."],
@@ -1145,7 +1200,8 @@ export default function App() {
       return u;
     } catch { return null; }
   });
-  const [legal, setLegal] = useState(null);
+  // pageturner.co.il/privacy ו-/terms פותחים ישירות את המסמך (קישור קבוע עבור Google ואחרים)
+  const [legal, setLegal] = useState(() => window.location.pathname.match(/^\/(privacy|terms)\/?$/)?.[1] || null);
   const [regPrefill, setRegPrefill] = useState(null);
   const [showContact, setShowContact] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1419,11 +1475,11 @@ export default function App() {
   };
 
   // ── screens ──────────────────────────────────────────────
-  const legalSheet = legal && <LegalSheet kind={legal} onClose={()=>setLegal(null)}/>;
+  const legalSheet = legal && <LegalSheet kind={legal} onClose={()=>{setLegal(null);if(/^\/(privacy|terms)/.test(window.location.pathname))window.history.replaceState(null,"","/");}}/>;
   if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>{navigate("/");setScreen(user?"app":"splash");}}/></>
   if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onShowLegal={setLegal}/>{legalSheet}<Toast t={toast}/></>;
   if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u,t)=>handleAuth(u,t,false)} onRegister={pf=>{setRegPrefill(pf);setScreen("register");}}/><Toast t={toast}/></>;
-  if (screen === "register") return <><style>{CSS}</style><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);setScreen(user?"app":"splash");}} onDone={(u,t)=>handleAuth(u,t,true)} onShowLegal={setLegal}/>{legalSheet}</>;
+  if (screen === "register") return <><style>{CSS}</style><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);setScreen(user?"app":"splash");}} onDone={(u,t)=>handleAuth(u,t,true)} onGooglePrefill={setRegPrefill} onShowLegal={setLegal}/>{legalSheet}</>;
 
   const TABS = [["search","home","גילוי"],["add","plus","הוספה"],["profile","user","פרופיל"]];
   const greet = (()=>{const h=new Date().getHours();return h>=5&&h<12?"בוקר טוב":h<17?"צהריים טובים":h<21?"ערב טוב":"לילה טוב";})();
