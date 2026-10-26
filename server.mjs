@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
-import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual, createPublicKey, verify as cryptoVerify } from "crypto";
+import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual, createPublicKey, verify as cryptoVerify, createHmac } from "crypto";
 import { gzipSync } from "zlib";
 import cron from "node-cron";
 import pg from "pg";
@@ -103,12 +103,15 @@ async function initDB() {
   await pool.query(`CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS wishlist (id TEXT PRIMARY KEY, userid TEXT, query TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS sessions (tokenhash TEXT PRIMARY KEY, userid TEXT NOT NULL, createdat BIGINT, lastseen BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS reports (bookid TEXT NOT NULL, userid TEXT NOT NULL, reason TEXT, createdat BIGINT, PRIMARY KEY (bookid, userid))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS favorites (userid TEXT NOT NULL, bookid TEXT NOT NULL, createdat BIGINT, PRIMARY KEY (userid, bookid))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS covers (id TEXT PRIMARY KEY, key TEXT UNIQUE, img TEXT, source TEXT, uses INTEGER DEFAULT 0, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS otps (email TEXT PRIMARY KEY, codehash TEXT, expires BIGINT, attempts INTEGER DEFAULT 0, sends INTEGER DEFAULT 0, windowstart BIGINT, tickethash TEXT, ticketexpires BIGINT)`);
   const alters = [
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS lenduntil TEXT",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS city TEXT",
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT false",
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS imgcheck TEXT",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS dealstatus TEXT",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS prevownerid TEXT",
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerAsked BOOLEAN DEFAULT false",
@@ -333,6 +336,64 @@ async function claudeVision(buf, mime, prompt, maxTok = 600) {
   const d = await r.json();
   return (d?.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 }
+// ── בדיקת תמונות לפני פרסום ─────────────────────────────────
+// כל תמונה שמשתמש מעלה נבדקת: שאין בה תוכן פוגעני (עירום, אלימות קשה וכו'),
+// ושבתמונות של ספרים באמת רואים ספר. מודל מהיר וזול, עם נפילה למודל הראשי.
+const MOD_MODEL = process.env.MOD_MODEL || "claude-haiku-5-5";
+const P_MODERATE = `You are the safety check for a neighborhood used-book sharing site used by families, including children.
+For EACH image (in order) decide:
+- "unsafe": true if it contains nudity or sexual content, sexualized poses, graphic violence or gore, hate symbols, drugs, or anything else inappropriate for a general audience. A book whose cover art is ordinary for a bookstore (e.g. a romance novel cover, a war history book) is NOT unsafe.
+- "book": true if the image plausibly shows a book: a front or back cover, a spine, a book held in hand or lying on a surface, a stack of books, an open book, or a digital cover image. Blurry, dark or tilted photos of a book still count. false for unrelated photos (selfies, pets, landscapes, screenshots, memes, documents, receipts, random objects).
+Return ONLY raw JSON, no code fences: {"images":[{"unsafe":false,"book":true}]}`;
+const P_MODERATE_AVATAR = `You are the safety check for a profile picture on a neighborhood book-sharing site used by families, including children.
+"unsafe": true if the image contains nudity or sexual content, sexualized poses, graphic violence or gore, hate symbols, drugs, or anything else inappropriate for a general audience. Ordinary photos of people, pets, places or drawings are fine.
+Return ONLY raw JSON, no code fences: {"images":[{"unsafe":false}]}`;
+async function shrinkForCheck(buf) {
+  try {
+    const im = await Jimp.read(buf);
+    im.scaleToFit({ w: 768, h: 768 });
+    return await im.getBuffer("image/jpeg", { quality: 80 });
+  } catch { return null; }
+}
+async function callClaudeMulti(model, bufs, prompt) {
+  return fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
+    method: "POST",
+    headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model, max_tokens: 200, messages: [{ role: "user", content: [
+      ...bufs.map(b => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b.toString("base64") } })),
+      { type: "text", text: prompt },
+    ] }] }),
+  });
+}
+// מחזיר { status: "ok" | "unsafe" | "notbook" | "unchecked" }
+async function moderateImages(buffers, { avatar = false } = {}) {
+  const bufs = (await Promise.all(buffers.filter(Boolean).map(shrinkForCheck))).filter(Boolean);
+  if (!bufs.length) return { status: "ok" };
+  if (!process.env.ANTHROPIC_API_KEY) return { status: "unchecked", why: "no key" };
+  const prompt = avatar ? P_MODERATE_AVATAR : P_MODERATE;
+  try {
+    let r = await callClaudeMulti(MOD_MODEL, bufs, prompt);
+    if (!r.ok && (r.status === 400 || r.status === 404) && MOD_MODEL !== VISION_MODEL) r = await callClaudeMulti(VISION_MODEL, bufs, prompt);
+    if (!r.ok) throw new Error(`moderation ${r.status}: ${(await r.text()).slice(0, 160)}`);
+    const d = await r.json();
+    const raw = (d?.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const j = parseJ(raw);
+    const imgs = Array.isArray(j?.images) ? j.images : null;
+    if (!imgs || imgs.length < bufs.length) throw new Error("moderation: bad answer " + raw.slice(0, 120));
+    if (imgs.some(x => x.unsafe === true || x.unsafe === "true")) return { status: "unsafe" };
+    if (!avatar && imgs.some(x => x.book === false || x.book === "false")) return { status: "notbook" };
+    return { status: "ok" };
+  } catch (e) { console.error("moderate:", e.message); return { status: "unchecked", why: e.message }; }
+}
+const MOD_ERRORS = {
+  unsafe: "התמונה לא מתאימה לפרסום באתר. אפשר להעלות רק תמונות של ספרים",
+  notbook: "התמונה לא נראית כמו ספר. צלמו את כריכת הספר או את העותק שלכם ונסו שוב",
+};
+const COVER_HOSTS = /^https:\/\/(covers\.openlibrary\.org|books\.google\.com|books\.googleusercontent\.com|[a-z0-9-]+\.googleusercontent\.com)\//i;
+const hideToken = id => createHmac("sha256", process.env.ADMIN_KEY || "pt-hide").update("hide:" + id).digest("base64url").slice(0, 32);
+function siteUrl() { return process.env.SITE_URL || "https://pageturner.co.il"; }
+function apiUrl(req) { return process.env.PUBLIC_API_URL || origin(req); }
+
 // מכין תמונה לניתוח: מקטין ל-1568px לכל היותר (מהיר וזול יותר)
 async function prepForVision(file) {
   try {
@@ -626,10 +687,11 @@ function privateUser(req, u) {
 // עמודות לרשימות ספרים — בלי טלפון, בלי מיקום מדויק ובלי נתוני תמונה כבדים
 const BOOK_COLS = `b.id,b.title,b.author,b.publisher,b.year,b.summary,b.condition,b.series,b.volume,b.isbn,b.genre,b.mode,b.price,
   b.lendduration,b.swapfor,b.lenduntil,b.avail,b.ownername,b.ownertype,b.ownerid,b.city,b.dealstatus,b.createdat,b.lat,b.lng,
-  CASE WHEN b.thumbnail LIKE 'http%' THEN b.thumbnail END AS thumburl,
+  CASE WHEN b.thumbnail LIKE 'http%' AND NOT COALESCE(b.hidden,false) THEN b.thumbnail END AS thumburl,
   (COALESCE(length(b.thumbnail),0) + COALESCE(length(b.frontimg),0)) AS imgver,
-  (COALESCE(b.thumbnail,'') LIKE 'data:%' OR COALESCE(b.frontimg,'') <> '') AS hasimg,
-  (COALESCE(b.thumbnail,'') <> '' AND COALESCE(b.frontimg,'') LIKE 'data:%') AS hasphoto,
+  (NOT COALESCE(b.hidden,false) AND (COALESCE(b.thumbnail,'') LIKE 'data:%' OR COALESCE(b.frontimg,'') <> '')) AS hasimg,
+  (NOT COALESCE(b.hidden,false) AND COALESCE(b.thumbnail,'') <> '' AND COALESCE(b.frontimg,'') LIKE 'data:%') AS hasphoto,
+  COALESCE(b.hidden,false) AS hidden,
   u.id AS uid, CASE WHEN u.avatar IS NOT NULL AND u.avatar <> '' THEN length(u.avatar) END AS avatarver,
   CASE WHEN u.avatar LIKE 'http%' THEN u.avatar END AS avatarurl`;
 
@@ -641,7 +703,7 @@ function publicBook(req, b, coords) {
     condition: b.condition, series: b.series, volume: b.volume, isbn: b.isbn, genre: b.genre, mode: b.mode,
     price: b.price, lendduration: b.lendduration, swapfor: b.swapfor, lenduntil: b.lenduntil, avail: b.avail,
     ownername: b.ownername, ownertype: b.ownertype, ownerid: b.ownerid, city: b.city, dealstatus: b.dealstatus,
-    createdat: b.createdat,
+    createdat: b.createdat, ...(b.hidden ? { hidden: true } : {}),
     thumbnail: thumb, frontimg: img || thumb,
     photo: b.hasphoto ? `${origin(req)}/api/img/book/${b.id}?which=photo&v=${b.imgver}` : null,
     owneravatar: b.avatarurl || (b.avatarver ? `${origin(req)}/api/img/avatar/${b.uid}?v=${b.avatarver}` : null),
@@ -683,9 +745,9 @@ app.get("/api/img/cover/:id", async (req, res) => {
 });
 app.get("/api/img/book/:id", async (req, res) => {
   try {
-    const r = await pool.query("SELECT thumbnail, frontimg FROM books WHERE id=$1", [req.params.id]);
+    const r = await pool.query("SELECT thumbnail, frontimg, hidden FROM books WHERE id=$1", [req.params.id]);
     const b = r.rows[0];
-    if (!b) return res.status(404).end();
+    if (!b || b.hidden) return res.status(404).end();
     if (req.query.which === "photo" && b.frontimg?.startsWith("data:") && sendImage(res, b.frontimg)) return;
     if (b.thumbnail?.startsWith("data:") && sendImage(res, b.thumbnail)) return;
     if (b.frontimg?.startsWith("data:") && sendImage(res, b.frontimg)) return;
@@ -892,7 +954,7 @@ async function cleanThumbnail(t) {
     const r = await pool.query("UPDATE covers SET uses=uses+1 WHERE id=$1 RETURNING img", [own[1]]);
     return r.rows[0]?.img || null;
   }
-  if (/^https:\/\/[^\s"'<>]+$/.test(t)) return clip(t, 1000);
+  if (/^https:\/\/[^\s"'<>]+$/.test(t)) return COVER_HOSTS.test(t) ? clip(t, 1000) : null;
   const parsed = dataUriToBuffer(t);
   if (!parsed) return null;
   try { return await shrinkImage(parsed.buf, 600, 900, 80); } catch { return null; }
@@ -911,19 +973,28 @@ app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, uploa
       catch { return res.status(400).json({ error: "קובץ התמונה לא נתמך, נסו תמונה אחרת" }); }
     }
     const thumbnail = await cleanThumbnail(b.thumbnail);
+    // בדיקת התמונות שהמשתמש העלה (תמונה מהספרייה המשותפת או מקטלוג כבר נבדקה)
+    const toCheck = [frontImg, thumbnail?.startsWith("data:") && !/\/api\/img\/cover\//.test(b.thumbnail || "") ? thumbnail : null]
+      .filter(Boolean).map(d => dataUriToBuffer(d)?.buf).filter(Boolean);
+    const mod = await moderateImages(toCheck);
+    if (mod.status === "unsafe" || mod.status === "notbook") {
+      track("image_rejected", u.id, { reason: mod.status, title: clip(b.title, 80) });
+      return res.status(400).json({ error: MOD_ERRORS[mod.status], code: "image_" + mod.status });
+    }
     const coords = parseCoords(b);
     const city = coords ? await reverseGeocode(coords.lat, coords.lng) : null;
     const mode = ["sell", "lend", "swap", "give"].includes(b.mode) ? b.mode : "sell";
     await pool.query(
-      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt,imgcheck)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
       [id, clip(b.title.trim(), 300), clip(b.author, 200), clip(b.publisher, 200), clip(b.year, 10), clip(b.summary, 4000), clip(b.condition, 100),
        clip(b.series, 200), clip(b.volume, 20), clip(b.isbn, 20), clip(b.genre, 60), mode,
        mode === "sell" ? (Number(b.price) || null) : null, clip(b.lendDuration, 60), clip(b.swapFor, 300), clip(b.lendUntil || b.lenduntil, 20),
        true, u.storename || u.name || "", u.type || "private", u.phone || "", u.id,
-       coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now()]
+       coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now(), toCheck.length ? mod.status : null]
     );
-    if (b.coverQuality === "straight" && thumbnail?.startsWith("data:")) {
+    if (mod.status === "unchecked") notifyUnchecked(req, id, b.title, u).catch(e => console.error("unchecked notify:", e.message));
+    if (b.coverQuality === "straight" && thumbnail?.startsWith("data:") && mod.status === "ok") {
       saveCover({ isbn: b.isbn, title: b.title, author: b.author }, thumbnail, "user").catch(e => console.error("saveCover:", e.message));
     }
     track("book_publish", u.id, { bookId: id, title: b.title, mode, city });
@@ -953,12 +1024,63 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
       [clip(title || existing.title, 300), clip(author ?? existing.author, 200), clip(publisher ?? existing.publisher, 200), clip(year ?? existing.year, 10),
        clip(summary ?? existing.summary, 4000), newMode, newPrice, clip(condition ?? existing.condition, 100),
        clip(lendDuration ?? existing.lendduration, 60), clip(swapFor ?? existing.swapfor, 300), clip(lendUntil ?? existing.lenduntil ?? "", 20),
-       typeof avail === "boolean" ? avail : existing.avail, coords ? coords.lat : existing.lat, coords ? coords.lng : existing.lng, city,
+       existing.hidden ? false : (typeof avail === "boolean" ? avail : existing.avail), coords ? coords.lat : existing.lat, coords ? coords.lng : existing.lng, city,
        dealStatus !== undefined ? (dealStatus ? clip(dealStatus, 20) : null) : existing.dealstatus, req.params.id]
     );
     if (dealStatus && existing.avail) track("book_deal", req.user.id, { bookId: req.params.id, dealStatus });
     res.json({ ok: true, book: publicBook(req, await getBookRow(req.params.id), null) });
   } catch (e) { console.error("update book:", e.message); res.status(500).json({ error: "העדכון נכשל" }); }
+});
+
+// ── דיווח על מודעה והסתרה ─────────────────────────────────
+async function hideBook(id, why) {
+  await pool.query("UPDATE books SET hidden=true, avail=false WHERE id=$1", [id]);
+  track("book_hidden", null, { bookId: id, why });
+}
+async function notifyUnchecked(req, id, title, u) {
+  if (!process.env.ADMIN_EMAIL) return;
+  const hide = `${apiUrl(req)}/api/admin/hide/${id}?t=${hideToken(id)}`;
+  await sendEmail(process.env.ADMIN_EMAIL, `🖼️ ספר עם תמונה שלא נבדקה: ${clip(title, 60)}`, `<div dir="rtl" style="font-family:sans-serif">
+    <p>הבדיקה האוטומטית של התמונה לא הצליחה (למשל בעיה זמנית בשירות), והספר פורסם בלי בדיקה. כדאי להציץ.</p>
+    <p><b>${escapeHtml(title)}</b> · פורסם על ידי ${escapeHtml(u.name || "")}</p>
+    <p><a href="${siteUrl()}/?book=${id}">לצפייה בספר</a> · <a href="${hide}">להסתיר את הספר</a></p></div>`);
+}
+const REPORT_REASONS = { image: "תמונה לא הולמת", notbook: "זה לא ספר", misleading: "מודעה מטעה", other: "אחר" };
+const AUTO_HIDE_REPORTS = 3;
+app.post("/api/books/:id/report", limit("report", 20, 60 * 60 * 1000), requireAuth, async (req, res) => {
+  const reason = REPORT_REASONS[req.body.reason] ? req.body.reason : "other";
+  const note = clip(String(req.body.note || "").trim(), 500);
+  try {
+    const b = (await pool.query("SELECT id, title, ownerid, ownername, hidden FROM books WHERE id=$1", [req.params.id])).rows[0];
+    if (!b) return res.status(404).json({ error: "הספר לא נמצא" });
+    if (b.ownerid === req.user.id) return res.status(400).json({ error: "אי אפשר לדווח על ספר שלך" });
+    const ins = await pool.query("INSERT INTO reports (bookid,userid,reason,createdat) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING", [b.id, req.user.id, reason, Date.now()]);
+    const count = Number((await pool.query("SELECT COUNT(*) FROM reports WHERE bookid=$1", [b.id])).rows[0].count);
+    let autoHidden = false;
+    if (!b.hidden && count >= AUTO_HIDE_REPORTS) { await hideBook(b.id, "reports"); autoHidden = true; }
+    if (ins.rowCount && process.env.ADMIN_EMAIL) {
+      const hide = `${apiUrl(req)}/api/admin/hide/${b.id}?t=${hideToken(b.id)}`;
+      sendEmail(process.env.ADMIN_EMAIL, `🚩 דיווח על מודעה: ${clip(b.title, 60)}${autoHidden ? " (הוסתרה אוטומטית)" : ""}`, `<div dir="rtl" style="font-family:sans-serif">
+        <p><b>${escapeHtml(b.title)}</b> · של ${escapeHtml(b.ownername || "")}</p>
+        <p>סיבה: ${REPORT_REASONS[reason]}${note ? `<br>הערה: ${escapeHtml(note)}` : ""}</p>
+        <p>דיווח מאת: ${escapeHtml(req.user.name || "")} (${escapeHtml(req.user.email || "")}) · סך הכל ${count} דיווחים${autoHidden ? " · <b>המודעה הוסתרה אוטומטית</b>" : ""}</p>
+        <p><a href="${siteUrl()}/?book=${b.id}">לצפייה בספר</a>${b.hidden || autoHidden ? "" : ` · <a href="${hide}">להסתיר את הספר</a>`}</p></div>`).catch(e => console.error("report email:", e.message));
+    }
+    track("book_report", req.user.id, { bookId: b.id, reason });
+    res.json({ ok: true });
+  } catch (e) { console.error("report:", e.message); res.status(500).json({ error: "הדיווח נכשל, נסו שוב" }); }
+});
+// קישור הסתרה מהמייל למנהל (חתום, בלי צורך בהתחברות)
+app.get("/api/admin/hide/:id", limit("admin", 30, 15 * 60 * 1000), async (req, res) => {
+  const ok = typeof req.query.t === "string" && safeEqual(req.query.t, hideToken(req.params.id));
+  const page = msg => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><div dir="rtl" style="font-family:sans-serif;padding:40px;text-align:center;font-size:18px">${msg}</div>`;
+  if (!ok) return res.status(403).send(page("הקישור לא תקין"));
+  try {
+    const r = await pool.query("SELECT title FROM books WHERE id=$1", [req.params.id]);
+    if (!r.rows[0]) return res.status(404).send(page("הספר לא נמצא (אולי כבר נמחק)"));
+    await hideBook(req.params.id, "admin");
+    res.send(page(`✅ הספר "${escapeHtml(r.rows[0].title)}" הוסתר מהאתר`));
+  } catch (e) { console.error("hide:", e.message); res.status(500).send(page("שגיאה, נסו שוב")); }
 });
 
 app.delete("/api/books/:id", requireAuth, async (req, res) => {
@@ -967,6 +1089,7 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
     if (!existing) return;
     await pool.query("DELETE FROM books WHERE id=$1", [req.params.id]);
     await pool.query("DELETE FROM favorites WHERE bookid=$1", [req.params.id]);
+    await pool.query("DELETE FROM reports WHERE bookid=$1", [req.params.id]);
     res.json({ ok: true });
   } catch (e) { console.error("delete book:", e.message); res.status(500).json({ error: "המחיקה נכשלה" }); }
 });
@@ -1294,6 +1417,8 @@ app.post("/api/users/:id/avatar", requireAuth, selfOnly, async (req, res) => {
   try {
     const parsed = dataUriToBuffer(req.body.avatar);
     if (!parsed) return res.status(400).json({ error: "תמונה לא תקינה" });
+    const mod = await moderateImages([parsed.buf], { avatar: true });
+    if (mod.status === "unsafe") { track("image_rejected", req.user.id, { reason: "avatar" }); return res.status(400).json({ error: "התמונה לא מתאימה לפרסום באתר. נסו תמונה אחרת", code: "image_unsafe" }); }
     const avatar = await shrinkImage(parsed.buf, 300, 300, 75);
     await pool.query("UPDATE users SET avatar=$1 WHERE id=$2", [avatar, req.user.id]);
     res.json({ ok: true, avatar: avatarUrl(req, { id: req.user.id, avatar }) });

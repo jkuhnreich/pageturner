@@ -165,6 +165,7 @@ const ICONS = {
   mail: <><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/></>,
   lock: <><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></>,
   doc: <><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4M9 12h6M9 15.5h6"/></>,
+  flag: <><path d="M5.5 21V4.5"/><path d="M5.5 4.5h11l-2 4 2 4h-11"/></>,
   access: <><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="7.6" r="1.1"/><path d="M8 10.3l4 .8 4-.8M12 11.1v3.1l-2.2 3.4M12 14.2l2.2 3.4"/></>,
   info: <><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></>,
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></>,
@@ -677,6 +678,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
     } catch (e) {
       toast_(e.message, "err");
       if (e.code === "phone" && onNeedPhone) onNeedPhone();
+      if (String(e.code || "").startsWith("image_")) setPreview(false);
     } finally { setSaving(false); }
   };
 
@@ -1144,7 +1146,7 @@ const LEGAL = {
     ["מי אנחנו", "Pageturner (\"ספרייה שכונתית\", pageturner.co.il) היא פלטפורמה ישראלית שמחברת בין שכנים שרוצים למכור, להשאיל, להחליף או למסור ספרים. לכל שאלה או בקשה בנוגע למידע שלכם אפשר לפנות אלינו דרך \"צור קשר\" בתפריט האתר, או במייל pageturner.team@gmail.com."],
     ["איזה מידע אנחנו אוספים", "שם, מספר טלפון וכתובת מייל שמסרתם בהרשמה. אם נכנסתם עם Google, אנחנו מקבלים מ-Google רק את כתובת המייל והשם שלכם, ולא שום מידע אחר מהחשבון. פרטי הספרים שפרסמתם ותמונות שצילמתם. מיקום משוער של הספר, רק אם אישרתם גישה למיקום. תמונת פרופיל ומשפט על עצמכם, אם הוספתם. נתוני שימוש בסיסיים: חיפושים, צפייה בספרים ופניות למפרסמים, כדי לשפר את השירות."],
     ["מה רואים משתמשים אחרים", "כל מי שנכנס לאתר רואה את פרטי הספר, את השם שלכם ואת העיר. המרחק מוצג בעיגול, כך שאי אפשר לדעת את הכתובת המדויקת. מספר הטלפון מוצג רק למשתמש רשום שפותח את דף הספר כדי לפנות אליכם. כתובת המייל לא מוצגת לאף אחד."],
-    ["צילומי כריכה", "כשאתם מצלמים כריכה לזיהוי אוטומטי, התמונה נשלחת לשירות בינה מלאכותית חיצוני (Anthropic) רק כדי לחלץ את פרטי הספר. אנחנו לא שולחים איתה שום פרט מזהה עליכם."],
+    ["תמונות", "כשאתם מצלמים כריכה לזיהוי אוטומטי, התמונה נשלחת לשירות בינה מלאכותית חיצוני (Anthropic) כדי לחלץ את פרטי הספר. כל תמונה שמועלית לאתר (תמונות ספרים ותמונת פרופיל) נבדקת אוטומטית באותו שירות, כדי לוודא שאין בה תוכן לא הולם ושתמונות הספרים באמת מציגות ספר. אנחנו לא שולחים עם התמונות שום פרט מזהה עליכם."],
     ["ספקים שעובדים איתנו", "כניסה עם חשבון Google (Google), אחסון השרת ומסד הנתונים (Railway), אחסון האתר (Vercel), שליחת מיילים (Resend), זיהוי ספרים מתמונה (Anthropic), חיפוש פרטי ספרים (Google Books, Open Library) ותרגום מיקום לשם עיר (OpenStreetMap). חלק מהספקים פועלים מחוץ לישראל. אנחנו לא מוכרים מידע אישי לאף אחד."],
     ["מיילים", "נשלח לכם קודי כניסה, ועדכון כשספר שביקשתם להתעדכן עליו מתפרסם. עדכונים שיווקיים יישלחו רק אם הסכמתם לכך בהרשמה, ואפשר לבטל בכל רגע בהגדרות הפרופיל."],
     ["הזכויות שלכם", "אפשר לעיין במידע שלכם ולתקן אותו בפרופיל. אפשר למחוק את החשבון בכל רגע מתוך הפרופיל: החשבון, הספרים והמשאלות נמחקים מיד, ונתוני השימוש נשמרים ללא זיהוי. לבקשות נוספות אפשר לפנות אלינו דרך \"צור קשר\" בתפריט או במייל pageturner.team@gmail.com."],
@@ -1152,7 +1154,7 @@ const LEGAL = {
   ]},
   terms: { title: "תנאי שימוש", sections: [
     ["השירות", "Pageturner מאפשרת לפרסם ספרים ולמצוא ספרים אצל אנשים בסביבה. אנחנו לוח מודעות שמחבר בין אנשים, ולא צד לעסקאות. התשלום, המסירה וההחזרה של ספרים נעשים ישירות בין המשתמשים."],
-    ["פרסום ספרים", "מפרסמים רק ספרים שבבעלותכם, עם פרטים נכונים ומצב אמיתי של הספר. אסור לפרסם תוכן פוגעני, מטעה, או כזה שמפר זכויות של אחרים. אנחנו רשאים להסיר מודעות או לחסום משתמשים שמפרים את התנאים."],
+    ["פרסום ספרים", "מפרסמים רק ספרים שבבעלותכם, עם פרטים נכונים ומצב אמיתי של הספר, ומעלים רק תמונות של הספר עצמו. אסור לפרסם תוכן פוגעני, מיני, אלים, מטעה, או כזה שמפר זכויות של אחרים. תמונות נבדקות אוטומטית לפני הפרסום, וכל משתמש יכול לדווח על מודעה לא הולמת. מודעה שקיבלה כמה דיווחים מוסתרת עד שנבדוק אותה. אנחנו רשאים להסיר מודעות או לחסום משתמשים שמפרים את התנאים."],
     ["עסקאות בין משתמשים", "בדקו את הספר לפני תשלום, ותאמו מפגש במקום ציבורי כשאפשר. האחריות על העסקה, על מצב הספר ועל החזרת ספרים מושאלים היא של המשתמשים עצמם."],
     ["פניות", "השתמשו בפרטי הקשר של משתמשים אחרים רק כדי לפנות לגבי הספר שפרסמו. אסור לשלוח ספאם, לאסוף פרטים או להטריד."],
     ["אחריות", "השירות ניתן כמו שהוא. אנחנו עושים מאמץ שיפעל כראוי, אבל לא מתחייבים לזמינות רציפה או לדיוק של מידע שמשתמשים פרסמו או שזוהה אוטומטית מתמונה."],
@@ -1169,13 +1171,16 @@ const LEGAL = {
 };
 
 // דיאלוג נגיש: פוקוס נכנס לחלון, Escape סוגר, והפוקוס חוזר למקום שממנו נפתח
+const dialogStack = [];
 function useDialog(onClose) {
   const ref = useRef(null);
   const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
     const prev = document.activeElement;
+    const me = {}; dialogStack.push(me);
     ref.current?.focus({ preventScroll: true });
     const onKey = e => {
+      if (dialogStack[dialogStack.length - 1] !== me) return;
       if (e.key === "Escape") { e.stopPropagation(); close.current?.(); return; }
       if (e.key !== "Tab" || !ref.current) return;
       const f = [...ref.current.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),textarea,select,[tabindex]:not([tabindex="-1"])')].filter(el => el.offsetParent !== null);
@@ -1185,7 +1190,7 @@ function useDialog(onClose) {
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus && document.contains(prev)) prev.focus({ preventScroll: true }); };
+    return () => { const i = dialogStack.indexOf(me); if (i >= 0) dialogStack.splice(i, 1); document.removeEventListener("keydown", onKey); if (prev && prev.focus && document.contains(prev)) prev.focus({ preventScroll: true }); };
   }, []);
   return ref;
 }
@@ -2205,12 +2210,45 @@ function UserPage({ userId, me, onClose, onViewBook, favs, onFav }) {
   );
 }
 
+function ReportSheet({ book, onClose, toast_ }) {
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+  const opts = [["image","תמונה לא הולמת"],["notbook","זה לא ספר"],["misleading","מודעה מטעה"],["other","אחר"]];
+  const send = async () => {
+    if (!reason) return;
+    setSending(true);
+    try { await api.post(`/api/books/${book.id}/report`, { reason, note }); toast_("תודה על הדיווח, נבדוק את המודעה"); onClose(); }
+    catch (e) { toast_(e.message, "err"); }
+    finally { setSending(false); }
+  };
+  return (
+    <Overlay onClose={onClose} label="דיווח על מודעה" outerStyle={{position:"fixed",inset:0,zIndex:950,background:"rgba(14,12,8,.6)",display:"flex",alignItems:"flex-end",direction:"rtl"}}
+      panelStyle={{width:"100%",maxWidth:520,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",padding:"20px 18px calc(24px + env(safe-area-inset-bottom))",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}}>
+      <h2 style={{fontSize:18,fontWeight:800,color:C.ink}}>דיווח על המודעה</h2>
+      <p style={{fontSize:13,color:C.muted,margin:"4px 0 14px"}}>הדיווח אנונימי למפרסם. מה הבעיה?</p>
+      <div role="radiogroup" aria-label="סיבת הדיווח" style={{display:"grid",gap:8,marginBottom:12}}>
+        {opts.map(([k,l])=>(
+          <button key={k} role="radio" aria-checked={reason===k} onClick={()=>setReason(k)}
+            style={{textAlign:"right",padding:"12px 14px",borderRadius:12,border:`1.5px solid ${reason===k?C.ink:C.border}`,background:reason===k?C.bg:"#fff",color:C.ink,fontSize:14,fontWeight:reason===k?700:500,cursor:"pointer"}}>{l}</button>
+        ))}
+      </div>
+      <TA label="פרטים נוספים (לא חובה)" value={note} onChange={e=>setNote(e.target.value.slice(0,500))} placeholder=""/>
+      <div style={{display:"flex",gap:10}}>
+        <Btn onClick={send} disabled={!reason||sending} style={{flex:1}}>{sending?"שולח...":"שליחת דיווח"}</Btn>
+        <Btn variant="outline" onClick={onClose} style={{flex:1}}>ביטול</Btn>
+      </div>
+    </Overlay>
+  );
+}
+
 function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onContactMade, onViewUser, toast_, fav, onFav, more = [], onOpenBook }) {
   const [showCloseDeal, setShowCloseDeal] = useState(false);
   const [closing, setClosing] = useState(false);
   const [phone, setPhone] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [showPhoto, setShowPhoto] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const scrollRef = useRef(null);
   const dref = useDialog(onClose);
   const isOwner = !!user?.id && String(book.ownerid)===String(user?.id);
@@ -2347,8 +2385,17 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
               <SectionHead title={`עוד מהמדף של ${name||"המפרסם"}`}/>
               <Rail books={more} onOpen={onOpenBook} user={user} w={112}/>
             </>}
+            {isOwner && book.hidden && <div role="status" style={{marginTop:18,background:C.redL,color:C.red,borderRadius:12,padding:"12px 14px",fontSize:13,lineHeight:1.6}}>
+              המודעה הוסתרה מהאתר בעקבות דיווחים. אם לדעתך זו טעות, אפשר לפנות אלינו דרך "צור קשר" בתפריט.
+            </div>}
+            {!isOwner && <div style={{textAlign:"center",marginTop:22}}>
+              <button onClick={()=> (isGuest||!user?.id) ? onGuest() : setReporting(true)} style={{display:"inline-flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer",padding:"8px 10px",textDecoration:"underline",textUnderlineOffset:3}}>
+                <Icon name="flag" size={15}/>דיווח על מודעה לא הולמת
+              </button>
+            </div>}
           </div>
         </div>
+        {reporting && <ReportSheet book={book} onClose={()=>setReporting(false)} toast_={toast_}/>}
 
         {/* פעולה ראשית */}
         {book.avail && !isOwner && (
