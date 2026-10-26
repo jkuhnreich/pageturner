@@ -345,12 +345,54 @@ async function prepForVision(file) {
   return { buf: file.buffer, mime: file.mimetype };
 }
 
+// קריאה סלחנית של תשובת JSON מהמודל: עמידה למרכאות עבריות (צה"ל), לגדרות קוד ולתשובה שנקטעה
+const HEB = "\\u0590-\\u05FF";
+function stripFences(raw) {
+  return String(raw || "").trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+}
+// מרכאות בין אותיות עבריות הן גרשיים, לא סוף מחרוזת
+function fixHebrewQuotes(t) {
+  return t.replace(new RegExp(`([${HEB}])\\\\?"(?=[${HEB}])`, "g"), "$1״")
+          .replace(new RegExp(`([${HEB}])\\\\?'(?=[${HEB}\\s])`, "g"), "$1׳");
+}
+function tryParse(t) { try { return JSON.parse(t); } catch { return undefined; } }
 function parseJ(raw) {
-  const s = raw.trim().replace(/^```(?:json)?[\r\n]*/i, "").replace(/[\r\n]*```$/i, "").trim();
-  const obj = s.match(/\{[\s\S]*\}/);
-  const arr = s.match(/\[[\s\S]*\]/);
-  const t = arr && (!obj || arr.index < obj.index) ? arr[0] : obj ? obj[0] : s;
-  return JSON.parse(t);
+  const s = stripFences(raw);
+  const objStart = s.indexOf("{"), arrStart = s.indexOf("[");
+  const isArr = arrStart !== -1 && (objStart === -1 || arrStart < objStart);
+  const start = isArr ? arrStart : objStart;
+  if (start === -1) throw new Error("no json");
+  const end = s.lastIndexOf(isArr ? "]" : "}");
+  const body = end > start ? s.slice(start, end + 1) : s.slice(start);
+  for (const cand of [body, fixHebrewQuotes(body)]) {
+    const v = tryParse(cand);
+    if (v !== undefined) return v;
+  }
+  // תשובה שנקטעה באמצע: סוגרים מחרוזת/אובייקט פתוחים
+  const cut = fixHebrewQuotes(s.slice(start));
+  for (const tail of ['"}', '}', '"}]', '}]', ']']) {
+    const v = tryParse(cut + tail);
+    if (v !== undefined) return v;
+  }
+  if (isArr) throw new Error("bad json array");
+  // מוצא אחרון: שליפת שדות בודדים לפי שם
+  const out = {};
+  const re = /"([a-zA-Z_]+)"\s*:\s*("((?:[^"\\]|\\.)*?)"(?=\s*[,}\n]|\s*$)|-?\d+(?:\.\d+)?|\{[^{}]*\})/g;
+  let m;
+  while ((m = re.exec(cut))) {
+    if (m[3] !== undefined) out[m[1]] = m[3].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+    else { const v = tryParse(m[2]); if (v !== undefined) out[m[1]] = v; }
+  }
+  // שדה טקסט אחרון שנקטע בלי מרכאות סוגרות
+  const last = /"([a-zA-Z_]+)"\s*:\s*"([^"]*)$/.exec(cut);
+  if (last && !(last[1] in out)) out[last[1]] = last[2];
+  if (!Object.keys(out).length) throw new Error("unparseable");
+  return out;
+}
+// ניקוי ערך טקסט שחזר מהמודל
+function cleanText(v) {
+  if (typeof v !== "string") return v;
+  return fixHebrewQuotes(v.replace(/\\"/g, '"').replace(/\\n/g, "\n")).replace(/\\(?=[^\\])/g, "").trim();
 }
 
 // ── גיאוקוד ───────────────────────────────────────────────
@@ -502,7 +544,8 @@ RULES:
 - isbn: if a barcode/ISBN number is visible, copy the 13 digits, else ""
 - corners: the four corners of the FRONT COVER itself (not the spine, not the background), as PERCENTAGES of the image width (x) and height (y), 0-100. tl = top-left corner of the cover as seen in the image, tr = top-right, br = bottom-right, bl = bottom-left. If the cover is tilted or photographed at an angle, give the real tilted corner positions. If a corner is cut off by the image edge, estimate it at the edge.
 - crop: the tightest axis-aligned box containing only the cover, as PERCENTAGES (x,y = top-left).
-Return ONLY this JSON, no other text:
+FORMAT: inside values, write Hebrew abbreviations with ״ and ׳ (e.g. צה״ל, צ׳ודרון) — never a plain " character.
+Return ONLY raw JSON, no code fences, no other text:
 {"title":"","author":"","publisher":"","year":"","language":"","series":"","volume":"","isbn":"","confidence":{"title":0,"author":0,"publisher":0,"year":0},"corners":{"tl":[0,0],"tr":[100,0],"br":[100,100],"bl":[0,100]},"crop":{"x":0,"y":0,"width":100,"height":100}}`;
 
 const P_BACK = `You are an expert OCR and bibliographic system for book back covers.
@@ -513,7 +556,8 @@ RULES:
 - summary: the main descriptive text/blurb about the book
 - price: any price in any currency
 - genre: category of the book
-Leave "" if not clearly visible. Return ONLY this JSON:
+Leave "" if not clearly visible.
+FORMAT: inside values, write Hebrew abbreviations with the Hebrew gershayim ״ and geresh ׳ (e.g. צה״ל, ד״ר, צ׳ודרון) — never a plain " character. Keep the summary under 900 characters. Return ONLY raw JSON, no code fences, no other text:
 {"summary":"","isbn":"","publisher":"","year":"","price":"","genre":""}`;
 
 const P_SHELF = `You are an expert at reading book spines on a bookshelf.
@@ -686,7 +730,7 @@ app.post("/api/analyze/front", visionGuard, async (req, res) => {
       if (String(v2.title || "").trim()) vision = v2;
     }
     console.log(`front: title="${vision.title || ""}" author="${vision.author || ""}" corners=${vision.corners ? "yes" : "no"} img=${buf.length}b`);
-    Object.keys(vision).forEach(k => { if (typeof vision[k] === "string") vision[k] = vision[k].trim(); });
+    Object.keys(vision).forEach(k => { if (typeof vision[k] === "string") vision[k] = cleanText(vision[k]); });
     const conf = vision.confidence || {};
     if ((conf.publisher || 0) < 0.7) vision.publisher = "";
     if ((conf.year || 0) < 0.7) vision.year = "";
@@ -710,8 +754,13 @@ app.post("/api/analyze/back", visionGuard, async (req, res) => {
     const { buf, mime } = await prepForVision(req.file);
     const raw = await claudeVision(buf, mime, P_BACK, 1500);
     let data = {};
-    try { data = parseJ(raw); } catch { data = { summary: raw.trim() }; }
-    Object.keys(data).forEach(k => { if (typeof data[k] === "string") data[k] = data[k].trim(); });
+    try { data = parseJ(raw); } catch {
+      console.error("back: unparseable answer:", String(raw).slice(0, 300));
+      // לא מכניסים טקסט טכני לשדה התקציר
+      const plain = stripFences(raw);
+      data = /^[{\[]/.test(plain) ? {} : { summary: plain };
+    }
+    Object.keys(data).forEach(k => { if (typeof data[k] === "string") data[k] = cleanText(data[k]); });
     let googleData = {};
     if (data.isbn && /^97[89]/.test(data.isbn)) {
       const results = await gBooks(`isbn:${data.isbn}`, 1);
