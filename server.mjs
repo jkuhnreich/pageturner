@@ -103,6 +103,7 @@ async function initDB() {
   await pool.query(`CREATE TABLE IF NOT EXISTS book_history (id TEXT PRIMARY KEY, bookid TEXT, fromuserid TEXT, touserid TEXT, type TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS wishlist (id TEXT PRIMARY KEY, userid TEXT, query TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS sessions (tokenhash TEXT PRIMARY KEY, userid TEXT NOT NULL, createdat BIGINT, lastseen BIGINT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS blocked_attempts (id TEXT PRIMARY KEY, userid TEXT, title TEXT, author TEXT, category TEXT, reason TEXT, at TEXT, createdat BIGINT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS reports (bookid TEXT NOT NULL, userid TEXT NOT NULL, reason TEXT, createdat BIGINT, PRIMARY KEY (bookid, userid))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS favorites (userid TEXT NOT NULL, bookid TEXT NOT NULL, createdat BIGINT, PRIMARY KEY (userid, bookid))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS covers (id TEXT PRIMARY KEY, key TEXT UNIQUE, img TEXT, source TEXT, uses INTEGER DEFAULT 0, createdat BIGINT)`);
@@ -117,6 +118,7 @@ async function initDB() {
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerAsked BOOLEAN DEFAULT false",
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ownerConfirmed BOOLEAN DEFAULT false",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended BOOLEAN DEFAULT false",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false",
@@ -393,6 +395,65 @@ const MOD_ERRORS = {
 const isFalse = v => v === false || v === "false";
 const isTrue = v => v === true || v === "true";
 function imageGate(v) { if (isTrue(v?.unsafe)) return "unsafe"; if (isFalse(v?.is_book)) return "notbook"; return null; }
+// ── מדיניות תוכן: ספרים שאסור לפרסם ─────────────────────────
+// שכבה ראשונה: רשימה קבועה (עובדת גם בלי חיבור ל-AI). שכבה שנייה: בדיקה חכמה של כותרת, מחבר ותקציר.
+const normTxt = t => String(t || "").toLowerCase().normalize("NFKD").replace(/[\u0591-\u05C7]/g, "").replace(/[^a-z0-9\u05d0-\u05ea]+/g, " ").trim();
+function blocklistHit(title, author) {
+  const t = normTxt(title), a = normTxt(author);
+  if (/mein ?kampf|מיין ?ק[א]?מפף|מיין ?קאמף/.test(t)) return "hate";
+  if (/(hitler|היטלר)/.test(a) && !/(biograph|ביוגרפ)/.test(t)) return "hate";
+  if (/protocols? of (the )?(learned )?elders of zion|פרוטוקולים של זקני ציון|הפרוטוקולים של חכמי ציון/.test(t)) return "hate";
+  if (/turner diaries/.test(t)) return "hate";
+  return null;
+}
+const P_BOOK_POLICY = `You review book listings for a neighborhood book-sharing site in Israel used by families, including children.
+Decide whether this book must be BLOCKED. Block ONLY these:
+1. "hate": works whose purpose is to spread hatred of a group — e.g. Mein Kampf, The Protocols of the Elders of Zion, neo-Nazi, white-supremacist, antisemitic or racist propaganda tracts.
+2. "terror": works that incite to or glorify terrorism or mass violence.
+3. "porn": pornography — sexually explicit works whose main purpose is sexual arousal (mainstream romance or literary novels with sex scenes are fine).
+4. "crime": manuals for making weapons or explosives, or for committing serious crimes.
+Do NOT block: history, biographies, scholarly, critical or educational works about these subjects (books about the Holocaust, WWII, Nazism, terrorism; Hitler biographies; survivor memoirs), novels with dark themes, religious texts, and political books from any side. If you are not sure, do not block.
+Return ONLY raw JSON, no code fences: {"block":false,"category":"none","reason":""} — reason: a few words in Hebrew.`;
+async function checkBookPolicy({ title, author, summary }) {
+  const hit = blocklistHit(title, author);
+  if (hit) return { block: true, category: hit, reason: "ספר שמפיץ שנאה", source: "list" };
+  if (!String(title || "").trim() || !process.env.ANTHROPIC_API_KEY) return { block: false };
+  const text = `Title: ${clip(title, 300)}\nAuthor: ${clip(author, 200)}\nDescription: ${clip(summary, 800)}`;
+  const ask = model => fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
+    method: "POST",
+    headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model, max_tokens: 120, system: P_BOOK_POLICY, messages: [{ role: "user", content: text }] }),
+  });
+  try {
+    let r = await ask(MOD_MODEL);
+    if (!r.ok && (r.status === 400 || r.status === 404) && MOD_MODEL !== VISION_MODEL) r = await ask(VISION_MODEL);
+    if (!r.ok) throw new Error(`policy ${r.status}`);
+    const d = await r.json();
+    const j = parseJ((d?.content || []).filter(c => c.type === "text").map(c => c.text).join(""));
+    if (isTrue(j?.block) && ["hate", "terror", "porn", "crime"].includes(j.category)) return { block: true, category: j.category, reason: clip(cleanText(j.reason || ""), 120), source: "ai" };
+    return { block: false };
+  } catch (e) { console.error("book policy:", e.message); return { block: false, unchecked: true }; }
+}
+const POLICY_LABELS = { hate: "הסתה ושנאה", terror: "הסתה לטרור ואלימות", porn: "תוכן פורנוגרפי", crime: "מדריך לפשיעה או לנשק" };
+const POLICY_ERROR = "לא ניתן לפרסם את הספר הזה באתר, כי הוא לא עומד בכללי הקהילה";
+const suspendToken = id => createHmac("sha256", process.env.ADMIN_KEY || "pt-hide").update("suspend:" + id).digest("base64url").slice(0, 32);
+// רישום ניסיון לפרסם ספר חסום + מייל למנהל
+async function recordBlocked(req, info, at) {
+  const u = req.user;
+  await pool.query("INSERT INTO blocked_attempts (id,userid,title,author,category,reason,at,createdat) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+    [randomUUID(), u.id, clip(info.title, 300), clip(info.author, 200), info.category, clip(info.reason, 200), at, Date.now()]);
+  track("book_blocked", u.id, { title: clip(info.title, 80), category: info.category, at });
+  const n = Number((await pool.query("SELECT COUNT(*) FROM blocked_attempts WHERE userid=$1", [u.id])).rows[0].count);
+  if (!process.env.ADMIN_EMAIL) return;
+  const link = `${apiUrl(req)}/api/admin/suspend/${u.id}?t=${suspendToken(u.id)}`;
+  await sendEmail(process.env.ADMIN_EMAIL, `⛔ ניסיון לפרסם ספר חסום: ${clip(info.title, 60)}${n > 1 ? ` (פעם ${n})` : ""}`, `<div dir="rtl" style="font-family:sans-serif">
+    <p>משתמש ניסה לפרסם ספר שנחסם לפי כללי הקהילה. הספר <b>לא</b> פורסם.</p>
+    <p><b>הספר:</b> ${escapeHtml(info.title)}${info.author ? ` · ${escapeHtml(info.author)}` : ""}<br>
+    <b>סיבה:</b> ${POLICY_LABELS[info.category] || info.category}${info.reason ? ` (${escapeHtml(info.reason)})` : ""}</p>
+    <p><b>המשתמש:</b> ${escapeHtml(u.name || "")} · ${escapeHtml(u.email || "")} · ${escapeHtml(u.phone || "")}<br>
+    <b>ניסיונות חסומים עד היום:</b> ${n}</p>
+    <p><a href="${link}">להשעות את המשתמש ולהסתיר את כל הספרים שלו</a></p></div>`);
+}
 const COVER_HOSTS = /^https:\/\/(covers\.openlibrary\.org|books\.google\.com|books\.googleusercontent\.com|[a-z0-9-]+\.googleusercontent\.com)\//i;
 const hideToken = id => createHmac("sha256", process.env.ADMIN_KEY || "pt-hide").update("hide:" + id).digest("base64url").slice(0, 32);
 function siteUrl() { return process.env.SITE_URL || "https://pageturner.co.il"; }
@@ -668,6 +729,10 @@ app.use(loadAuth);
 
 function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: "יש להתחבר מחדש", code: "auth" });
+  // משתמש מושעה יכול לצפות ולמחוק את החשבון, אבל לא לפרסם או לפנות לאחרים
+  const deletingSelf = req.method === "DELETE" && /^\/api\/users\/[^/]+$/.test(req.path);
+  if (req.user.suspended && !deletingSelf && (req.method !== "GET" || /\/phone$/.test(req.path)))
+    return res.status(403).json({ error: "החשבון הושעה. לפרטים אפשר לכתוב לנו: pageturner.team@gmail.com", code: "suspended" });
   next();
 }
 
@@ -810,6 +875,11 @@ app.post("/api/analyze/front", visionGuard, async (req, res) => {
     if ((conf.year || 0) < 0.7) vision.year = "";
     if ((conf.author || 0) < 0.7) vision.author = "";
     const { googleResults, enriched } = await enrich(vision);
+    const policy = await checkBookPolicy({ title: enriched.title || vision.title, author: enriched.author || vision.author, summary: enriched.summary });
+    if (policy.block) {
+      recordBlocked(req, { title: enriched.title || vision.title, author: enriched.author || vision.author, category: policy.category, reason: policy.reason }, "scan").catch(e => console.error("blocked:", e.message));
+      return res.status(422).json({ error: POLICY_ERROR, code: "book_blocked" });
+    }
     const straight = await warpCover(buf, vision.corners);
     if (!straight && vision.corners) console.log("front: corners rejected", JSON.stringify(vision.corners));
     const croppedImage = straight || await cropBookImage(buf, vision.crop);
@@ -986,6 +1056,11 @@ app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, uploa
       try { frontImg = await shrinkImage(req.file.buffer, 1000, 1400, 82); }
       catch { return res.status(400).json({ error: "קובץ התמונה לא נתמך, נסו תמונה אחרת" }); }
     }
+    const policy = await checkBookPolicy({ title: b.title, author: b.author, summary: b.summary });
+    if (policy.block) {
+      recordBlocked(req, { title: b.title, author: b.author, category: policy.category, reason: policy.reason }, "publish").catch(e => console.error("blocked:", e.message));
+      return res.status(400).json({ error: POLICY_ERROR, code: "book_blocked" });
+    }
     const thumbnail = await cleanThumbnail(b.thumbnail);
     // בדיקת התמונות שהמשתמש העלה (תמונה מהספרייה המשותפת או מקטלוג כבר נבדקה)
     const toCheck = [frontImg, thumbnail?.startsWith("data:") && !/\/api\/img\/cover\//.test(b.thumbnail || "") ? thumbnail : null]
@@ -1029,6 +1104,14 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
   try {
     const existing = await ownBook(req, res);
     if (!existing) return;
+    if ((title && title !== existing.title) || (author !== undefined && author !== existing.author) || (summary !== undefined && summary !== existing.summary)) {
+      const t = title || existing.title, a = author ?? existing.author;
+      const policy = await checkBookPolicy({ title: t, author: a, summary: summary ?? existing.summary });
+      if (policy.block) {
+        recordBlocked(req, { title: t, author: a, category: policy.category, reason: policy.reason }, "edit").catch(e => console.error("blocked:", e.message));
+        return res.status(400).json({ error: POLICY_ERROR, code: "book_blocked" });
+      }
+    }
     const newMode = ["sell", "lend", "swap", "give"].includes(mode) ? mode : existing.mode;
     const newPrice = newMode === "sell" ? (price !== undefined && price !== null && price !== "" ? Number(price) || null : existing.price) : null;
     const coords = parseCoords(req.body);
@@ -1095,6 +1178,20 @@ app.get("/api/admin/hide/:id", limit("admin", 30, 15 * 60 * 1000), async (req, r
     await hideBook(req.params.id, "admin");
     res.send(page(`✅ הספר "${escapeHtml(r.rows[0].title)}" הוסתר מהאתר`));
   } catch (e) { console.error("hide:", e.message); res.status(500).send(page("שגיאה, נסו שוב")); }
+});
+
+app.get("/api/admin/suspend/:id", limit("admin", 30, 15 * 60 * 1000), async (req, res) => {
+  const ok = typeof req.query.t === "string" && safeEqual(req.query.t, suspendToken(req.params.id));
+  const page = msg => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><div dir="rtl" style="font-family:sans-serif;padding:40px;text-align:center;font-size:18px">${msg}</div>`;
+  if (!ok) return res.status(403).send(page("הקישור לא תקין"));
+  try {
+    const u = (await pool.query("UPDATE users SET suspended=true WHERE id=$1 RETURNING name", [req.params.id])).rows[0];
+    if (!u) return res.status(404).send(page("המשתמש לא נמצא (אולי מחק את החשבון)"));
+    const h = await pool.query("UPDATE books SET hidden=true, avail=false WHERE ownerid=$1", [req.params.id]);
+    await pool.query("DELETE FROM sessions WHERE userid=$1", [req.params.id]);
+    track("user_suspended", req.params.id, { books: h.rowCount });
+    res.send(page(`✅ המשתמש ${escapeHtml(u.name || "")} הושעה, ו-${h.rowCount} הספרים שלו הוסתרו מהאתר`));
+  } catch (e) { console.error("suspend:", e.message); res.status(500).send(page("שגיאה, נסו שוב")); }
 });
 
 app.delete("/api/books/:id", requireAuth, async (req, res) => {
