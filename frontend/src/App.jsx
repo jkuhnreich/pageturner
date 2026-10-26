@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
 import { useNavigate } from "react-router-dom";
 
 const BASE = import.meta.env.VITE_API_URL ||
@@ -75,10 +75,10 @@ function compressImage(file, max = 1600, quality = 0.85) {
 
 // ── עיצוב בסיסי ────────────────────────────────────────────
 const C = {
-  bg: "#F6F2EA", white: "#fff", ink: "#1E2D3D", muted: "#6F7B73", faint: "#A7AEA6",
-  border: "#E6E0D4", accent: "#6B8F47", gold: "#B7791F", paper: "#FBF8F2",
-  teal: "#6B8F47", tealL: "#EEF3E8", indigo: "#1E2D3D", indigoL: "#E9EDF2",
-  green: "#6B8F47", greenL: "#EEF3E8", red: "#C2412D", redL: "#FBEDEA",
+  bg: "#F6F2EA", white: "#fff", ink: "#1E2D3D", muted: "#5A655E", faint: "#A7AEA6",
+  border: "#E6E0D4", accent: "#527236", gold: "#B7791F", paper: "#FBF8F2",
+  teal: "#527236", tealL: "#EEF3E8", indigo: "#1E2D3D", indigoL: "#E9EDF2",
+  green: "#527236", greenL: "#EEF3E8", red: "#C2412D", redL: "#FBEDEA",
 };
 const HDR = "#1E2D3D";
 // פלטת כריכות — גוונים עמוקים שמתאימים למותג
@@ -102,7 +102,7 @@ const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:${"#F6F2EA"};font-family:'Rubik',system-ui,sans-serif;direction:rtl;color:#1E2D3D}
 input,textarea,button,select{font-family:'Rubik',system-ui,sans-serif}
-input::placeholder,textarea::placeholder{color:#9a9a90}
+input::placeholder,textarea::placeholder{color:#767670}
 input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
 ::-webkit-scrollbar{width:3px;height:0}::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -114,7 +114,10 @@ input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
 @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
-button:focus-visible,a:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid #6B8F47;outline-offset:2px}
+button:focus-visible,a:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:3px solid #2F5A8C;outline-offset:2px}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.skip{position:fixed;top:-60px;right:12px;z-index:10000;background:#1E2D3D;color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;text-decoration:none}
+.skip:focus{top:12px}
 img{max-width:100%}
 .press{transition:transform .16s cubic-bezier(.3,.7,.4,1)}
 .press:active{transform:scale(.965)}
@@ -159,6 +162,7 @@ const ICONS = {
   mail: <><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/></>,
   lock: <><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></>,
   doc: <><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4M9 12h6M9 15.5h6"/></>,
+  access: <><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="7.6" r="1.1"/><path d="M8 10.3l4 .8 4-.8M12 11.1v3.1l-2.2 3.4M12 14.2l2.2 3.4"/></>,
   info: <><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></>,
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></>,
   logout: <><path d="M14 4h4a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 18 20h-4"/><path d="M10 8l-4 4 4 4M6 12h9"/></>,
@@ -222,10 +226,10 @@ function ModeBadge({ mode, small }) {
   );
 }
 
-function HeartButton({ active, onToggle, size = 34, floating }) {
+function HeartButton({ active, onToggle, size = 34, floating, label }) {
   const [anim, setAnim] = useState(false);
   return (
-    <button aria-label={active?"הסרה מהשמורים":"שמירה"} aria-pressed={!!active}
+    <button aria-label={(active?"הסרה מהשמורים":"שמירה")+(label?`: ${label}`:"")} aria-pressed={!!active}
       onClick={e=>{e.stopPropagation(); setAnim(true); setTimeout(()=>setAnim(false),350); onToggle && onToggle();}}
       style={{width:size,height:size,borderRadius:"50%",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
         background:floating?"rgba(255,255,255,.92)":C.bg,boxShadow:floating?"0 2px 8px rgba(0,0,0,.15)":"none",backdropFilter:"blur(6px)"}}>
@@ -245,12 +249,13 @@ function priceLine(book) {
 function BookTile({ book, onOpen, fav, onFav, width, user, showOwner = true }) {
   const own = user?.id && String(book.ownerid) === String(user.id);
   return (
-    <div className="press" role="button" tabIndex={0} onClick={()=>onOpen(book)} onKeyDown={e=>e.key==="Enter"&&onOpen(book)}
-      style={{width:width||"auto",cursor:"pointer",animation:"fadeUp .3s ease both"}}>
+    <div style={{position:"relative",width:width||"auto",animation:"fadeUp .3s ease both"}}>
+    <div className="press" role="button" tabIndex={0} onClick={()=>onOpen(book)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen(book);}}}
+      aria-label={[book.title, book.author, (MODES[book.mode]||MODES.sell).label, priceLine(book), book.avail===false?"לא זמין כרגע":""].filter(Boolean).join(", ")}
+      style={{cursor:"pointer"}}>
       <div style={{position:"relative",aspectRatio:"2/3",borderRadius:14,boxShadow:"0 6px 16px rgba(30,45,61,.13), 0 1px 2px rgba(30,45,61,.08)",background:"#E7E1D5",opacity:book.avail===false?.55:1,filter:book.avail===false?"grayscale(.7)":"none"}}>
         <Cover book={book} radius={14} titleSize={width?13:15}/>
         <div style={{position:"absolute",top:8,right:8}}><ModeBadge mode={book.mode} small/></div>
-        {onFav && !own && <div style={{position:"absolute",top:6,left:6}}><HeartButton active={fav} onToggle={()=>onFav(book)} size={32} floating/></div>}
       </div>
       <div style={{padding:"9px 2px 0"}}>
         <div className="clamp2" style={{fontSize:14,fontWeight:700,lineHeight:1.3,color:C.ink}}>{book.title}</div>
@@ -261,6 +266,8 @@ function BookTile({ book, onOpen, fav, onFav, width, user, showOwner = true }) {
           {book.km==null && showOwner && book.city && <><span style={{opacity:.4}}>•</span><span className="clamp1">{book.city}</span></>}
         </div>
       </div>
+    </div>
+    {onFav && !own && <div style={{position:"absolute",top:6,left:6}}><HeartButton active={fav} onToggle={()=>onFav(book)} size={32} floating label={book.title}/></div>}
     </div>
   );
 }
@@ -317,9 +324,9 @@ function Spinner({ size="small" }) {
 
 function Toast({ t }) {
   if (!t) return null;
-  const bg = { ok: C.teal, warn: "#b7791f", err: C.red }[t.type] || C.teal;
+  const bg = { ok: C.teal, warn: "#8A5A12", err: C.red }[t.type] || C.teal;
   return (
-    <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:bg,color:"#fff",padding:"10px 20px",borderRadius:16,fontSize:13,fontWeight:700,zIndex:9999,maxWidth:"calc(100vw - 32px)",textAlign:"center",lineHeight:1.5,boxShadow:"0 4px 20px rgba(0,0,0,.25)",animation:"toastIn .28s cubic-bezier(.34,1.56,.64,1)"}}>
+    <div role="status" aria-live="polite" style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:bg,color:"#fff",padding:"10px 20px",borderRadius:16,fontSize:13,fontWeight:700,zIndex:9999,maxWidth:"calc(100vw - 32px)",textAlign:"center",lineHeight:1.5,boxShadow:"0 4px 20px rgba(0,0,0,.25)",animation:"toastIn .28s cubic-bezier(.34,1.56,.64,1)"}}>
       {t.msg}
     </div>
   );
@@ -327,14 +334,16 @@ function Toast({ t }) {
 
 function Inp({ label, required: req, icon, ...rest }) {
   const [f, setF] = useState(false);
+  const autoId = useId();
+  const id = rest.id || autoId;
   return (
     <div style={{marginBottom:13}}>
-      {label && <div style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:".5px",textTransform:"uppercase",marginBottom:4}}>
-        {label}{req && <span style={{color:C.accent,marginRight:3}}>*</span>}
-      </div>}
+      {label && <label htmlFor={id} style={{display:"block",fontSize:11,fontWeight:700,color:C.muted,letterSpacing:".5px",textTransform:"uppercase",marginBottom:4}}>
+        {label}{req && <span aria-hidden="true" style={{color:C.accent,marginRight:3}}>*</span>}
+      </label>}
       <div style={{position:"relative"}}>
         {icon && <span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:C.faint,pointerEvents:"none",display:"flex"}}>{ICONS[icon] ? <Icon name={icon} size={18}/> : icon}</span>}
-        <input {...rest}
+        <input {...rest} id={id} aria-required={req||undefined}
           onFocus={e=>{setF(true);rest.onFocus?.(e);}}
           onBlur={e=>{setF(false);rest.onBlur?.(e);}}
           style={{width:"100%",boxSizing:"border-box",padding:icon?"10px 36px 10px 13px":"10px 13px",background:C.bg,border:`1.5px solid ${f?C.indigo:C.border}`,borderRadius:10,color:C.ink,fontSize:14,outline:"none",boxShadow:f?`0 0 0 3px ${C.indigoL}`:"none",transition:"all .14s"}}
@@ -346,10 +355,11 @@ function Inp({ label, required: req, icon, ...rest }) {
 
 function TA({ label, ...rest }) {
   const [f, setF] = useState(false);
+  const id = useId();
   return (
     <div style={{marginBottom:13}}>
-      {label && <div style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:".5px",textTransform:"uppercase",marginBottom:4}}>{label}</div>}
-      <textarea {...rest}
+      {label && <label htmlFor={id} style={{display:"block",fontSize:11,fontWeight:700,color:C.muted,letterSpacing:".5px",textTransform:"uppercase",marginBottom:4}}>{label}</label>}
+      <textarea {...rest} id={id}
         onFocus={()=>setF(true)} onBlur={()=>setF(false)}
         style={{width:"100%",boxSizing:"border-box",padding:"10px 13px",background:C.bg,border:`1.5px solid ${f?C.indigo:C.border}`,borderRadius:10,color:C.ink,fontSize:14,outline:"none",resize:"vertical",minHeight:80,boxShadow:f?`0 0 0 3px ${C.indigoL}`:"none",transition:"all .14s"}}
       />
@@ -791,8 +801,8 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
         <TA label="תקציר" value={form.summary} onChange={upd("summary")} placeholder="תקציר הסיפור..."/>
         <Inp label="מצב" value={form.condition} onChange={upd("condition")} placeholder="כמו חדש / טוב / שימוש רב" icon="sparkle"/>
         <div style={{marginBottom:13}}>
-          <div style={{fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>סוגה</div>
-          <select value={form.genre} onChange={e=>setForm(f=>({...f,genre:e.target.value}))} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:14,background:C.bg,direction:"rtl"}}>
+          <label htmlFor="genre-select" style={{display:"block",fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>סוגה</label>
+          <select id="genre-select" value={form.genre} onChange={e=>setForm(f=>({...f,genre:e.target.value}))} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:14,background:C.bg,direction:"rtl"}}>
             <option value="">בחר סוגה (מומלץ)</option>
             <option value="ספרות ורומנים">ספרות ורומנים</option>
             <option value="מתח">מתח</option>
@@ -940,19 +950,19 @@ function Login({ onBack, onDone, onRegister }) {
     <div style={{minHeight:"100vh",background:HDR,display:"flex",alignItems:"center",justifyContent:"center",padding:24,direction:"rtl"}}>
       <div style={{background:C.white,borderRadius:22,padding:"26px 24px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:"fadeUp .25s ease"}}>
         <button onClick={step==="code"?()=>{setStep("email");setErr("");}:onBack} style={{background:C.bg,border:"none",borderRadius:9,padding:"6px 12px",fontSize:13,color:C.muted,cursor:"pointer",marginBottom:18}}>→ חזרה</button>
-        <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,color:C.ink,marginBottom:6}}>{step==="email"?"התחברות":"הקוד שלך"}</h2>
+        <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,color:C.ink,marginBottom:6}}>{step==="email"?"התחברות":"הקוד שלך"}</h1>
         {step==="email" ? <>
           <p style={{fontSize:14,color:C.muted,marginBottom:18,lineHeight:1.6}}>בלי סיסמאות. נכנסים עם Google או עם קוד שנשלח למייל.</p>
           <GoogleButton onError={setErr} onResult={res => res.isNew ? onRegister({ email: res.email, ticket: res.ticket, name: res.name }) : onDone(res.user, res.token)}/>
           <OrDivider/>
           <input type="email" inputMode="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendOtp()} placeholder="כתובת מייל"
             style={{width:"100%",padding:"15px 16px",borderRadius:12,border:`1.5px solid ${C.border}`,marginBottom:14,fontSize:17,background:C.bg,color:C.ink,outline:"none",direction:"ltr",textAlign:"right"}} />
-          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
+          {err && <div role="alert" style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
           <Btn onClick={sendOtp} disabled={loading} style={{width:"100%",padding:"16px",borderRadius:14,fontSize:16}}>{loading?"שולח...":"שלחו לי קוד"}</Btn>
         </> : <>
           <p style={{fontSize:14,color:C.muted,marginBottom:16,lineHeight:1.6}}>שלחנו קוד בן 6 ספרות אל <b style={{color:C.ink,direction:"ltr",display:"inline-block"}}>{email}</b></p>
           <CodeInput value={code} onChange={setCode} onEnter={verifyOtp}/>
-          {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
+          {err && <div role="alert" style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
           {!err && info && <div style={{color:C.muted,fontSize:12,marginBottom:10}}>{info}</div>}
           <Btn onClick={verifyOtp} disabled={loading||code.length!==6} style={{width:"100%",padding:"16px",borderRadius:14,fontSize:16}}>{loading?"מאמת...":"כניסה"}</Btn>
           <button onClick={sendOtp} disabled={loading} style={{width:"100%",marginTop:12,background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:600,cursor:"pointer"}}>לא הגיע? שלחו שוב</button>
@@ -1020,10 +1030,10 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
     <div style={{minHeight:"100vh",background:C.bg,direction:"rtl"}}>
       <div style={{background:HDR,padding:"22px 18px 22px"}}>
         {onBack && <button onClick={onBack} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:9,padding:"6px 12px",color:"rgba(255,255,255,.8)",fontSize:13,cursor:"pointer",marginBottom:14}}>→ חזרה</button>}
-        <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,fontWeight:900,color:"#fff"}}>
+        <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:26,fontWeight:900,color:"#fff"}}>
           {otpStep ? "כמעט שם" : type ? "הרשמה" : "מדפדפים לפרק הבא"}
-        </div>
-        {!type && <div style={{fontSize:13,color:"rgba(255,255,255,.55)",marginTop:6,fontStyle:"italic"}}>{q}</div>}
+        </h1>
+        {!type && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",marginTop:6,fontStyle:"italic"}}>{q}</div>}
         {prefill && !otpStep && <div style={{fontSize:13,color:"rgba(255,255,255,.7)",marginTop:6}}>המייל אומת. נשארו רק כמה פרטים</div>}
       </div>
 
@@ -1051,7 +1061,7 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
               <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"20px 16px",marginBottom:12}}>
                 <p style={{fontSize:14,color:C.muted,marginBottom:14,lineHeight:1.6}}>שלחנו קוד בן 6 ספרות אל <b style={{color:C.ink,direction:"ltr",display:"inline-block"}}>{form.email}</b>. כדאי לבדוק גם בספאם.</p>
                 <CodeInput value={otp} onChange={setOtp} onEnter={verifyOtp}/>
-                {err && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
+                {err && <div role="alert" style={{color:C.red,fontSize:13,marginBottom:10}}>{err}</div>}
                 <Btn onClick={verifyOtp} disabled={loading||otp.length!==6} style={{width:"100%",padding:"15px",borderRadius:13,fontSize:15}}>{loading?"מאמת...":"אמת והיכנס"}</Btn>
                 <div style={{display:"flex",justifyContent:"space-between",marginTop:12}}>
                   <button onClick={()=>{setOtpStep(false);setErr("");}} style={{background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer"}}>תיקון פרטים</button>
@@ -1081,7 +1091,7 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
                   <span>אשמח לקבל עדכונים על ספרים חדשים בשכונה (אפשר להסיר בכל רגע)</span>
                 </label>
               </div>
-              {err && <div style={{background:C.redL,borderRadius:10,padding:"10px 14px",fontSize:13,color:C.red,marginBottom:12}}>{err}</div>}
+              {err && <div role="alert" style={{background:C.redL,borderRadius:10,padding:"10px 14px",fontSize:13,color:C.red,marginBottom:12}}>{err}</div>}
               <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"15px",borderRadius:13,fontSize:15}}>
                 {loading ? <><Spinner/> רגע...</> : ticket ? "סיום הרשמה" : type==="store" ? "פתיחת חנות" : "המשך"}
               </Btn>
@@ -1107,16 +1117,18 @@ function Splash({ onReg, onGuest, onLogin, onShowLegal }) {
       </div>
       <h1 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:36,fontWeight:900,color:"#fff",textAlign:"center",lineHeight:1.12,marginBottom:12}}>ספרייה<br/>שכונתית</h1>
       <div style={{color:"rgba(255,255,255,.7)",fontSize:15,marginBottom:10,textAlign:"center",lineHeight:1.6,maxWidth:300}}>הספרים שכבר קראת, אצל השכנים שמחפשים אותם</div>
-      <div style={{color:"rgba(255,255,255,.4)",fontSize:13,marginBottom:40,letterSpacing:".5px"}}>השאלה · מכירה · החלפה · מסירה</div>
+      <div style={{color:"rgba(255,255,255,.7)",fontSize:13,marginBottom:40,letterSpacing:".5px"}}>השאלה · מכירה · החלפה · מסירה</div>
       <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
         <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"15px",fontSize:16,borderRadius:14,boxShadow:"0 6px 20px rgba(107,143,71,.35)"}}>הצטרפות חינם</Btn>
         <Btn onClick={onLogin} style={{width:"100%",padding:"15px",fontSize:15,borderRadius:14,background:"rgba(255,255,255,.14)"}}>יש לי חשבון</Btn>
         <button onClick={onGuest} style={{width:"100%",padding:"13px",background:"none",border:"none",color:"rgba(255,255,255,.7)",fontSize:14,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:4}}>להציץ בספרים בלי להירשם</button>
       </div>
-      <div style={{marginTop:36,fontSize:12,color:"rgba(255,255,255,.35)",display:"flex",gap:14}}>
-        <button onClick={()=>onShowLegal("terms")} style={{...linkBtn,color:"rgba(255,255,255,.45)",textDecoration:"none"}}>תנאי שימוש</button>
+      <div style={{marginTop:36,fontSize:12,color:"rgba(255,255,255,.6)",display:"flex",gap:14}}>
+        <button onClick={()=>onShowLegal("terms")} style={{...linkBtn,color:"rgba(255,255,255,.78)",textDecoration:"none"}}>תנאי שימוש</button>
         <span>·</span>
-        <button onClick={()=>onShowLegal("privacy")} style={{...linkBtn,color:"rgba(255,255,255,.45)",textDecoration:"none"}}>פרטיות</button>
+        <button onClick={()=>onShowLegal("privacy")} style={{...linkBtn,color:"rgba(255,255,255,.78)",textDecoration:"none"}}>פרטיות</button>
+        <span>·</span>
+        <button onClick={()=>onShowLegal("accessibility")} style={{...linkBtn,color:"rgba(255,255,255,.78)",textDecoration:"none"}}>נגישות</button>
       </div>
     </div>
   );
@@ -1143,17 +1155,56 @@ const LEGAL = {
     ["אחריות", "השירות ניתן כמו שהוא. אנחנו עושים מאמץ שיפעל כראוי, אבל לא מתחייבים לזמינות רציפה או לדיוק של מידע שמשתמשים פרסמו או שזוהה אוטומטית מתמונה."],
     ["שינויים", "ייתכן שנעדכן את התנאים מעת לעת. נעדכן כאן את תאריך העדכון האחרון, ושימוש בשירות לאחר עדכון מהווה הסכמה לתנאים המעודכנים. על התנאים חל הדין הישראלי."],
     ["יצירת קשר", "שאלות, דיווח על מודעה בעייתית או כל פנייה אחרת: דרך \"צור קשר\" בתפריט האתר, או במייל pageturner.team@gmail.com."],
+  ]},  accessibility: { title: "הצהרת נגישות", sections: [
+    ["המחויבות שלנו", "חשוב לנו ש-Pageturner יהיה נוח ושימושי לכל אחד ואחת, כולל אנשים עם מוגבלות. השקענו בהנגשת האתר כדי שכל השכנים יוכלו לחפש, לפרסם ולשתף ספרים בקלות."],
+    ["רמת הנגישות", "האתר הותאם לדרישות תקנות שוויון זכויות לאנשים עם מוגבלות (התאמות נגישות לשירות), התשע\"ג-2013, ולתקן הישראלי ת\"י 5568, המבוסס על הנחיות WCAG 2.0 ברמה AA."],
+    ["מה עשינו באתר", "ניגודיות צבעים לפי התקן בכל הטקסטים והכפתורים. תוויות מפורשות לכל שדות הטפסים. תיאור טקסטואלי לכל הכפתורים והאייקונים, כולל ספרים ותמונות כריכה. אפשרות לנווט ולהפעיל את כל האתר באמצעות מקלדת, עם סימון בולט של האלמנט שבפוקוס. חלונות קופצים שמקבלים פוקוס, נסגרים במקש Esc ומחזירים את הפוקוס למקומו. הודעות מערכת והודעות שגיאה שמוקראות אוטומטית בקורא מסך. מבנה כותרות ואזורים ברורים בכל מסך. התאמה לגדלי מסך שונים ותמיכה בהגדלת טקסט בדפדפן. הפחתת אנימציות למי שהגדיר זאת במכשיר. כניסה לאתר בלי סיסמאות, עם חשבון Google או קוד למייל."],
+    ["דפדפנים וטכנולוגיות מסייעות", "האתר בנוי לעבודה בגרסאות העדכניות של Chrome, Safari, Edge ו-Firefox, במחשב ובטלפון, ולתמיכה בקוראי מסך נפוצים כמו NVDA, VoiceOver ו-TalkBack. האתר נבדק בכלי בדיקה אוטומטיים ובבדיקת ניווט במקלדת."],
+    ["מגבלות ידועות", "תמונות שמשתמשים מצלמים ומעלים (צילומי עותק) מוצגות בלי תיאור מפורט, אבל לצד כל תמונה מופיעים שם הספר, הסופר ומצב העותק. חלון הכניסה עם Google מופעל על ידי Google ואינו בשליטתנו. אם נתקלתם בבעיה, נשמח לעזור גם בדרך אחרת, למשל לפרסם ספר עבורכם."],
+    ["נתקלתם בבעיה? פנו אלינו", "אם משהו באתר לא נגיש לכם, או שיש לכם הצעה לשיפור, נשמח לשמוע: דרך \"צור קשר\" בתפריט האתר, או במייל pageturner.team@gmail.com. כדאי לציין באיזה מסך הייתה הבעיה, מה ניסיתם לעשות ובאיזה מכשיר ודפדפן השתמשתם. נחזור אליכם בהקדם, ולכל המאוחר תוך 14 ימים."],
   ]},
 };
 
+// דיאלוג נגיש: פוקוס נכנס לחלון, Escape סוגר, והפוקוס חוזר למקום שממנו נפתח
+function useDialog(onClose) {
+  const ref = useRef(null);
+  const close = useRef(onClose); close.current = onClose;
+  useEffect(() => {
+    const prev = document.activeElement;
+    ref.current?.focus({ preventScroll: true });
+    const onKey = e => {
+      if (e.key === "Escape") { e.stopPropagation(); close.current?.(); return; }
+      if (e.key !== "Tab" || !ref.current) return;
+      const f = [...ref.current.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),textarea,select,[tabindex]:not([tabindex="-1"])')].filter(el => el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus && document.contains(prev)) prev.focus({ preventScroll: true }); };
+  }, []);
+  return ref;
+}
+
+function Overlay({ onClose, label, outerStyle, panelStyle, children }) {
+  const dref = useDialog(onClose);
+  return (
+    <div style={outerStyle} onClick={onClose}>
+      <div ref={dref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} style={{outline:"none",...panelStyle}} onClick={e=>e.stopPropagation()}>{children}</div>
+    </div>
+  );
+}
+
 function LegalSheet({ kind, onClose }) {
   const doc = LEGAL[kind];
+  const dref = useDialog(onClose);
   if (!doc) return null;
   return (
     <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={onClose}>
-      <div role="dialog" aria-label={doc.title} style={{width:"100%",maxWidth:560,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"88vh",overflowY:"auto",padding:"22px 20px 32px",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}} onClick={e=>e.stopPropagation()}>
+      <div ref={dref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={doc.title} style={{outline:"none",width:"100%",maxWidth:560,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"88vh",overflowY:"auto",padding:"22px 20px 32px",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}} onClick={e=>e.stopPropagation()}>
         <div style={{width:32,height:4,borderRadius:99,background:C.border,margin:"0 auto 18px"}}/>
-        <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:24,fontWeight:900,color:C.ink}}>{doc.title}</div>
+        <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:24,fontWeight:900,color:C.ink}}>{doc.title}</h2>
         <div style={{fontSize:12,color:C.muted,marginTop:4,marginBottom:18}}>עודכן לאחרונה: {LEGAL_UPDATED}</div>
         {doc.sections.map(([h,t])=>(
           <div key={h} style={{marginBottom:16}}>
@@ -1201,7 +1252,7 @@ export default function App() {
     } catch { return null; }
   });
   // pageturner.co.il/privacy ו-/terms פותחים ישירות את המסמך (קישור קבוע עבור Google ואחרים)
-  const [legal, setLegal] = useState(() => window.location.pathname.match(/^\/(privacy|terms)\/?$/)?.[1] || null);
+  const [legal, setLegal] = useState(() => window.location.pathname.match(/^\/(privacy|terms|accessibility)\/?$/)?.[1] || null);
   const [regPrefill, setRegPrefill] = useState(null);
   const [showContact, setShowContact] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1475,11 +1526,11 @@ export default function App() {
   };
 
   // ── screens ──────────────────────────────────────────────
-  const legalSheet = legal && <LegalSheet kind={legal} onClose={()=>{setLegal(null);if(/^\/(privacy|terms)/.test(window.location.pathname))window.history.replaceState(null,"","/");}}/>;
+  const legalSheet = legal && <LegalSheet kind={legal} onClose={()=>{setLegal(null);if(/^\/(privacy|terms|accessibility)/.test(window.location.pathname))window.history.replaceState(null,"","/");}}/>;
   if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>{navigate("/");setScreen(user?"app":"splash");}}/></>
-  if (screen === "splash") return <><style>{CSS}</style><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onShowLegal={setLegal}/>{legalSheet}<Toast t={toast}/></>;
-  if (screen === "login") return <><style>{CSS}</style><Login onBack={()=>setScreen("splash")} onDone={(u,t)=>handleAuth(u,t,false)} onRegister={pf=>{setRegPrefill(pf);setScreen("register");}}/><Toast t={toast}/></>;
-  if (screen === "register") return <><style>{CSS}</style><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);setScreen(user?"app":"splash");}} onDone={(u,t)=>handleAuth(u,t,true)} onGooglePrefill={setRegPrefill} onShowLegal={setLegal}/>{legalSheet}</>;
+  if (screen === "splash") return <><style>{CSS}</style><main><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onShowLegal={setLegal}/></main>{legalSheet}<Toast t={toast}/></>;
+  if (screen === "login") return <><style>{CSS}</style><main><Login onBack={()=>setScreen("splash")} onDone={(u,t)=>handleAuth(u,t,false)} onRegister={pf=>{setRegPrefill(pf);setScreen("register");}}/></main><Toast t={toast}/></>;
+  if (screen === "register") return <><style>{CSS}</style><main><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);setScreen(user?"app":"splash");}} onDone={(u,t)=>handleAuth(u,t,true)} onGooglePrefill={setRegPrefill} onShowLegal={setLegal}/></main>{legalSheet}</>;
 
   const TABS = [["search","home","גילוי"],["add","plus","הוספה"],["profile","user","פרופיל"]];
   const greet = (()=>{const h=new Date().getHours();return h>=5&&h<12?"בוקר טוב":h<17?"צהריים טובים":h<21?"ערב טוב":"לילה טוב";})();
@@ -1560,7 +1611,8 @@ export default function App() {
         )}
       </header>
 
-      <main style={{flex:1,padding:"0 16px 24px",width:"100%",maxWidth:900,margin:"0 auto"}}>
+      <main id="main" tabIndex={-1} style={{flex:1,padding:"0 16px 24px",width:"100%",maxWidth:900,margin:"0 auto",outline:"none"}}>
+        <h1 className="sr-only">{tab==="add"?"הוספת ספר":tab==="profile"?"הפרופיל שלי":"גילוי ספרים בשכונה"}</h1>
 
         {tab === "search" && <>
           {/* סינון לפי סוג עסקה */}
@@ -1744,7 +1796,7 @@ export default function App() {
           <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",direction:"rtl"}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>כמה מילים עלי ✏️</div>
             <div style={{fontSize:12,color:C.muted,marginBottom:12}}>יוצג בפרופיל הציבורי שלך</div>
-            <textarea value={bioText} onChange={e=>setBioText(e.target.value.slice(0,150))} placeholder="" style={{width:"100%",minHeight:80,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"none",direction:"rtl",boxSizing:"border-box"}}/>
+            <textarea aria-label="כמה מילים עלי" value={bioText} onChange={e=>setBioText(e.target.value.slice(0,150))} placeholder="" style={{width:"100%",minHeight:80,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"none",direction:"rtl",boxSizing:"border-box"}}/>
             <div style={{fontSize:11,color:C.muted,textAlign:"left",marginBottom:12}}>{bioText.length}/150</div>
             <div style={{display:"flex",gap:10}}>
               <Btn onClick={async()=>{try{await api.put("/api/users/"+user.id+"/profile",{bio:bioText});const nu={...user,bio:bioText};setUser(nu);session.saveUser(nu);toast_("הפרופיל עודכן ✓");setEditBio(false);}catch(e){toast_(e.message,"err");}}} style={{flex:1}}>שמור</Btn>
@@ -1801,11 +1853,11 @@ export default function App() {
 
       {/* תפריט המבורגר */}
       {menuOpen && (
-        <div style={{position:"fixed",inset:0,zIndex:700,direction:"rtl"}} onClick={()=>setMenuOpen(false)}>
-          <div style={{position:"absolute",top:0,right:0,width:270,height:"100%",background:C.white,boxShadow:"-4px 0 24px rgba(0,0,0,.15)",display:"flex",flexDirection:"column",overflowY:"auto",animation:"slideIn .22s ease"}} onClick={e=>e.stopPropagation()}>
+        <Overlay onClose={()=>setMenuOpen(false)} label="תפריט" outerStyle={{position:"fixed",inset:0,zIndex:700,direction:"rtl"}}
+          panelStyle={{position:"absolute",top:0,right:0,width:270,height:"100%",background:C.white,boxShadow:"-4px 0 24px rgba(0,0,0,.15)",display:"flex",flexDirection:"column",overflowY:"auto",animation:"slideIn .22s ease"}}>
             <div style={{background:HDR,padding:"32px 20px 20px"}}>
-              <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:19,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</div>
-              <div style={{fontSize:12,color:"rgba(255,255,255,.55)",marginTop:4}}>{isGuest?"Pageturner":`שלום, ${user?.name||""}`}</div>
+              <h2 style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:19,fontWeight:900,color:"#fff"}}>ספרייה שכונתית</h2>
+              <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:4}}>{isGuest?"Pageturner":`שלום, ${user?.name||""}`}</div>
             </div>
             <div style={{flex:1,padding:"12px 0"}}>
               {[
@@ -1816,6 +1868,7 @@ export default function App() {
                 {ic:"mail",lb:"צור קשר",ac:()=>{setShowContact(true);setMenuOpen(false);}},
                 {ic:"lock",lb:"מדיניות פרטיות",ac:()=>{setLegal("privacy");setMenuOpen(false);}},
                 {ic:"doc",lb:"תנאי שימוש",ac:()=>{setLegal("terms");setMenuOpen(false);}},
+                {ic:"access",lb:"הצהרת נגישות",ac:()=>{setLegal("accessibility");setMenuOpen(false);}},
               ].map((item,i)=>(
                 <button key={i} onClick={item.ac} style={{width:"100%",padding:"14px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:15,fontWeight:600,color:C.ink,textAlign:"right"}}>
                   <span style={{width:36,height:36,borderRadius:11,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",color:C.ink}}><Icon name={item.ic} size={19}/></span>{item.lb}
@@ -1826,14 +1879,13 @@ export default function App() {
             {!isGuest && <button onClick={logout} style={{padding:"16px 20px",background:"none",border:"none",borderTop:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:C.red,textAlign:"right"}}>
               <Icon name="logout" size={19}/>יציאה
             </button>}
-          </div>
-        </div>
+        </Overlay>
       )}
 
       {/* דף אודות */}
       {showAbout && (
-        <div style={{position:"fixed",inset:0,zIndex:700,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={()=>setShowAbout(false)}>
-          <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"85vh",overflowY:"auto",padding:"24px 20px 40px"}} onClick={e=>e.stopPropagation()}>
+        <Overlay onClose={()=>setShowAbout(false)} label="אודות" outerStyle={{position:"fixed",inset:0,zIndex:700,background:"rgba(14,12,8,.7)",display:"flex",alignItems:"flex-end",direction:"rtl"}}
+          panelStyle={{width:"100%",maxWidth:480,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"85vh",overflowY:"auto",padding:"24px 20px 40px"}}>
             <div style={{width:32,height:4,borderRadius:99,background:C.border,margin:"0 auto 20px"}}/>
             <div style={{fontFamily:"'Frank Ruhl Libre',serif",fontSize:22,fontWeight:900,color:C.ink,marginBottom:6}}>ספרייה שכונתית | Pageturner</div>
             <div style={{fontSize:16,fontWeight:700,color:C.ink,marginTop:20,marginBottom:8}}>הסיפור התחיל עם ספר אחד</div>
@@ -1843,8 +1895,7 @@ export default function App() {
             <div style={{fontSize:16,fontWeight:700,color:C.ink,marginBottom:8}}>הספרייה השכונתית</div>
             <div style={{fontSize:14,color:C.muted,lineHeight:1.8,marginBottom:24}}>כולנו מחזיקים ספרים שסיימנו, ספרים שכנראה לא נקרא, וספרים שמישהו אחר ממש עכשיו מחפש. הספרייה השכונתית הופכת את המדפים הביתיים של השכונה למדף אחד משותף, מקום למכור, להחליף, להשאיל או לתת ספרים לשכנים שלך. ואולי גם להכיר אנשים חדשים בדרך.</div>
             <button onClick={()=>setShowAbout(false)} style={{width:"100%",padding:"13px",borderRadius:12,background:C.ink,color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:"pointer"}}>סגור</button>
-          </div>
-        </div>
+        </Overlay>
       )}
       {pendingContact && !pendingContact.askdeal && (
         <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:600,padding:"0 16px",direction:"rtl"}}>
@@ -1911,11 +1962,12 @@ export default function App() {
 
 
 function Sheet({ title, onClose, children }) {
+  const dref = useDialog(onClose);
   return (
     <div style={{position:"fixed",inset:0,zIndex:850,background:"rgba(14,12,8,.6)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={onClose}>
-      <div role="dialog" aria-label={title} style={{width:"100%",maxWidth:520,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"90vh",overflowY:"auto",padding:"20px 18px 28px",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}} onClick={e=>e.stopPropagation()}>
+      <div ref={dref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} style={{outline:"none",width:"100%",maxWidth:520,margin:"0 auto",background:C.white,borderRadius:"22px 22px 0 0",maxHeight:"90vh",overflowY:"auto",padding:"20px 18px 28px",animation:"sheetUp .28s cubic-bezier(.33,1,.68,1)"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div style={{fontSize:18,fontWeight:800,color:C.ink}}>{title}</div>
+          <h2 style={{fontSize:18,fontWeight:800,color:C.ink}}>{title}</h2>
           <button aria-label="סגירה" onClick={onClose} style={{background:C.bg,border:"none",borderRadius:9,width:32,height:32,cursor:"pointer",fontSize:16}}>✕</button>
         </div>
         {children}
@@ -1980,7 +2032,7 @@ function SettingsSheet({ user, onClose, toast_, onSaved, onDeleted, onShowLegal 
       </label>
       <Btn onClick={save} disabled={saving||!name.trim()} style={{width:"100%",padding:"14px"}}>{saving?"שומר...":"שמירה"}</Btn>
       <div style={{fontSize:12,color:C.muted,textAlign:"center",marginTop:12}}>
-        <button onClick={()=>onShowLegal("privacy")} style={linkBtn}>מדיניות פרטיות</button> · <button onClick={()=>onShowLegal("terms")} style={linkBtn}>תנאי שימוש</button>
+        <button onClick={()=>onShowLegal("privacy")} style={linkBtn}>מדיניות פרטיות</button> · <button onClick={()=>onShowLegal("terms")} style={linkBtn}>תנאי שימוש</button> · <button onClick={()=>onShowLegal("accessibility")} style={linkBtn}>הצהרת נגישות</button>
       </div>
       <div style={{marginTop:22,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
         <div style={{fontSize:14,fontWeight:700,color:C.red,marginBottom:6}}>מחיקת חשבון</div>
@@ -2156,6 +2208,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   const [expanded, setExpanded] = useState(false);
   const [showPhoto, setShowPhoto] = useState(false);
   const scrollRef = useRef(null);
+  const dref = useDialog(onClose);
   const isOwner = !!user?.id && String(book.ownerid)===String(user?.id);
   const canContact = book.avail && !isGuest && !!user?.id && !isOwner;
   const src = book.thumbnail || book.frontimg;
@@ -2201,7 +2254,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(14,12,8,.55)",display:"flex",alignItems:"flex-end",direction:"rtl"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div role="dialog" aria-label={book.title} style={{width:"100%",maxWidth:560,margin:"0 auto",background:"#fff",borderRadius:"26px 26px 0 0",height:"94vh",display:"flex",flexDirection:"column",overflow:"hidden",animation:"sheetUp .32s cubic-bezier(.2,.9,.3,1)"}}>
+      <div ref={dref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={book.title} style={{outline:"none",width:"100%",maxWidth:560,margin:"0 auto",background:"#fff",borderRadius:"26px 26px 0 0",height:"94vh",display:"flex",flexDirection:"column",overflow:"hidden",animation:"sheetUp .32s cubic-bezier(.2,.9,.3,1)"}}>
         <div ref={scrollRef} style={{flex:1,overflowY:"auto",overscrollBehavior:"contain"}}>
           {/* כריכה */}
           <div style={{position:"relative",padding:"18px 18px 22px",background:src?"#1E2D3D":`linear-gradient(160deg, ${color}, #1E2D3D)`,overflow:"hidden"}}>
@@ -2303,7 +2356,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
                 : phone
                   ? <>
                       <a href={`https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" onClick={()=>recordContact("whatsapp")} className="press"
-                        style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:9,padding:"14px",borderRadius:14,background:"#22B35E",color:"#fff",textDecoration:"none",fontSize:15.5,fontWeight:700,boxShadow:"0 6px 16px rgba(34,179,94,.3)"}}>
+                        style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:9,padding:"14px",borderRadius:14,background:"#15803D",color:"#fff",textDecoration:"none",fontSize:15.5,fontWeight:700,boxShadow:"0 6px 16px rgba(34,179,94,.3)"}}>
                         <WhatsAppGlyph size={20}/>הודעה בוואטסאפ
                       </a>
                       <a href={`tel:${phone}`} aria-label="שיחת טלפון" onClick={()=>recordContact("phone")} className="press"
