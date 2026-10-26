@@ -87,10 +87,10 @@ const HEAD = "'Playpen Sans Hebrew','Rubik',sans-serif";
 const SPINES = ["#2F4858","#6B8F47","#B5653A","#8C3B4A","#3D6A8C","#C9A14A","#5B4B8A","#2E7D6B"];
 // כל סוג עסקה בצבע מלא ושונה, כדי שהעין תסנן מהר (ניגודיות AA עם טקסט לבן)
 const MODES = {
-  sell:  { label:"מכירה",  icon:"tag",  bg:"#FBF1DF", fg:"#9A4A0B", solid:"#B45309" },
-  lend:  { label:"השאלה",  icon:"loop", bg:"#E8EEF7", fg:"#1D4ED8", solid:"#1D4ED8" },
-  swap:  { label:"החלפה",  icon:"swap", bg:"#F1ECFD", fg:"#6D28D9", solid:"#7C3AED" },
-  give:  { label:"מסירה",  icon:"gift", bg:"#EAF5EE", fg:"#166534", solid:"#15803D" },
+  sell:  { label:"מכירה",  icon:"tag",  bg:"#FDE6C8", fg:"#9A4A0B", solid:"#B45309" },
+  lend:  { label:"השאלה",  icon:"loop", bg:"#DCE6FC", fg:"#1D4ED8", solid:"#1D4ED8" },
+  swap:  { label:"החלפה",  icon:"swap", bg:"#ECE2FE", fg:"#6D28D9", solid:"#7C3AED" },
+  give:  { label:"מסירה",  icon:"gift", bg:"#D8F0E0", fg:"#166534", solid:"#15803D" },
 };
 const GENRES = [
   ["ספרות ורומנים","novel","#E9E2F5"], ["מתח","mask","#E3E8EF"], ["מדע בדיוני ופנטזיה","rocket","#E2EEF4"],
@@ -1625,8 +1625,9 @@ export default function App() {
               return (
                 <button key={k} className="press" onClick={()=>setModeFilter(k)} aria-pressed={on}
                   style={{display:"flex",alignItems:"center",gap:6,padding:"9px 15px",borderRadius:99,fontSize:14,fontWeight:on?700:500,cursor:"pointer",whiteSpace:"nowrap",
-                    border:"1.5px solid "+(on?(MODES[k]?.solid||C.ink):C.border),background:on?(MODES[k]?.solid||C.ink):"#fff",color:on?"#fff":C.ink,transition:"background .15s,color .15s"}}>
-                  <Icon name={ic} size={16} stroke={2} color={on?"#fff":(MODES[k]?.solid||C.ink)}/>{l}
+                    border:"1.5px solid "+(MODES[k]?(on?MODES[k].solid:MODES[k].solid+"55"):(on?C.ink:C.border)),
+                    background:on?(MODES[k]?.solid||C.ink):(MODES[k]?.bg||"#fff"),color:on?"#fff":(MODES[k]?.fg||C.ink),transition:"background .15s,color .15s"}}>
+                  <Icon name={ic} size={16} stroke={2} color={on?"#fff":(MODES[k]?.fg||C.ink)}/>{l}
                 </button>
               );
             })}
