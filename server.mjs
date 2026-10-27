@@ -42,6 +42,7 @@ app.use(express.json({ limit: "2mb" }));
 
 // ── עזרים ─────────────────────────────────────────────────
 const sha256 = s => createHash("sha256").update(String(s)).digest("hex");
+const emailKey = e => sha256("funnel:" + e).slice(0, 12);
 const normEmail = e => String(e || "").trim().toLowerCase();
 const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const clip = (s, n) => String(s ?? "").slice(0, n);
@@ -1345,6 +1346,7 @@ app.post("/api/auth/send-otp", limit("otp-send", 40, 15 * 60 * 1000), async (req
       <div style="font-size:36px;font-weight:900;letter-spacing:8px;color:#1E2D3D;padding:16px;background:#f0f4ec;border-radius:12px;text-align:center">${code}</div>
       <p style="color:#888;font-size:12px">הקוד תקף ל-10 דקות. אם לא ביקשת קוד, אפשר להתעלם מההודעה.</p>
     </div>`);
+    track("otp_sent", null, { ctx: req.body.ctx === "signup" ? "signup" : "login", eh: emailKey(email) });
     res.json({ ok: true });
   } catch (e) {
     console.error("OTP send:", e.message);
@@ -1363,6 +1365,7 @@ app.post("/api/auth/verify-otp", limit("otp-verify", 80, 15 * 60 * 1000), async 
     if (row.attempts >= 5) return res.status(429).json({ error: "יותר מדי ניסיונות. בקשו קוד חדש" });
     if (!safeEqual(row.codehash, sha256(email + ":" + code))) {
       await pool.query("UPDATE otps SET attempts=attempts+1 WHERE email=$1", [email]);
+      track("otp_bad", null, { eh: emailKey(email) });
       return res.status(400).json({ error: "הקוד שגוי" });
     }
     const existing = (await pool.query("SELECT * FROM users WHERE email=$1", [email])).rows[0];
@@ -1375,6 +1378,7 @@ app.post("/api/auth/verify-otp", limit("otp-verify", 80, 15 * 60 * 1000), async 
     // משתמש חדש: כרטיס הרשמה חד-פעמי שתקף ל-30 דקות
     const ticket = randomBytes(24).toString("base64url");
     await pool.query("UPDATE otps SET codehash=NULL, tickethash=$2, ticketexpires=$3, ticketvia='email' WHERE email=$1", [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
+    track("otp_ok", null, { eh: emailKey(email) });
     res.json({ ok: true, user: null, isNew: true, ticket });
   } catch (e) { console.error("OTP verify:", e.message); res.status(500).json({ error: "שגיאה באימות, נסו שוב" }); }
 });
@@ -1426,6 +1430,7 @@ app.post("/api/auth/google", limit("google", 60, 15 * 60 * 1000), async (req, re
       `INSERT INTO otps (email, tickethash, ticketexpires, ticketvia) VALUES ($1,$2,$3,'google')
        ON CONFLICT (email) DO UPDATE SET tickethash=$2, ticketexpires=$3, ticketvia='google'`,
       [email, sha256(ticket), Date.now() + 30 * 60 * 1000]);
+    track("google_new", null, { eh: emailKey(email) });
     res.json({ ok: true, user: null, isNew: true, ticket, email, name: clip(g.name || "", 80) });
   } catch (e) { console.error("google login:", e.message); res.status(500).json({ error: "שגיאה בכניסה, נסו שוב" }); }
 });
@@ -1436,11 +1441,10 @@ app.post("/api/users/register", limit("register", 40, 60 * 60 * 1000), async (re
   const email = normEmail(req.body.email);
   const miss = [];
   if (!name?.trim()) miss.push("שם");
-  if (!phone?.trim()) miss.push("טלפון");
   if (!email) miss.push("אימייל");
   if (miss.length) return res.status(400).json({ error: `שדות חסרים: ${miss.join(", ")}`, missing: miss });
-  const phoneDigits = phone.replace(/[^\d+]/g, "");
-  if (!/^(\+972|0)\d{8,9}$/.test(phoneDigits)) return res.status(400).json({ error: "מספר הטלפון לא תקין" });
+  const phoneDigits = String(phone || "").replace(/[^\d+]/g, "");
+  if (phoneDigits && !/^(\+972|0)\d{8,9}$/.test(phoneDigits)) return res.status(400).json({ error: "מספר הטלפון לא תקין" });
   try {
     const row = (await pool.query("SELECT tickethash, ticketexpires, ticketvia FROM otps WHERE email=$1", [email])).rows[0];
     if (!ticket || !row?.tickethash || Date.now() > Number(row.ticketexpires) || !safeEqual(row.tickethash, sha256(ticket)))
@@ -1454,11 +1458,11 @@ app.post("/api/users/register", limit("register", 40, 60 * 60 * 1000), async (re
       await pool.query(
         `INSERT INTO users (id,name,phone,email,type,storeName,address,storeType,lat,lng,plan,xp,chatCount,bookCount,createdAt,email_consent)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'free',0,0,0,$11,$12)`,
-        [id, clip(name.trim(), 80), phoneDigits, email, type === "store" ? "store" : "private",
+        [id, clip(name.trim(), 80), phoneDigits || null, email, type === "store" ? "store" : "private",
          clip(storeName, 120), clip(address, 200), clip(storeType, 60), lat, lng, Date.now(), !!emailConsent]
       );
       user = (await pool.query("SELECT * FROM users WHERE id=$1", [id])).rows[0];
-      track("register", id, { type: user.type, method: row.ticketvia || "email", src: clip(req.body.src, 40) || undefined });
+      track("register", id, { type: user.type, method: row.ticketvia || "email", phone: !!phoneDigits, src: clip(req.body.src, 40) || undefined });
     }
     await pool.query("UPDATE otps SET tickethash=NULL WHERE email=$1", [email]);
     const token = await createSession(user.id);
@@ -1472,16 +1476,21 @@ app.get("/api/me", requireAuth, (req, res) => res.json({ ok: true, user: private
 app.put("/api/me", requireAuth, async (req, res) => {
   const { name, phone, emailConsent } = req.body;
   try {
-    let phoneDigits = req.user.phone;
+    let phoneDigits = req.user.phone || null;
     if (phone !== undefined) {
-      phoneDigits = String(phone).replace(/[^\d+]/g, "");
-      if (!/^(\+972|0)\d{8,9}$/.test(phoneDigits)) return res.status(400).json({ error: "מספר הטלפון לא תקין" });
+      phoneDigits = String(phone).replace(/[^\d+]/g, "") || null;
+      if (phoneDigits && !/^(\+972|0)\d{8,9}$/.test(phoneDigits)) return res.status(400).json({ error: "מספר הטלפון לא תקין" });
+      if (!phoneDigits && req.user.phone) {
+        const n = Number((await pool.query("SELECT COUNT(*) n FROM books WHERE ownerid=$1 AND avail=true", [req.user.id])).rows[0].n);
+        if (n > 0) return res.status(400).json({ error: "יש לך ספרים על המדף, ושכנים צריכים דרך לפנות אליך. אפשר להחליף את המספר, אבל לא למחוק אותו" });
+      }
     }
+    if (phoneDigits && !req.user.phone) track("phone_added", req.user.id, { at: ["publish", "profile"].includes(req.body.at) ? req.body.at : "settings" });
     const newName = name?.trim() ? clip(name.trim(), 80) : req.user.name;
     await pool.query("UPDATE users SET name=$1, phone=$2, email_consent=$3 WHERE id=$4",
       [newName, phoneDigits, emailConsent !== undefined ? !!emailConsent : req.user.email_consent, req.user.id]);
     if (newName !== req.user.name && !req.user.storename) await pool.query("UPDATE books SET ownername=$1 WHERE ownerid=$2", [newName, req.user.id]);
-    if (phoneDigits !== req.user.phone) await pool.query("UPDATE books SET phone=$1 WHERE ownerid=$2", [phoneDigits, req.user.id]);
+    if ((phoneDigits || "") !== (req.user.phone || "")) await pool.query("UPDATE books SET phone=$1 WHERE ownerid=$2", [phoneDigits || "", req.user.id]);
     const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
     res.json({ ok: true, user: privateUser(req, user) });
   } catch (e) { console.error("update me:", e.message); res.status(500).json({ error: "העדכון נכשל" }); }
@@ -1656,7 +1665,7 @@ app.post("/api/feedback", limit("feedback", 5, 60 * 60 * 1000), async (req, res)
 });
 
 // ── אנליטיקס ─────────────────────────────────────────────
-const CLIENT_EVENTS = new Set(["search", "book_view", "page_load", "guest_login", "book_contact", "share", "visit", "signup_start", "add_start", "pwa_install"]);
+const CLIENT_EVENTS = new Set(["search", "book_view", "page_load", "guest_login", "book_contact", "share", "visit", "signup_start", "signup_submit", "signup_invalid", "signup_back", "add_start", "pwa_install"]);
 app.post("/api/analytics", limit("analytics", 120, 60 * 1000), async (req, res) => {
   const { event, data } = req.body;
   if (!CLIENT_EVENTS.has(event)) return res.status(400).json({ error: "event לא מוכר" });
@@ -1718,7 +1727,8 @@ async function israelDay(offsetDays = 0) {
 }
 const STAT_FIELDS = [
   ["visitors", "מבקרים ייחודיים"], ["new_visitors", "מבקרים חדשים"], ["visits", "כניסות"], ["app_visits", "כניסות מהאפליקציה המותקנת"],
-  ["signup_starts", "התחילו הרשמה"], ["signups", "נרשמו"], ["signups_google", "נרשמו עם Google"], ["active_users", "משתמשים פעילים"], ["guests", "כניסות כאורח"],
+  ["signup_starts", "התחילו הרשמה"], ["signup_submits", "לחצו המשך בטופס"], ["signup_invalid", "נתקעו על שגיאה בטופס"], ["otp_sent", "קיבלו קוד הרשמה"],
+  ["otp_ok", "אימתו קוד"], ["otp_bad", "הזינו קוד שגוי"], ["google_new", "התחילו עם Google"], ["signups", "נרשמו"], ["signups_no_phone", "נרשמו בלי טלפון"], ["phone_added", "הוסיפו טלפון אחר כך"], ["signups_google", "נרשמו עם Google"], ["active_users", "משתמשים פעילים"], ["guests", "כניסות כאורח"],
   ["books_new", "ספרים חדשים"], ["new_publishers", "מפרסמים חדשים"], ["book_views", "צפיות בספרים"], ["searches", "חיפושים"], ["zero_searches", "חיפושים בלי תוצאות"],
   ["contacts", "פניות למפרסמים"], ["deals", "עסקאות שנסגרו"], ["shares", "שיתופים"], ["wishlist_adds", "משאלות חדשות"], ["pwa_installs", "התקנות לטלפון"],
   ["scans", "סריקות כריכה"], ["image_rejected", "תמונות שנחסמו"], ["books_blocked", "ספרים אסורים שנחסמו"], ["reports", "דיווחים על מודעות"], ["hidden", "מודעות שהוסתרו"],
@@ -1747,8 +1757,14 @@ async function computeStats(a, b) {
     one("SELECT COUNT(*) n FROM users WHERE createdat<$2 AND $1::bigint IS NOT NULL"),
     one("SELECT COUNT(*) n FROM books WHERE createdat<$2 AND avail=true AND NOT COALESCE(hidden,false) AND $1::bigint IS NOT NULL"),
   ]);
+  const dv = e => one(`SELECT COUNT(DISTINCT COALESCE(data->>'vid', id)) n FROM analytics WHERE event='${e}' AND createdat>=$1 AND createdat<$2`);
+  const de = (e, extra = "") => one(`SELECT COUNT(DISTINCT COALESCE(data->>'eh', id)) n FROM analytics WHERE event='${e}' ${extra} AND createdat>=$1 AND createdat<$2`);
+  const [signupSubmits, signupInvalid, otpSent, otpOk, otpBad, googleNew, noPhone, phoneAdded] = await Promise.all([
+    dv("signup_submit"), dv("signup_invalid"), de("otp_sent", "AND data->>'ctx'='signup'"), de("otp_ok"), ev("otp_bad"), de("google_new"),
+    one("SELECT COUNT(*) n FROM analytics WHERE event='register' AND data->>'phone'='false' AND createdat>=$1 AND createdat<$2"), ev("phone_added"),
+  ]);
   const list = async (sql, p) => (await q(sql, p)).map(r => ({ k: r.k, n: Number(r.n) }));
-  const [sources, topSearches, zeroSearches, topViewed, booksByMode, emailKinds, wishTop] = await Promise.all([
+  const [sources, topSearches, zeroSearches, topViewed, booksByMode, emailKinds, wishTop, invalidWhy, backSteps] = await Promise.all([
     list(`SELECT COALESCE(NULLIF(data->>'src',''), CASE WHEN COALESCE(data->>'ref','')<>'' THEN data->>'ref' ELSE 'ישיר / וואטסאפ' END) k, COUNT(DISTINCT data->>'vid') n
           FROM analytics WHERE event='visit' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 10`),
     list("SELECT LOWER(TRIM(data->>'q')) k, COUNT(*) n FROM analytics WHERE event='search' AND COALESCE(data->>'q','')<>'' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 10"),
@@ -1757,12 +1773,15 @@ async function computeStats(a, b) {
     list("SELECT mode k, COUNT(*) n FROM books WHERE createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC"),
     list("SELECT data->>'kind' k, COUNT(*) n FROM analytics WHERE event='email_sent' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC"),
     list("SELECT data->>'q' k, COUNT(*) n FROM analytics WHERE event='wishlist_add' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC LIMIT 5"),
+    list("SELECT COALESCE(data->>'why','?') k, COUNT(*) n FROM analytics WHERE event='signup_invalid' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC"),
+    list("SELECT COALESCE(data->>'step','?') k, COUNT(DISTINCT COALESCE(data->>'vid', id)) n FROM analytics WHERE event='signup_back' AND createdat>=$1 AND createdat<$2 GROUP BY 1 ORDER BY 2 DESC"),
   ]);
   return {
     visitors, new_visitors: newVisitors, visits, app_visits: appVisits, signup_starts: signupStarts, signups, signups_google: signupsGoogle, active_users: active, guests,
+    signup_submits: signupSubmits, signup_invalid: signupInvalid, otp_sent: otpSent, otp_ok: otpOk, otp_bad: otpBad, google_new: googleNew, signups_no_phone: noPhone, phone_added: phoneAdded,
     books_new: booksNew, new_publishers: newPublishers, book_views: views, searches, zero_searches: zero, contacts, deals, shares, wishlist_adds: wish, pwa_installs: installs,
     scans, image_rejected: imgRej, books_blocked: blocked, reports, hidden, emails, users_total: usersTotal, books_total: booksTotal,
-    lists: { sources, topSearches, zeroSearches, topViewed, booksByMode, emailKinds, wishTop },
+    lists: { sources, topSearches, zeroSearches, topViewed, booksByMode, emailKinds, wishTop, invalidWhy, backSteps },
   };
 }
 async function dayStats(day, { fresh = false } = {}) {
@@ -1879,15 +1898,25 @@ async function buildReport(type) {
     <tr>${card("📖", "ספרים חדשים", "books_new")}${card("📱", "פניות למפרסמים", "contacts")}</tr></table>
 
   ${h2("🔻 המשפך: מכניסה ועד פנייה")}
-  ${tbl([
-    ["מבקרים ייחודיים", cur.visitors, ""],
-    ["התחילו הרשמה", cur.signup_starts, pct(cur.signup_starts, cur.visitors)],
-    ["נרשמו", `${cur.signups}${cur.signups_google ? ` (${cur.signups_google} עם Google)` : ""}`, pct(cur.signups, cur.visitors)],
-    ["העלו ספר ראשון", cur.new_publishers, pct(cur.new_publishers, cur.signups)],
-    ["פניות למפרסמים", cur.contacts, ""],
-    ["עסקאות שנסגרו", cur.deals, ""],
-  ], ["שלב", "כמה", "המרה"])}
-  <p style="font-size:12px;color:${C.muted};margin:6px 0 0">המרה = מתוך השלב שמעליו (העלו ספר ראשון: מתוך מי שנרשם).</p>
+  ${(() => {
+    const has = cur.signup_submits !== undefined;
+    const sent = (cur.signup_submits || 0) + (cur.google_new || 0), verified = (cur.otp_ok || 0) + (cur.google_new || 0);
+    const rows = [["מבקרים ייחודיים", cur.visitors, ""], ["פתחו את טופס ההרשמה", cur.signup_starts, pct(cur.signup_starts, cur.visitors)]];
+    if (has) rows.push(["לחצו \"המשך\" או Google", sent, pct(sent, cur.signup_starts)], ["אימתו את המייל", verified, pct(verified, sent)]);
+    rows.push(["נרשמו", `${cur.signups}${cur.signups_google ? ` (${cur.signups_google} עם Google)` : ""}`, pct(cur.signups, has ? verified : cur.signup_starts)],
+      ["העלו ספר ראשון", cur.new_publishers, pct(cur.new_publishers, cur.signups)], ["פניות למפרסמים", cur.contacts, ""], ["עסקאות שנסגרו", cur.deals, ""]);
+    return tbl(rows, ["שלב", "כמה", "המרה"]);
+  })()}
+  <p style="font-size:12px;color:${C.muted};margin:6px 0 0">המרה = מתוך השלב שמעליו.</p>
+  ${(() => {
+    const WHY = { name: "שם חסר", email: "מייל לא תקין", phone: "טלפון לא תקין" }, STEP = { form: "בטופס", otp: "במסך הקוד" };
+    const bits = [];
+    if (L.invalidWhy?.length) bits.push("נתקעו על שגיאה: " + L.invalidWhy.map(x => `${WHY[x.k] || x.k} ${x.n}`).join(", "));
+    if (L.backSteps?.length) bits.push("לחצו חזרה: " + L.backSteps.map(x => `${STEP[x.k] || x.k} ${x.n}`).join(", "));
+    if (cur.otp_bad) bits.push(`קוד שגוי: ${cur.otp_bad}`);
+    if (cur.signups_no_phone || cur.phone_added) bits.push(`נרשמו בלי טלפון: ${cur.signups_no_phone || 0} · הוסיפו טלפון אחר כך: ${cur.phone_added || 0}`);
+    return bits.length ? `<p style="font-size:13px;color:${C.ink};margin:8px 0 0;line-height:1.7">${bits.join("<br>")}</p>` : "";
+  })()}
 
   ${h2("📣 מאיפה הגיעו")}
   ${listTbl(L.sources, "אין נתונים עדיין.", " מבקרים")}

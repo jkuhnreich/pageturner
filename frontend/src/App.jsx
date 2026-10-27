@@ -546,7 +546,9 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile, badge }) {
 }
 
 // ── מסך הוספת ספר ──────────────────────────────────────────
-function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
+function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
+  const needPhone = !user?.phone;
+  const [newPhone, setNewPhone] = useState("");
   const [step, setStep] = useState("gps"); // gps | choose | camera | manual
   const [gpsGranted, setGpsGranted] = useState(false);
   const [fp, setFp] = useState(null);  // front preview URL
@@ -666,8 +668,14 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
   const save = async () => {
     if (!form.title.trim()) return toast_("שם ספר הוא שדה חובה", "warn");
     if (!form.author.trim()) return toast_("שם המחבר הוא שדה חובה", "warn");
+    const phoneClean = newPhone.replace(/[^\d+]/g,"");
+    if (needPhone && !/^(\+972|0)\d{8,9}$/.test(phoneClean)) return toast_(phoneClean ? "מספר הטלפון לא תקין" : "נשאר רק מספר טלפון, כדי שמי שמתעניין בספר יוכל לפנות אליך", "warn");
     setSaving(true);
     try {
+      if (needPhone) {
+        const d = await api.put("/api/me", { phone: phoneClean, at: "publish" });
+        onUserUpdate?.(d.user);
+      }
       const location = await getCoords();
       const fd = new FormData();
       Object.entries(form).forEach(([k,v]) => { if(v) fd.append(k, String(v)); });
@@ -712,6 +720,11 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone }) {
           if (!form.thumbnail) setFp(URL.createObjectURL(file));
         }}/>
       </div>
+      {needPhone && <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 12px 2px",marginBottom:14}}>
+        <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:4}}>איך יפנו אליך?</div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:10}}>המספר נשמר בפרופיל שלך ומוצג רק למשתמשים רשומים שמתעניינים בספר</div>
+        <Inp label="טלפון" required value={newPhone} onChange={e=>setNewPhone(e.target.value)} placeholder="050-0000000" inputMode="tel" type="tel" icon="phone" autoComplete="tel"/>
+      </div>}
       <div style={{display:"flex",gap:10}}>
         <Btn variant="outline" onClick={()=>setPreview(false)} style={{flex:1,padding:"14px",borderRadius:14}}>עריכה</Btn>
         <Btn variant="accent" onClick={save} disabled={saving} style={{flex:2,padding:"14px",borderRadius:14,fontSize:15}}>
@@ -935,7 +948,7 @@ function Login({ onBack, onDone, onRegister }) {
     if (!email.trim()) return setErr("הכנס כתובת מייל");
     setLoading(true); setErr(""); setInfo("");
     try {
-      await api.post("/api/auth/send-otp", { email });
+      await api.post("/api/auth/send-otp", { email, ctx: "login" });
       setStep("code"); setCode("");
       setInfo("הקוד נשלח. כדאי לבדוק גם בתיקיית הספאם");
     } catch(e) { setErr(e.message); }
@@ -989,8 +1002,12 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
   const [err, setErr] = useState("");
   const [ticket, setTicket] = useState(prefill?.ticket || null);
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
-  const phoneOk = /^(\+972|0)\d{8,9}$/.test(form.phone.replace(/[^\d+]/g,""));
-  const valid = form.name.trim() && phoneOk && /\S+@\S+\.\S+/.test(form.email) && (type!=="store" || (form.storeName && form.address));
+  const phoneClean = form.phone.replace(/[^\d+]/g,"");
+  const phoneOk = !phoneClean || /^(\+972|0)\d{8,9}$/.test(phoneClean);
+  const emailOk = /\S+@\S+\.\S+/.test(form.email);
+  const valid = form.name.trim() && phoneOk && emailOk && (type!=="store" || (form.storeName && form.address));
+  const vid = () => { try { return visitInfo().vid; } catch { return undefined; } };
+  const back = () => { api.track("signup_back", { vid: vid(), step: otpStep ? "otp" : "form" }); onBack(); };
 
   const [otpStep, setOtpStep] = useState(false);
   const [otp, setOtp] = useState("");
@@ -1003,11 +1020,16 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
   };
 
   const submit = async () => {
-    if (!valid) return setErr(!phoneOk && form.phone ? "מספר הטלפון לא תקין" : "יש למלא את כל שדות החובה");
+    if (!otpStep) api.track("signup_submit", { vid: vid(), phone: !!phoneClean });
+    if (!valid) {
+      const why = !form.name.trim() ? "name" : !emailOk ? "email" : !phoneOk ? "phone" : "store";
+      api.track("signup_invalid", { vid: vid(), why });
+      return setErr(why === "name" ? "צריך למלא שם" : why === "email" ? "כתובת המייל לא תקינה" : why === "phone" ? "מספר הטלפון לא תקין. אפשר גם להשאיר ריק" : "יש למלא את כל שדות החובה");
+    }
     setLoading(true); setErr("");
     try {
       if (ticket) { await finish(ticket); return; }
-      await api.post("/api/auth/send-otp", { email: form.email });
+      await api.post("/api/auth/send-otp", { email: form.email, ctx: "signup" });
       setOtpStep(true);
     } catch(e) {
       if (e.code === "verify") { setTicket(null); setErr("צריך לאמת את המייל שוב"); }
@@ -1038,7 +1060,7 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
   return (
     <div style={{minHeight:"100vh",background:C.bg,direction:"rtl"}}>
       <div style={{background:HDR,padding:"22px 18px 22px"}}>
-        {onBack && <button onClick={onBack} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:9,padding:"6px 12px",color:"rgba(255,255,255,.8)",fontSize:13,cursor:"pointer",marginBottom:14}}>→ חזרה</button>}
+        {onBack && <button onClick={back} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:9,padding:"6px 12px",color:"rgba(255,255,255,.8)",fontSize:13,cursor:"pointer",marginBottom:14}}>→ חזרה</button>}
         <h1 style={{fontFamily:HEAD,fontSize:26,fontWeight:700,color:"#fff"}}>
           {otpStep ? "כמעט שם" : type ? "הרשמה" : "מדפדפים לפרק הבא"}
         </h1>
@@ -1087,8 +1109,8 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
               <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"16px",marginBottom:12}}>
                 <div style={{fontSize:12,color:C.muted,marginBottom:14}}>שדות עם * הם חובה</div>
                 <Inp label="שם" required value={form.name}  onChange={upd("name")}  placeholder="השם שלך" icon="user" autoComplete="name"/>
-                <Inp label="טלפון" required value={form.phone} onChange={upd("phone")} placeholder="050-0000000" inputMode="tel" type="tel" icon="phone" autoComplete="tel"/>
-                <div style={{fontSize:11,color:C.muted,marginTop:-8,marginBottom:12}}>מוצג רק למשתמשים רשומים שפונים אליך לגבי ספר</div>
+                <Inp label="טלפון (לא חובה)" value={form.phone} onChange={upd("phone")} placeholder="050-0000000" inputMode="tel" type="tel" icon="phone" autoComplete="tel"/>
+                <div style={{fontSize:11,color:C.muted,marginTop:-8,marginBottom:12}}>אפשר גם בהמשך. צריך אותו רק כשמפרסמים ספר, כדי שמי שמתעניין יוכל לפנות אליך</div>
                 <Inp label="אימייל" required value={form.email} onChange={upd("email")} placeholder="email@example.com" type="email" inputMode="email" icon="mail" autoComplete="email" disabled={!!prefill}/>
                 {type === "store" && <>
                   <div style={{height:1,background:C.border,margin:"12px 0"}}/>
@@ -1101,7 +1123,7 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
                 </label>
               </div>
               {err && <div role="alert" style={{background:C.redL,borderRadius:10,padding:"10px 14px",fontSize:13,color:C.red,marginBottom:12}}>{err}</div>}
-              <Btn onClick={submit} disabled={!valid||loading} style={{width:"100%",padding:"15px",borderRadius:13,fontSize:15}}>
+              <Btn onClick={submit} disabled={loading} style={{width:"100%",padding:"15px",borderRadius:13,fontSize:15}}>
                 {loading ? <><Spinner/> רגע...</> : ticket ? "סיום הרשמה" : type==="store" ? "פתיחת חנות" : "המשך"}
               </Btn>
               <div style={{fontSize:12,color:C.muted,textAlign:"center",marginTop:12,lineHeight:1.6}}>
@@ -1749,7 +1771,7 @@ export default function App() {
                 <div style={{fontSize:13,color:C.muted,marginBottom:16}}>לוקח פחות מדקה, רק קוד במייל</div>
                 <Btn variant="accent" onClick={onGuestAction}>הצטרפות</Btn>
               </div>
-            : <div style={{paddingTop:16}}><AddBook user={user} onDone={b=>{setBooks(p=>[b,...p]);setMyBooks(p=>[b,...p]);goTab("search");}} toast_={toast_} coords={userCoords} onNeedPhone={()=>setShowSettings(true)}/></div>
+            : <div style={{paddingTop:16}}><AddBook user={user} onDone={b=>{setBooks(p=>[b,...p]);setMyBooks(p=>[b,...p]);goTab("search");}} toast_={toast_} coords={userCoords} onNeedPhone={()=>setShowSettings(true)} onUserUpdate={u=>{setUser(u);session.saveUser(u);}}/></div>
         )}
 
         {tab === "profile" && (
@@ -1771,7 +1793,7 @@ export default function App() {
                   {user?.bio
                     ? <button onClick={()=>{setBioText(user.bio);setEditBio(true);}} style={{background:"none",border:"none",fontSize:14,color:C.muted,marginTop:4,cursor:"pointer",lineHeight:1.5}}>{user.bio}</button>
                     : <button onClick={()=>{setBioText("");setEditBio(true);}} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:C.accent,background:"none",border:"none",cursor:"pointer",marginTop:4,fontWeight:600}}><Icon name="pencil" size={14}/>כמה מילים עלי</button>}
-                  {!user?.phone && <div style={{marginTop:10}}><button onClick={()=>setShowSettings(true)} style={{fontSize:13,color:C.red,background:C.redL,border:"none",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontWeight:600}}>הוסיפו טלפון כדי לפרסם ספרים</button></div>}
+                  {!user?.phone && <div style={{marginTop:10}}><button onClick={()=>setShowSettings(true)} style={{fontSize:13,color:C.red,background:C.redL,border:"none",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontWeight:600}}>הוספת טלפון (נדרש כדי לפרסם ספרים)</button></div>}
                   <div style={{display:"flex",justifyContent:"center",gap:0,marginTop:16,borderTop:`1px solid ${C.border}`,paddingTop:14}}>
                     {[["על המדף",shelf.length],["שמורים",favBooks.length],["עברו הלאה",past.length]].map(([l,n],i)=>(
                       <div key={l} style={{flex:1,borderInlineStart:i?`1px solid ${C.border}`:"none"}}>
@@ -2193,7 +2215,7 @@ function AdminPage({ onBack }) {
 
       <div style={box}>
         {h("🔻 משפך: 7 ימים אחרונים")}
-        {[["מבקרים ייחודיים",W.visitors,""],["התחילו הרשמה",W.signup_starts,pct(W.signup_starts,W.visitors)],["נרשמו",W.signups,pct(W.signups,W.visitors)],["העלו ספר ראשון",W.new_publishers,pct(W.new_publishers,W.signups)],["פניות למפרסמים",W.contacts,""],["עסקאות שנסגרו",W.deals,""]].map(([l,v,p],i)=>(
+        {(()=>{const sent=(W.signup_submits||0)+(W.google_new||0),ver=(W.otp_ok||0)+(W.google_new||0);return [["מבקרים ייחודיים",W.visitors,""],["פתחו טופס הרשמה",W.signup_starts,pct(W.signup_starts,W.visitors)],["לחצו המשך או Google",sent,pct(sent,W.signup_starts)],["אימתו את המייל",ver,pct(ver,sent)],["נרשמו",W.signups,pct(W.signups,ver)],["העלו ספר ראשון",W.new_publishers,pct(W.new_publishers,W.signups)],["פניות למפרסמים",W.contacts,""],["עסקאות שנסגרו",W.deals,""]];})().map(([l,v,p],i)=>(
           <div key={l} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",fontSize:13}}>
             <span style={{flex:1}}>{l}</span>
             <div style={{flex:2,height:10,background:"rgba(255,255,255,.08)",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${W.visitors?Math.min(100,v/W.visitors*100):0}%`,background:"#6a9444"}}/></div>
