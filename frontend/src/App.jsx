@@ -637,6 +637,11 @@ function CropSheet({ file, onDone, onClose }) {
     c.toBlob(b => { setBusy(false); if (b) onDone(new File([b], "crop.jpg", { type: "image/jpeg" })); }, "image/jpeg", 0.92);
   };
 
+  useEffect(() => {
+    const k = e => { if (e.key === "Escape") onClose(); else if (e.key === "Enter") finish(false); };
+    document.addEventListener("keydown", k);
+    return () => document.removeEventListener("keydown", k);
+  });
   const pct = v => `${v * 100}%`;
   const handle = (mode, left, top) => (
     <div key={mode} onPointerDown={start(mode)} aria-hidden="true"
@@ -666,7 +671,7 @@ function CropSheet({ file, onDone, onClose }) {
           {handle("br", pct(rect.x + rect.w), pct(rect.y + rect.h))}
         </div>
       </div>
-      <div style={{padding:"10px 16px calc(16px + env(safe-area-inset-bottom))",display:"flex",gap:10}}>
+      <div style={{padding:"10px 16px calc(16px + env(safe-area-inset-bottom))",display:"flex",gap:10,width:"100%",maxWidth:560,margin:"0 auto"}}>
         <button onClick={()=>finish(true)} disabled={busy} style={{flex:1,padding:"14px",borderRadius:14,border:"1.5px solid rgba(255,255,255,.5)",background:"transparent",color:"#fff",fontSize:14.5,fontWeight:700,cursor:"pointer"}}>כל התמונה</button>
         <button onClick={()=>finish(false)} disabled={busy} style={{flex:2,padding:"14px",borderRadius:14,border:"none",background:C.accent,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
           <Icon name="check" size={18} stroke={2.4}/>אישור
@@ -681,15 +686,18 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile, badge }) {
   const camRef = useRef(), galRef = useRef();
   const [cam, setCam] = useState(false);
   const [cropFile, setCropFile] = useState(null);
-  const handle = e => { if (e.target.files[0]) { onFile(e.target.files[0]); e.target.value = ""; } };
-  // מהגלריה: קודם חיתוך, כי בתמונה יכולים להיות כמה ספרים
+  // תמונה מקובץ (גלריה, מחשב, או מצלמה בלי מסגרת): קודם חיתוך, כי בתמונה יכולים להיות כמה ספרים
   const handleGallery = e => { const f = e.target.files[0]; e.target.value = ""; if (f) setCropFile(f); };
+  // במחשב: אפשר גם לגרור תמונה לתוך המשבצת
+  const [over, setOver] = useState(false);
+  const onDrop = e => { e.preventDefault(); setOver(false); const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith("image/")); if (f) setCropFile(f); };
   const openCam = () => canLiveCamera() ? setCam(true) : camRef.current.click();
   const pill = {display:"inline-flex",alignItems:"center",gap:4,fontSize:12,fontWeight:700,padding:"6px 10px",borderRadius:9,cursor:"pointer",border:"none"};
   return (
-    <div style={{flex:1,border:`2px dashed ${preview?C.accent:C.border}`,borderRadius:16,minHeight:170,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:preview?C.tealL:C.white,overflow:"hidden",position:"relative"}}>
+    <div onDragOver={e=>{e.preventDefault();setOver(true);}} onDragLeave={()=>setOver(false)} onDrop={onDrop}
+      style={{flex:1,border:`2px dashed ${preview||over?C.accent:C.border}`,borderRadius:16,minHeight:170,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:preview||over?C.tealL:C.white,overflow:"hidden",position:"relative"}}>
       {cam && <CameraSheet mode="cover" onClose={()=>setCam(false)} onFallback={()=>{setCam(false);camRef.current.click();}} onCapture={f=>{setCam(false);onFile(f);}}/>}
-      <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handle}/>
+      <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleGallery}/>
       <input ref={galRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleGallery}/>
       {cropFile && <CropSheet file={cropFile} onClose={()=>setCropFile(null)} onDone={f=>{setCropFile(null);onFile(f);}}/>}
       {loading
