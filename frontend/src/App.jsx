@@ -96,9 +96,12 @@ const GENRES = [
   ["ספרות ורומנים","novel","#E9E2F5"], ["מתח","mask","#E3E8EF"], ["מדע בדיוני ופנטזיה","rocket","#E2EEF4"],
   ["אהבה ורומנטיקה","heart","#F7E4E6"], ["היסטוריה","column","#F2EADB"], ["ביוגרפיה","quill","#EDE6DD"],
   ["מדע ופילוסופיה","atom","#E3EFEA"], ["פיתוח אישי","sprout","#EAF2DF"], ["עסקים וכלכלה","chart","#E6ECF4"],
-  ["ילדים ונוער","kite","#FBEBD8"], ["בישול ואפייה","pot","#F6E6DA"], ["שירה","feather","#ECE7F3"],
-  ["יהדות ורוחניות","candle","#F5EFD9"], ["אחר","dots","#ECEAE4"],
+  ["ילדים ונוער","kite","#FBEBD8"], ["ספרי פעוטות","blocks","#FCE8EC"], ["בישול ואפייה","pot","#F6E6DA"], ["שירה","feather","#ECE7F3"],
+  ["יהדות ורוחניות","candle","#F5EFD9"], ["אנציקלופדיות וספרי לימוד","volumes","#E4ECF2"], ["ספרי טיולים ואטלסים","map","#E2F0EC"],
+  ["אחר","dots","#ECEAE4"],
 ];
+// סוגה שבה מציעים סט כרכים (אנציקלופדיה וכדומה)
+const SET_GENRE = "אנציקלופדיות וספרי לימוד";
 const hashColor = id => { let h = 0; for (const ch of String(id||"")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return SPINES[h % SPINES.length]; };
 
 const CSS = `
@@ -188,6 +191,9 @@ const ICONS = {
   pot: <><path d="M4 10h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M2.5 10h19M9 6.5c0-1 1-1.5 1-2.5M13.5 6.5c0-1 1-1.5 1-2.5"/></>,
   feather: <><path d="M20 4c-8 0-13 5-13 12v4"/><path d="M7 16c5.5 0 10-3 12-9"/><path d="M10 12.5h5"/></>,
   candle: <><rect x="8.5" y="10" width="7" height="10" rx="1"/><path d="M12 10V8"/><path d="M12 3.5c1.5 1.5 1.5 3 0 4-1.5-1-1.5-2.5 0-4z"/></>,
+  volumes: <><rect x="3.5" y="4" width="4.5" height="16" rx=".7"/><rect x="9.75" y="4" width="4.5" height="16" rx=".7"/><rect x="16" y="4" width="4.5" height="16" rx=".7"/><path d="M3.5 8h4.5M9.75 8h4.5M16 8h4.5M3.5 16h4.5M9.75 16h4.5M16 16h4.5"/></>,
+  map: <><path d="M3.5 6.5l5-2 7 2 5-2v13l-5 2-7-2-5 2z"/><path d="M8.5 4.5v13M15.5 6.5v13"/></>,
+  blocks: <><rect x="3.5" y="12.5" width="7.5" height="7.5" rx="1.2"/><rect x="13" y="12.5" width="7.5" height="7.5" rx="1.2"/><rect x="8.25" y="4" width="7.5" height="7.5" rx="1.2"/><path d="M12 6.2v3.1M10.4 7.75h3.2"/></>,
   dots: <><circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/></>,
 };
 function Icon({ name, size = 22, color = "currentColor", stroke = 1.8, fill = "none", style, ...rest }) {
@@ -242,7 +248,81 @@ function HeartButton({ active, onToggle, size = 34, floating, label }) {
   );
 }
 
+
+// ── סט כרכים ───────────────────────────────────────────────
+// מספר עברי בגימטריה (1 → א׳, 15 → ט״ו, 21 → כ״א)
+function hebNum(n) {
+  const H = [[400,"ת"],[300,"ש"],[200,"ר"],[100,"ק"],[90,"צ"],[80,"פ"],[70,"ע"],[60,"ס"],[50,"נ"],[40,"מ"],[30,"ל"],[20,"כ"],[10,"י"],[9,"ט"],[8,"ח"],[7,"ז"],[6,"ו"],[5,"ה"],[4,"ד"],[3,"ג"],[2,"ב"],[1,"א"]];
+  let out = "", r = n;
+  for (const [v, l] of H) { while (r >= v) { if (r === 15 || r === 16) { out += r === 15 ? "טו" : "טז"; r = 0; break; } out += l; r -= v; } }
+  return out.length === 1 ? out + "׳" : out.slice(0, -1) + "״" + out.slice(-1);
+}
+const volLabel = (i, style) => style === "num" ? String(i) : hebNum(i);
+const volList = (arr, style) => arr.map(i => volLabel(i, style)).join(", ");
+const setOf = book => (book?.setinfo && Array.isArray(book.setinfo.have) && book.setinfo.have.length ? book.setinfo : null);
+
+// רשת כרכים: מי שקיים מודגש; אפשר לבחור (onToggle) או רק להציג
+function VolumeGrid({ n, style, have, picked, onToggle, dimMissing }) {
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(44px,1fr))",gap:6}}>
+      {Array.from({length:n},(_,k)=>k+1).map(i=>{
+        const has = have.includes(i), on = picked ? picked.includes(i) : has;
+        const clickable = onToggle && (!dimMissing || has);
+        return (
+          <button key={i} type="button" onClick={clickable?()=>onToggle(i):undefined} disabled={!clickable} aria-pressed={on}
+            aria-label={`כרך ${volLabel(i,style)}${dimMissing&&!has?" (חסר)":""}`}
+            style={{height:40,borderRadius:10,fontSize:14,fontWeight:700,cursor:clickable?"pointer":"default",
+              border:`1.5px solid ${on?C.accent:C.border}`,background:on?C.accent:(dimMissing&&!has?"transparent":C.bg),
+              color:on?"#fff":(dimMissing&&!has?C.faint:C.ink),textDecoration:dimMissing&&!has?"line-through":"none",opacity:dimMissing&&!has?.6:1}}>
+            {volLabel(i,style)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// עורך סט: כמה כרכים בסט, אילו יש, ואיך מוכרים/מוסרים
+function SetEditor({ value, onChange, mode }) {
+  const v = value || { n: 0, have: [], style: "heb", single: false, each: "" };
+  const [nText, setNText] = useState(v.n ? String(v.n) : "");
+  const set = patch => onChange({ ...v, ...patch });
+  const setN = t => {
+    setNText(t);
+    const n = Math.min(120, Math.max(0, parseInt(t, 10) || 0));
+    if (n >= 2) set({ n, have: v.n ? v.have.filter(i => i <= n).concat(Array.from({length:Math.max(0,n-v.n)},(_,k)=>v.n+k+1)) : Array.from({length:n},(_,k)=>k+1) });
+    else set({ n: 0, have: [] });
+  };
+  const toggle = i => set({ have: v.have.includes(i) ? v.have.filter(x=>x!==i) : [...v.have, i].sort((a,b)=>a-b) });
+  const seg = (on) => ({flex:1,padding:"9px 4px",borderRadius:10,border:`1.5px solid ${on?C.accent:C.border}`,background:on?C.tealL:C.bg,color:on?C.accent:C.muted,fontSize:13,fontWeight:700,cursor:"pointer"});
+  return (
+    <div style={{background:C.bg,borderRadius:14,padding:"12px 12px 4px",marginBottom:13}}>
+      <Inp label="כמה כרכים יש בסט המלא?" type="number" inputMode="numeric" value={nText} onChange={e=>setN(e.target.value)} placeholder="לדוגמה 24" icon="volumes"/>
+      {v.n >= 2 && <>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <button type="button" onClick={()=>set({style:"heb"})} style={seg(v.style!=="num")}>א׳ ב׳ ג׳</button>
+          <button type="button" onClick={()=>set({style:"num"})} style={seg(v.style==="num")}><span dir="ltr">1 2 3</span></button>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:600,color:C.muted}}>סמנו את הכרכים שיש לך ({v.have.length} מתוך {v.n})</span>
+          <button type="button" onClick={()=>set({have:v.have.length===v.n?[]:Array.from({length:v.n},(_,k)=>k+1)})} style={{background:"none",border:"none",color:C.accent,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{v.have.length===v.n?"נקה הכל":"סמן הכל"}</button>
+        </div>
+        <VolumeGrid n={v.n} style={v.style} have={v.have} onToggle={toggle}/>
+        <label style={{display:"flex",alignItems:"center",gap:9,margin:"14px 0 10px",fontSize:13.5,fontWeight:600,color:C.ink,cursor:"pointer"}}>
+          <input type="checkbox" checked={!!v.single} onChange={e=>set({single:e.target.checked})} style={{width:18,height:18,accentColor:C.accent}}/>
+          {mode==="sell" ? "אפשר לקנות גם כרכים בודדים" : "אפשר לקחת גם כרכים בודדים"}
+        </label>
+        {v.single && mode==="sell" && <Inp label="מחיר לכרך בודד (₪)" type="number" inputMode="decimal" value={v.each??""} onChange={e=>set({each:e.target.value})} placeholder="לא חובה" icon="tag"/>}
+      </>}
+    </div>
+  );
+}
+// הסט מוכן לשליחה לשרת, או null
+const setPayload = v => v && v.n >= 2 && v.have.length ? { n: v.n, have: v.have, style: v.style, single: !!v.single, each: v.single && Number(v.each) > 0 ? Number(v.each) : null } : null;
+
 function priceLine(book) {
+  const set = setOf(book);
+  if (set && book.mode === "sell" && !book.price && set.each) return `₪${set.each} לכרך`;
   if (book.mode === "sell") return book.price ? `₪${book.price}` : "מחיר בתיאום";
   if (book.mode === "give") return "חינם";
   if (book.mode === "lend") return "להשאלה";
@@ -260,6 +340,7 @@ function BookTile({ book, onOpen, fav, onFav, width, user, showOwner = true }) {
       <div style={{position:"relative",aspectRatio:"2/3",borderRadius:14,boxShadow:"0 6px 16px rgba(30,45,61,.13), 0 1px 2px rgba(30,45,61,.08)",background:"#E7E1D5",opacity:book.avail===false?.55:1,filter:book.avail===false?"grayscale(.7)":"none"}}>
         <Cover book={book} radius={14} titleSize={width?13:15}/>
         <div style={{position:"absolute",top:8,right:8}}><ModeBadge mode={book.mode} small/></div>
+        {setOf(book) && <div style={{position:"absolute",bottom:8,right:8,display:"flex",alignItems:"center",gap:4,padding:"3px 8px",borderRadius:99,background:"rgba(30,45,61,.88)",color:"#fff",fontSize:11,fontWeight:700}}><Icon name="volumes" size={12} stroke={2}/>{setOf(book).have.length} כרכים</div>}
       </div>
       <div style={{padding:"9px 2px 0"}}>
         <div className="clamp2" style={{fontSize:14,fontWeight:700,lineHeight:1.3,color:C.ink}}>{book.title}</div>
@@ -506,18 +587,111 @@ function CameraSheet({ mode = "cover", onCapture, onBarcode, onFallback, onClose
   );
 }
 
+// ── חיתוך תמונה מהגלריה: מסמנים את הספר הרצוי מתוך תמונה עם כמה ספרים ──
+function CropSheet({ file, onDone, onClose }) {
+  const [url, setUrl] = useState(null);
+  const imgRef = useRef(null);
+  const drag = useRef(null);
+  const [rect, setRect] = useState({ x: .08, y: .08, w: .84, h: .84 });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
+  const MIN = .08;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  const start = (mode) => e => {
+    e.preventDefault(); e.stopPropagation();
+    const box = imgRef.current?.getBoundingClientRect();
+    if (!box) return;
+    drag.current = { mode, sx: e.clientX, sy: e.clientY, r: rect, bw: box.width, bh: box.height };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const move = e => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = (e.clientX - d.sx) / d.bw, dy = (e.clientY - d.sy) / d.bh;
+    let { x, y, w, h } = d.r;
+    if (d.mode === "move") {
+      x = clamp(x + dx, 0, 1 - w); y = clamp(y + dy, 0, 1 - h);
+    } else {
+      let x2 = x + w, y2 = y + h;
+      if (d.mode.includes("l")) x = clamp(x + dx, 0, x2 - MIN);
+      if (d.mode.includes("r")) x2 = clamp(x2 + dx, x + MIN, 1);
+      if (d.mode.includes("t")) y = clamp(y + dy, 0, y2 - MIN);
+      if (d.mode.includes("b")) y2 = clamp(y2 + dy, y + MIN, 1);
+      w = x2 - x; h = y2 - y;
+    }
+    setRect({ x, y, w, h });
+  };
+  const end = () => { drag.current = null; };
+
+  const finish = whole => {
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return;
+    setBusy(true);
+    const r = whole ? { x: 0, y: 0, w: 1, h: 1 } : rect;
+    const sx = r.x * img.naturalWidth, sy = r.y * img.naturalHeight, sw = r.w * img.naturalWidth, sh = r.h * img.naturalHeight;
+    const k = Math.min(1, 2000 / Math.max(sw, sh));
+    const c = document.createElement("canvas");
+    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    c.toBlob(b => { setBusy(false); if (b) onDone(new File([b], "crop.jpg", { type: "image/jpeg" })); }, "image/jpeg", 0.92);
+  };
+
+  const pct = v => `${v * 100}%`;
+  const handle = (mode, left, top) => (
+    <div key={mode} onPointerDown={start(mode)} aria-hidden="true"
+      style={{position:"absolute",left,top,width:44,height:44,transform:"translate(-50%,-50%)",display:"flex",alignItems:"center",justifyContent:"center",touchAction:"none",cursor:"grab",zIndex:3}}>
+      <span style={{width:20,height:20,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 6px rgba(0,0,0,.5)",border:`3px solid ${C.accent}`}}/>
+    </div>
+  );
+  return (
+    <div role="dialog" aria-modal="true" aria-label="חיתוך תמונה" style={{position:"fixed",inset:0,zIndex:1000,background:"#111",display:"flex",flexDirection:"column",direction:"rtl"}}>
+      <div style={{padding:"calc(14px + env(safe-area-inset-top)) 16px 10px",display:"flex",alignItems:"center",gap:12,color:"#fff"}}>
+        <button onClick={onClose} aria-label="ביטול" style={{width:40,height:40,borderRadius:"50%",border:"none",background:"rgba(255,255,255,.12)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><Icon name="close" size={20}/></button>
+        <div>
+          <div style={{fontSize:16,fontWeight:700}}>סמנו את הספר</div>
+          <div style={{fontSize:12.5,opacity:.75,marginTop:2}}>גררו את הפינות כך שרק הכריכה הרצויה תהיה בתוך המסגרת</div>
+        </div>
+      </div>
+      <div style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:"14px 22px"}}>
+        <div style={{position:"relative",direction:"ltr",lineHeight:0,touchAction:"none"}} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+          {url && <img ref={imgRef} src={url} alt="" draggable={false} style={{display:"block",maxWidth:"calc(100vw - 44px)",maxHeight:"calc(100dvh - 230px)",userSelect:"none",WebkitUserSelect:"none"}}/>}
+          <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none"}}>
+            <div style={{position:"absolute",left:pct(rect.x),top:pct(rect.y),width:pct(rect.w),height:pct(rect.h),boxShadow:"0 0 0 9999px rgba(0,0,0,.6)",border:"2px solid #fff"}}/>
+          </div>
+          <div onPointerDown={start("move")} style={{position:"absolute",left:pct(rect.x),top:pct(rect.y),width:pct(rect.w),height:pct(rect.h),cursor:"move",touchAction:"none",zIndex:2}}/>
+          {handle("tl", pct(rect.x), pct(rect.y))}
+          {handle("tr", pct(rect.x + rect.w), pct(rect.y))}
+          {handle("bl", pct(rect.x), pct(rect.y + rect.h))}
+          {handle("br", pct(rect.x + rect.w), pct(rect.y + rect.h))}
+        </div>
+      </div>
+      <div style={{padding:"10px 16px calc(16px + env(safe-area-inset-bottom))",display:"flex",gap:10}}>
+        <button onClick={()=>finish(true)} disabled={busy} style={{flex:1,padding:"14px",borderRadius:14,border:"1.5px solid rgba(255,255,255,.5)",background:"transparent",color:"#fff",fontSize:14.5,fontWeight:700,cursor:"pointer"}}>כל התמונה</button>
+        <button onClick={()=>finish(false)} disabled={busy} style={{flex:2,padding:"14px",borderRadius:14,border:"none",background:C.accent,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          <Icon name="check" size={18} stroke={2.4}/>אישור
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // משבצת צילום: מצלמה מובנית (עם מסגרת) או גלריה
 function CoverSlot({ label, sub, icon, preview, loading, onFile, badge }) {
   const camRef = useRef(), galRef = useRef();
   const [cam, setCam] = useState(false);
+  const [cropFile, setCropFile] = useState(null);
   const handle = e => { if (e.target.files[0]) { onFile(e.target.files[0]); e.target.value = ""; } };
+  // מהגלריה: קודם חיתוך, כי בתמונה יכולים להיות כמה ספרים
+  const handleGallery = e => { const f = e.target.files[0]; e.target.value = ""; if (f) setCropFile(f); };
   const openCam = () => canLiveCamera() ? setCam(true) : camRef.current.click();
   const pill = {display:"inline-flex",alignItems:"center",gap:4,fontSize:12,fontWeight:700,padding:"6px 10px",borderRadius:9,cursor:"pointer",border:"none"};
   return (
     <div style={{flex:1,border:`2px dashed ${preview?C.accent:C.border}`,borderRadius:16,minHeight:170,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:preview?C.tealL:C.white,overflow:"hidden",position:"relative"}}>
       {cam && <CameraSheet mode="cover" onClose={()=>setCam(false)} onFallback={()=>{setCam(false);camRef.current.click();}} onCapture={f=>{setCam(false);onFile(f);}}/>}
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handle}/>
-      <input ref={galRef} type="file" accept="image/*" style={{display:"none"}} onChange={handle}/>
+      <input ref={galRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleGallery}/>
+      {cropFile && <CropSheet file={cropFile} onClose={()=>setCropFile(null)} onDone={f=>{setCropFile(null);onFile(f);}}/>}
       {loading
         ? <div style={{textAlign:"center",padding:10}}><Spinner/><div style={{fontSize:12,color:C.muted,marginTop:8,fontWeight:600}}>מזהים את הספר ומיישרים את הכריכה...</div></div>
         : preview
@@ -568,6 +742,9 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
   const copyInputRef = useRef(null);
   const [copyPreview, setCopyPreview] = useState(null);
   const [isbnBusy, setIsbnBusy] = useState(false);
+  const [isSet, setIsSet] = useState(false);
+  const [setVal, setSetVal] = useState(null);
+  const setData = isSet ? setPayload(setVal) : null;
   const upd = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
   // סריקת ברקוד → פרטי הספר והכריכה לפי ISBN
@@ -667,7 +844,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
 
   const save = async () => {
     if (!form.title.trim()) return toast_("שם ספר הוא שדה חובה", "warn");
-    if (!form.author.trim()) return toast_("שם המחבר הוא שדה חובה", "warn");
+    if (!form.author.trim() && !setData) return toast_("שם המחבר הוא שדה חובה", "warn");
     const phoneClean = newPhone.replace(/[^\d+]/g,"");
     if (needPhone && !/^(\+972|0)\d{8,9}$/.test(phoneClean)) return toast_(phoneClean ? "מספר הטלפון לא תקין" : "נשאר רק מספר טלפון, כדי שמי שמתעניין בספר יוכל לפנות אליך", "warn");
     setSaving(true);
@@ -679,6 +856,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
       const location = await getCoords();
       const fd = new FormData();
       Object.entries(form).forEach(([k,v]) => { if(v) fd.append(k, String(v)); });
+      if (setData) fd.append("setInfo", JSON.stringify(setData));
       if (location) { fd.append("lat", location.lat); fd.append("lng", location.lng); }
       if (frontFile) fd.append("frontImage", frontFile);
 
@@ -693,7 +871,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
   };
 
   if (preview) {
-    const pb = { id: form.title, title: form.title, author: form.author, thumbnail: form.thumbnail || fp, mode: form.mode, price: form.price };
+    const pb = { id: form.title, title: form.title, author: form.author, thumbnail: form.thumbnail || fp, mode: form.mode, price: form.price, setinfo: setData };
     return (
     <div style={{padding:"4px 0 20px",direction:"rtl",animation:"fadeUp .2s ease"}}>
       <h2 style={{fontFamily:HEAD,fontSize:24,fontWeight:700,color:C.ink,textAlign:"center"}}>ככה זה ייראה</h2>
@@ -824,20 +1002,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
           <label htmlFor="genre-select" style={{display:"block",fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>סוגה</label>
           <select id="genre-select" value={form.genre} onChange={e=>setForm(f=>({...f,genre:e.target.value}))} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:14,background:C.bg,direction:"rtl"}}>
             <option value="">בחר סוגה (מומלץ)</option>
-            <option value="ספרות ורומנים">ספרות ורומנים</option>
-            <option value="מתח">מתח</option>
-            <option value="מדע בדיוני ופנטזיה">מדע בדיוני ופנטזיה</option>
-            <option value="אהבה ורומנטיקה">אהבה ורומנטיקה</option>
-            <option value="היסטוריה">היסטוריה</option>
-            <option value="ביוגרפיה">ביוגרפיה</option>
-            <option value="מדע ופילוסופיה">מדע ופילוסופיה</option>
-            <option value="פיתוח אישי">פיתוח אישי</option>
-            <option value="עסקים וכלכלה">עסקים וכלכלה</option>
-            <option value="ילדים ונוער">ילדים ונוער</option>
-            <option value="בישול ואפייה">בישול ואפייה</option>
-            <option value="שירה">שירה</option>
-            <option value="יהדות ורוחניות">יהדות ורוחניות</option>
-            <option value="אחר">אחר</option>
+            {GENRES.map(([g])=><option key={g} value={g}>{g}</option>)}
           </select>
         </div>
       </div>
@@ -854,7 +1019,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
           ))}
         </div>
         {form.mode === "sell" && (
-          <Inp label="מחיר (₪)" type="number" value={form.price} onChange={upd("price")} placeholder="0" icon="tag"/>
+          <Inp label={setData?"מחיר לכל הסט (₪)":"מחיר (₪)"} type="number" value={form.price} onChange={upd("price")} placeholder="0" icon="tag"/>
         )}
         {form.mode === "lend" && (
           <div>
@@ -870,7 +1035,24 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
         )}
       </div>
 
-      <Btn onClick={()=>{if(!form.title.trim()||!form.author.trim())return toast_("שם ספר ומחבר הם שדות חובה","warn");setPreview(true);}} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
+      {/* סט כרכים: מוצע לאנציקלופדיות, ואפשר להפעיל לכל ספר */}
+      {(form.genre === SET_GENRE || isSet) && (
+        <div style={{background:C.white,borderRadius:18,border:`1px solid ${C.border}`,padding:"16px",marginBottom:12}}>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:isSet?12:0}}>
+            <input type="checkbox" checked={isSet} onChange={e=>setIsSet(e.target.checked)} style={{width:20,height:20,accentColor:C.accent}}/>
+            <span style={{flex:1}}>
+              <span style={{display:"block",fontSize:14,fontWeight:700,color:C.ink}}>זה סט של כמה כרכים</span>
+              <span style={{display:"block",fontSize:12,color:C.muted,marginTop:2}}>מודעה אחת לכל הסט, עם סימון של הכרכים שיש</span>
+            </span>
+          </label>
+          {isSet && <SetEditor value={setVal} onChange={setSetVal} mode={form.mode}/>}
+        </div>
+      )}
+
+      <Btn onClick={()=>{
+        if(!form.title.trim()||(!form.author.trim()&&!setData))return toast_(isSet?"שם הסט הוא שדה חובה":"שם ספר ומחבר הם שדות חובה","warn");
+        if(isSet&&!setData)return toast_("סמנו כמה כרכים יש בסט ואילו מהם יש לך","warn");
+        setPreview(true);}} style={{width:"100%",padding:"13px",borderRadius:13,marginBottom:24}}>
         המשך לתצוגה מקדימה
       </Btn>
     </div>
@@ -1494,9 +1676,9 @@ export default function App() {
   const handleOwnerAnswer = async (answer, dealStatus) => {
     if (!ownerPending) return;
     try {
-      await api.put(`/api/contacts/${ownerPending.id}`, { dealStatus, confirmedByOwner: answer === "confirmed" });
+      const r = await api.put(`/api/contacts/${ownerPending.id}`, { dealStatus, confirmedByOwner: answer === "confirmed" });
       if (answer === "confirmed") {
-        toast_("✅ הספר ירד מזמינות — תודה על העדכון!");
+        toast_(r?.partial ? `✅ עודכן — נשארו ${r.left} כרכים במדף` : "✅ הספר ירד מזמינות — תודה על העדכון!");
         loadBooks();
         loadMyBooks();
       }
@@ -1993,7 +2175,7 @@ export default function App() {
         <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:600,padding:"0 16px",direction:"rtl"}}>
           <div style={{background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.15)",border:`1px solid ${C.border}`}}>
             <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:12}}>
-              {ownerPending.interestedname||"מישהו"} יצר איתך קשר לגבי "{ownerPending.booktitle}" — האם סיכמתם משהו?
+              {ownerPending.interestedname||"מישהו"} יצר איתך קשר לגבי "{ownerPending.booktitle}"{(()=>{try{const v=JSON.parse(ownerPending.volumes||"null"),st=JSON.parse(ownerPending.setinfo||"null")?.style;return Array.isArray(v)&&v.length?` (${v.length===1?"כרך":"כרכים"} ${volList(v,st)})`:"";}catch{return "";}})()} — האם סיכמתם משהו?
             </div>
             <div style={{display:"flex",gap:8,marginBottom:8}}>
               <button onClick={()=>setOwnerAskDeal(true)} style={{flex:1,padding:"10px",borderRadius:10,border:"none",background:C.teal,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>כן, סיכמנו</button>
@@ -2362,6 +2544,9 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   const [expanded, setExpanded] = useState(false);
   const [showPhoto, setShowPhoto] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [pick, setPick] = useState([]);          // כרכים שהמתעניין בחר
+  const [partial, setPartial] = useState(null);  // כרכים שעברו הלאה (אצל המפרסם)
+  const set = setOf(book);
   const scrollRef = useRef(null);
   const dref = useDialog(onClose);
   const isOwner = !!user?.id && String(book.ownerid)===String(user?.id);
@@ -2369,7 +2554,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   const src = book.thumbnail || book.frontimg;
   const color = hashColor(book.id);
 
-  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); setExpanded(false); setShowCloseDeal(false); setShowPhoto(false); }, [book.id]);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); setExpanded(false); setShowCloseDeal(false); setShowPhoto(false); setPick([]); setPartial(null); }, [book.id]);
   // מספר הטלפון נטען רק למשתמש מחובר שפתח את דף הספר
   useEffect(() => {
     setPhone(null);
@@ -2379,7 +2564,20 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
 
   const recordContact = (type) => {
     if (!canContact) return;
-    api.post("/api/contacts", { bookId: book.id, type }).then(() => onContactMade && onContactMade()).catch(() => {});
+    api.post("/api/contacts", { bookId: book.id, type, ...(somePicked ? { volumes: pick } : {}) }).then(() => onContactMade && onContactMade()).catch(() => {});
+  };
+  // רק חלק מהכרכים עברו הלאה: מעדכנים את הסט והמודעה נשארת
+  const closePartial = async () => {
+    if (!partial?.length) return;
+    if (partial.length >= set.have.length) return setPartial(false); // כל הסט: עסקה רגילה
+    setClosing(true);
+    try {
+      await api.put(`/api/books/${book.id}`, { setInfo: { ...set, have: set.have.filter(v => !partial.includes(v)) }, partialDeal: true });
+      toast_ && toast_(`עודכן ✓ נשארו ${set.have.length - partial.length} כרכים במדף`);
+      onBookUpdated && onBookUpdated();
+      onClose();
+    } catch(e) { toast_ && toast_(e.message, "err"); }
+    setClosing(false);
   };
   const closeDeal = async (status) => {
     setClosing(true);
@@ -2402,7 +2600,12 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
   };
   const waPhone = (phone || "").replace(/\D/g, "").replace(/^0/, "972");
   const name = book.ownername || "";
-  const waMsg = `היי ${name}, ראיתי ב-Pageturner את "${book.title}". ` + (
+  const somePicked = !!set && pick.length > 0 && pick.length < set.have.length;
+  const pickPrice = somePicked && book.mode === "sell" && set.each ? pick.length * set.each : 0;
+  const waMsg = somePicked
+    ? `היי ${name}, ראיתי ב-Pageturner את "${book.title}". מעניינים אותי ${pick.length === 1 ? "הכרך" : "הכרכים"} ${volList(pick, set.style)}. ` +
+      (book.mode==="sell" ? "הם עדיין זמינים לרכישה?" : book.mode==="lend" ? "אפשר לשאול אותם?" : book.mode==="swap" ? "תרצה להחליף?" : "הם עדיין זמינים?")
+    : `היי ${name}, ראיתי ב-Pageturner את "${book.title}"${set ? " (הסט)" : ""}. ` + (
     book.mode==="sell" ? "הוא עדיין זמין לרכישה?" : book.mode==="lend" ? "אפשר לשאול אותו?" : book.mode==="swap" ? "תרצה להחליף?" : "הוא עדיין זמין למסירה?");
   const chip = (ic, text) => <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"6px 11px",borderRadius:99,background:C.bg,fontSize:12.5,color:C.ink,whiteSpace:"nowrap"}}><Icon name={ic} size={14} color={C.muted}/>{text}</span>;
   const long = (book.summary||"").length > 220;
@@ -2458,7 +2661,24 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
               {book.genre && chip((GENRES.find(g=>g[0]===book.genre)||[])[1]||"novel", book.genre)}
               {book.mode==="lend"&&book.lenduntil && chip("loop", `להחזיר עד ${new Date(book.lenduntil).toLocaleDateString("he-IL")}`)}
               {book.mode==="swap"&&book.swapfor && chip("swap", `מחפש: ${book.swapfor}`)}
+              {set && chip("volumes", `${set.have.length === set.n ? "סט מלא" : "סט חלקי"} · ${set.have.length} מתוך ${set.n} כרכים`)}
+              {set?.single && book.mode==="sell" && set.each && book.price ? chip("tag", `₪${set.each} לכרך בודד`) : null}
             </div>
+
+            {set && <div style={{marginTop:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.muted}}>כרכים בסט</div>
+                {canContact && set.single && <button onClick={()=>setPick(p=>p.length?[]:[...set.have])} style={{background:"none",border:"none",color:C.accent,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{pick.length?"ניקוי בחירה":"בחירת הכל"}</button>}
+              </div>
+              <VolumeGrid n={set.n} style={set.style} have={set.have} dimMissing
+                picked={canContact && set.single ? pick : undefined}
+                onToggle={canContact && set.single ? (i=>setPick(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i].sort((a,b)=>a-b))) : undefined}/>
+              <div style={{fontSize:12.5,color:C.muted,marginTop:8,lineHeight:1.6}}>
+                {canContact && set.single
+                  ? (somePicked ? `נבחרו ${pick.length} כרכים${pickPrice?` · ₪${pickPrice}`:""} — ההודעה למפרסם תכלול אותם` : "אפשר לבחור כרכים בודדים, או לפנות על כל הסט")
+                  : set.single ? "אפשר לקחת גם כרכים בודדים" : "הסט נמסר כיחידה אחת"}
+              </div>
+            </div>}
 
             {book.summary && <div style={{marginTop:20}}>
               <div style={{fontSize:13,fontWeight:700,color:C.muted,marginBottom:6}}>על הספר</div>
@@ -2480,10 +2700,22 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
             {isOwner && !book.dealstatus && <div style={{marginTop:14}}>
               <div style={{display:"flex",gap:8}}>
                 <button className="press" onClick={()=>{onClose();setTimeout(()=>document.dispatchEvent(new CustomEvent("editBook",{detail:book})),100);}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"12px",borderRadius:13,border:`1px solid ${C.border}`,background:"#fff",fontSize:14,cursor:"pointer",color:C.ink,fontWeight:600}}><Icon name="pencil" size={17}/>עריכה</button>
-                {book.avail && <button className="press" onClick={()=>setShowCloseDeal(x=>!x)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"12px",borderRadius:13,border:"none",background:C.ink,fontSize:14,cursor:"pointer",color:"#fff",fontWeight:600}}><Icon name="check" size={17} stroke={2.3}/>הספר עבר הלאה</button>}
+                {book.avail && <button className="press" onClick={()=>{setShowCloseDeal(x=>!x);setPartial(null);}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"12px",borderRadius:13,border:"none",background:C.ink,fontSize:14,cursor:"pointer",color:"#fff",fontWeight:600}}><Icon name="check" size={17} stroke={2.3}/>הספר עבר הלאה</button>}
               </div>
-              {showCloseDeal && <div style={{marginTop:10,background:C.bg,borderRadius:16,padding:"14px",animation:"fadeUp .2s ease"}}>
-                <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:10,textAlign:"center"}}>מה קרה עם הספר?</div>
+              {showCloseDeal && set && set.have.length > 1 && <div style={{marginTop:10,background:C.bg,borderRadius:16,padding:"14px",animation:"fadeUp .2s ease"}}>
+                {partial === null
+                  ? <div style={{display:"flex",gap:8}}>
+                      <button className="press" onClick={()=>setPartial([])} style={{flex:1,padding:"11px 6px",borderRadius:12,border:`1px solid ${C.border}`,background:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,color:C.ink}}>רק חלק מהכרכים</button>
+                      <button className="press" onClick={()=>setPartial(false)} style={{flex:1,padding:"11px 6px",borderRadius:12,border:`1px solid ${C.border}`,background:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,color:C.ink}}>כל הסט</button>
+                    </div>
+                  : partial && <>
+                      <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:10,textAlign:"center"}}>אילו כרכים עברו הלאה?</div>
+                      <VolumeGrid n={set.n} style={set.style} have={set.have} dimMissing picked={partial} onToggle={i=>setPartial(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i])}/>
+                      <Btn onClick={closePartial} disabled={closing||!partial.length} style={{width:"100%",marginTop:12}}>{partial.length?`עדכון · ${partial.length} כרכים יורדו מהמדף`:"סמנו כרכים"}</Btn>
+                    </>}
+              </div>}
+              {showCloseDeal && (!set || set.have.length < 2 || partial === false) && <div style={{marginTop:10,background:C.bg,borderRadius:16,padding:"14px",animation:"fadeUp .2s ease"}}>
+                <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:10,textAlign:"center"}}>{set?"מה קרה עם הסט?":"מה קרה עם הספר?"}</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                   {[{s:"sold",ic:"tag",t:"נמכר"},{s:"lent",ic:"loop",t:"הושאל"},{s:"swapped",ic:"swap",t:"הוחלף"},{s:"given",ic:"gift",t:"נמסר"}].map(o=>(
                     <button key={o.s} className="press" onClick={()=>closeDeal(o.s)} disabled={closing} style={{padding:"12px 8px",borderRadius:12,border:`1px solid ${C.border}`,background:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,color:C.ink,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
@@ -2548,8 +2780,11 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
     title:book.title||"", author:book.author||"", publisher:book.publisher||"",
     year:book.year||"", summary:book.summary||"", condition:book.condition||"",
     mode:book.mode||"sell", price:book.price||"", avail:book.avail!==false,
-    lendUntil:book.lenduntil||"", swapFor:book.swapfor||""
+    lendUntil:book.lenduntil||"", swapFor:book.swapfor||"", genre:book.genre||""
   });
+  const [isSet, setIsSet] = useState(!!setOf(book));
+  const [setVal, setSetVal] = useState(setOf(book) ? { ...setOf(book), each: setOf(book).each ?? "" } : null);
+  const setData = isSet ? setPayload(setVal) : null;
   const [del, setDel] = useState(false);
   const [locStatus, setLocStatus] = useState(null);
   const upd = k => e => setF(p=>({...p,[k]:e.target.value}));
@@ -2584,6 +2819,19 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
           </div>
           <TA label="תקציר" value={f.summary} onChange={upd("summary")}/>
           <Inp label="מצב" value={f.condition} onChange={upd("condition")} icon="sparkle"/>
+          <div style={{marginBottom:13}}>
+            <label htmlFor="edit-genre" style={{display:"block",fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>סוגה</label>
+            <select id="edit-genre" value={f.genre} onChange={upd("genre")} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:14,background:C.bg,direction:"rtl"}}>
+              <option value="">ללא סוגה</option>
+              {GENRES.map(([g])=><option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          {(f.genre === SET_GENRE || isSet) && <>
+            <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:isSet?10:13,fontSize:14,fontWeight:700,color:C.ink}}>
+              <input type="checkbox" checked={isSet} onChange={e=>setIsSet(e.target.checked)} style={{width:20,height:20,accentColor:C.accent}}/>זה סט של כמה כרכים
+            </label>
+            {isSet && <SetEditor value={setVal} onChange={setSetVal} mode={f.mode}/>}
+          </>}
           <button onClick={updateLocation} style={{width:"100%",padding:"11px",borderRadius:11,border:`1px solid ${C.border}`,background:C.bg,fontSize:13,cursor:"pointer",color:locStatus==="done"?C.green:locStatus==="error"?C.red:C.muted,marginBottom:13,fontWeight:600,textAlign:"right"}}>
             {locStatus==="searching"?"⏳ מאתר מיקום...":locStatus==="done"?"✅ המיקום עודכן בהצלחה":locStatus==="error"?"❌ לא ניתן לאתר מיקום":"📍 עדכון מיקום הספר למיקומך הנוכחי"}
           </button>
@@ -2600,7 +2848,7 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
               </button>
             ))}
           </div>
-          {f.mode==="sell"&&<Inp label="מחיר (₪)" type="number" value={f.price} onChange={upd("price")} icon="tag"/>}
+          {f.mode==="sell"&&<Inp label={setData?"מחיר לכל הסט (₪)":"מחיר (₪)"} type="number" value={f.price} onChange={upd("price")} icon="tag"/>}
           {f.mode==="lend"&&<div style={{marginBottom:13}}>
             <div style={{fontSize:13,fontWeight:600,color:C.muted,marginBottom:6}}>תאריך החזרה</div>
             <input type="date" value={f.lendUntil||""} onChange={e=>setF(p=>({...p,lendUntil:e.target.value}))} min={new Date().toISOString().split("T")[0]} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:15,background:C.bg}}/>
@@ -2609,7 +2857,10 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
           {f.mode==="give"&&<div style={{padding:"10px 12px",background:"#f0fdf4",borderRadius:10,fontSize:13,color:"#15803d",fontWeight:600,marginBottom:13}}>🎁 הספר יסומן כמסירה חינם</div>}
           <div style={{display:"flex",gap:9,marginTop:5}}>
             <Btn variant="outline" onClick={onCancel} style={{flex:1,padding:"11px"}}>ביטול</Btn>
-            <Btn onClick={()=>onSave(book.id,{...f,price:f.mode==="sell"?Number(f.price):null})} disabled={!f.title.trim()} style={{flex:2,padding:"11px"}}>✓ שמור</Btn>
+            <Btn onClick={()=>{
+              if (isSet && !setData) return toast_ && toast_("סמנו כמה כרכים יש בסט ואילו מהם יש לך","warn");
+              onSave(book.id,{...f,price:f.mode==="sell"?Number(f.price):null,setInfo:setData});
+            }} disabled={!f.title.trim()} style={{flex:2,padding:"11px"}}>✓ שמור</Btn>
           </div>
           <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${C.border}`}}>
             {!del

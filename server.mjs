@@ -127,6 +127,8 @@ async function initDB() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false",
     "ALTER TABLE wishlist ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false",
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS setinfo TEXT",
+    "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS volumes TEXT",
     "CREATE INDEX IF NOT EXISTS books_avail_created ON books (avail, createdat DESC)",
     "CREATE INDEX IF NOT EXISTS books_owner ON books (ownerid)",
     "CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userid)",
@@ -555,9 +557,14 @@ function fuzzKm(km) {
   return Math.round(km);
 }
 
+const GENRE_LIST = ["ספרות ורומנים", "מתח", "מדע בדיוני ופנטזיה", "אהבה ורומנטיקה", "היסטוריה", "ביוגרפיה", "מדע ופילוסופיה", "פיתוח אישי",
+  "עסקים וכלכלה", "ילדים ונוער", "ספרי פעוטות", "בישול ואפייה", "שירה", "יהדות ורוחניות", "אנציקלופדיות וספרי לימוד", "ספרי טיולים ואטלסים", "אחר"];
 function mapGenre(categories) {
   if (!categories || !categories.length) return "";
   const c = categories.join(" ").toLowerCase();
+  if (c.includes("encyclopedia") || c.includes("textbook") || c.includes("study aids") || c.includes("reference")) return "אנציקלופדיות וספרי לימוד";
+  if (c.includes("travel") || c.includes("atlas") || c.includes("maps")) return "ספרי טיולים ואטלסים";
+  if (c.includes("board book") || c.includes("baby") || c.includes("toddler")) return "ספרי פעוטות";
   if (c.includes("fiction") || c.includes("novel") || c.includes("literature")) return "ספרות ורומנים";
   if (c.includes("thriller") || c.includes("mystery") || c.includes("crime") || c.includes("detective")) return "מתח";
   if (c.includes("fantasy") || c.includes("science fiction") || c.includes("sci-fi")) return "מדע בדיוני ופנטזיה";
@@ -691,7 +698,7 @@ RULES:
 - year: look for copyright symbol © followed by year
 - summary: the main descriptive text/blurb about the book
 - price: any price in any currency
-- genre: category of the book
+- genre: the best fitting category, EXACTLY one of: ${GENRE_LIST.join(" | ")} (or "" if unclear)
 Leave "" if not clearly visible.
 FORMAT: inside values, write Hebrew abbreviations with the Hebrew gershayim ״ and geresh ׳ (e.g. צה״ל, ד״ר, צ׳ודרון) — never a plain " character. Keep the summary under 900 characters. Return ONLY raw JSON, no code fences, no other text:
 {"is_book":true,"unsafe":false,"summary":"","isbn":"","publisher":"","year":"","price":"","genre":""}`;
@@ -763,8 +770,32 @@ function privateUser(req, u) {
   };
 }
 
+// ── סט כרכים (אנציקלופדיה וכדומה) ──────────────────────────
+// נשמר כ-JSON: n = מספר הכרכים בסט המלא, have = הכרכים שיש למפרסם (1..n),
+// style = "heb" (א׳ ב׳) או "num" (1 2), single = אפשר לקחת כרכים בודדים, each = מחיר לכרך (במכירה)
+const SET_MAX = 120;
+function normSet(raw) {
+  if (raw == null || raw === "") return null;
+  let o = raw;
+  if (typeof raw === "string") { try { o = JSON.parse(raw); } catch { return null; } }
+  if (!o || typeof o !== "object") return null;
+  const n = Math.round(Number(o.n));
+  if (!Number.isFinite(n) || n < 2 || n > SET_MAX) return null;
+  const have = [...new Set((Array.isArray(o.have) ? o.have : []).map(Number).filter(v => Number.isInteger(v) && v >= 1 && v <= n))].sort((a, b) => a - b);
+  if (!have.length) return null;
+  const each = Number(o.each);
+  return { n, have, style: o.style === "num" ? "num" : "heb", single: !!o.single, each: o.single && Number.isFinite(each) && each > 0 ? Math.round(each * 100) / 100 : null };
+}
+function parseSet(text) { try { return text ? normSet(JSON.parse(text)) : null; } catch { return null; } }
+// כרכים שמישהו ביקש: רק מספרים שקיימים כרגע בסט
+function pickVolumes(raw, set) {
+  if (!set || !Array.isArray(raw)) return null;
+  const v = [...new Set(raw.map(Number))].filter(x => set.have.includes(x)).sort((a, b) => a - b);
+  return v.length ? v : null;
+}
+
 // עמודות לרשימות ספרים — בלי טלפון, בלי מיקום מדויק ובלי נתוני תמונה כבדים
-const BOOK_COLS = `b.id,b.title,b.author,b.publisher,b.year,b.summary,b.condition,b.series,b.volume,b.isbn,b.genre,b.mode,b.price,
+const BOOK_COLS = `b.id,b.title,b.author,b.publisher,b.year,b.summary,b.condition,b.series,b.volume,b.isbn,b.genre,b.mode,b.price,b.setinfo,
   b.lendduration,b.swapfor,b.lenduntil,b.avail,b.ownername,b.ownertype,b.ownerid,b.city,b.dealstatus,b.createdat,b.lat,b.lng,
   CASE WHEN b.thumbnail LIKE 'http%' AND NOT COALESCE(b.hidden,false) THEN b.thumbnail END AS thumburl,
   (COALESCE(length(b.thumbnail),0) + COALESCE(length(b.frontimg),0)) AS imgver,
@@ -782,7 +813,7 @@ function publicBook(req, b, coords) {
     condition: b.condition, series: b.series, volume: b.volume, isbn: b.isbn, genre: b.genre, mode: b.mode,
     price: b.price, lendduration: b.lendduration, swapfor: b.swapfor, lenduntil: b.lenduntil, avail: b.avail,
     ownername: b.ownername, ownertype: b.ownertype, ownerid: b.ownerid, city: b.city, dealstatus: b.dealstatus,
-    createdat: b.createdat, ...(b.hidden ? { hidden: true } : {}),
+    createdat: b.createdat, ...(b.hidden ? { hidden: true } : {}), setinfo: parseSet(b.setinfo),
     thumbnail: thumb, frontimg: img || thumb,
     photo: b.hasphoto ? `${origin(req)}/api/img/book/${b.id}?which=photo&v=${b.imgver}` : null,
     owneravatar: b.avatarurl || (b.avatarver ? `${origin(req)}/api/img/avatar/${b.uid}?v=${b.avatarver}` : null),
@@ -918,7 +949,7 @@ app.post("/api/analyze/back", visionGuard, async (req, res) => {
     }
     const communityCover = coverUrl(req, await findCover({ isbn: data.isbn, title: googleData.title, author: googleData.author }));
     res.json({ ok: true, communityCover, data: {
-      summary: data.summary || "", isbn: normIsbn(data.isbn) || data.isbn || "", price: data.price || "", genre: data.genre || "",
+      summary: data.summary || "", isbn: normIsbn(data.isbn) || data.isbn || "", price: data.price || "", genre: GENRE_LIST.includes(data.genre) ? data.genre : "",
       publisher: googleData.publisher || data.publisher || "", year: googleData.year || data.year || "",
       googleTitle: googleData.title || "", googleAuthor: googleData.author || "", thumbnail: googleData.thumbnail || "",
     } });
@@ -1077,20 +1108,22 @@ app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, uploa
     const coords = parseCoords(b);
     const city = coords ? await reverseGeocode(coords.lat, coords.lng) : null;
     const mode = ["sell", "lend", "swap", "give"].includes(b.mode) ? b.mode : "sell";
+    const set = normSet(b.setInfo);
+    const setText = set ? JSON.stringify(set) : null;
     await pool.query(
-      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt,imgcheck)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
+      `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt,imgcheck,setinfo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
       [id, clip(b.title.trim(), 300), clip(b.author, 200), clip(b.publisher, 200), clip(b.year, 10), clip(b.summary, 4000), clip(b.condition, 100),
        clip(b.series, 200), clip(b.volume, 20), clip(b.isbn, 20), clip(b.genre, 60), mode,
        mode === "sell" ? (Number(b.price) || null) : null, clip(b.lendDuration, 60), clip(b.swapFor, 300), clip(b.lendUntil || b.lenduntil, 20),
        true, u.storename || u.name || "", u.type || "private", u.phone || "", u.id,
-       coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now(), toCheck.length ? mod.status : null]
+       coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now(), toCheck.length ? mod.status : null, setText]
     );
     if (mod.status === "unchecked") notifyUnchecked(req, id, b.title, u).catch(e => console.error("unchecked notify:", e.message));
     if (b.coverQuality === "straight" && thumbnail?.startsWith("data:") && mod.status === "ok") {
       saveCover({ isbn: b.isbn, title: b.title, author: b.author }, thumbnail, "user").catch(e => console.error("saveCover:", e.message));
     }
-    track("book_publish", u.id, { bookId: id, title: b.title, mode, city });
+    track("book_publish", u.id, { bookId: id, title: b.title, mode, city, ...(set ? { volumes: set.have.length } : {}) });
     notifyWishlist(id, b.title, b.author, u.id).catch(e => console.error("wishlist notify:", e.message));
     res.json({ ok: true, book: publicBook(req, await getBookRow(id), coords) });
   } catch (e) { console.error("publish:", e.message); res.status(500).json({ error: "הפרסום נכשל, נסו שוב" }); }
@@ -1104,7 +1137,7 @@ async function ownBook(req, res) {
 }
 
 app.put("/api/books/:id", requireAuth, async (req, res) => {
-  const { title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail, dealStatus } = req.body;
+  const { title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail, dealStatus, genre, setInfo } = req.body;
   try {
     const existing = await ownBook(req, res);
     if (!existing) return;
@@ -1117,18 +1150,25 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
       }
     }
     const newMode = ["sell", "lend", "swap", "give"].includes(mode) ? mode : existing.mode;
+    // setInfo: undefined = בלי שינוי, null/"" = כבר לא סט
+    const oldSet = parseSet(existing.setinfo);
+    const newSetObj = setInfo === undefined ? oldSet : normSet(setInfo);
+    const newSet = newSetObj ? JSON.stringify(newSetObj) : null;
+    const partialLeft = oldSet && newSetObj && newSetObj.have.length < oldSet.have.length && req.body.partialDeal ? newSetObj.have.length : 0;
     const newPrice = newMode === "sell" ? (price !== undefined && price !== null && price !== "" ? Number(price) || null : existing.price) : null;
     const coords = parseCoords(req.body);
     const city = coords ? (await reverseGeocode(coords.lat, coords.lng)) || existing.city : existing.city;
     await pool.query(
-      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11,avail=$12,lat=$13,lng=$14,city=$15,dealstatus=$16 WHERE id=$17`,
+      `UPDATE books SET title=$1,author=$2,publisher=$3,year=$4,summary=$5,mode=$6,price=$7,condition=$8,lendduration=$9,swapfor=$10,lenduntil=$11,avail=$12,lat=$13,lng=$14,city=$15,dealstatus=$16,genre=$18,setinfo=$19 WHERE id=$17`,
       [clip(title || existing.title, 300), clip(author ?? existing.author, 200), clip(publisher ?? existing.publisher, 200), clip(year ?? existing.year, 10),
        clip(summary ?? existing.summary, 4000), newMode, newPrice, clip(condition ?? existing.condition, 100),
        clip(lendDuration ?? existing.lendduration, 60), clip(swapFor ?? existing.swapfor, 300), clip(lendUntil ?? existing.lenduntil ?? "", 20),
        existing.hidden ? false : (typeof avail === "boolean" ? avail : existing.avail), coords ? coords.lat : existing.lat, coords ? coords.lng : existing.lng, city,
-       dealStatus !== undefined ? (dealStatus ? clip(dealStatus, 20) : null) : existing.dealstatus, req.params.id]
+       dealStatus !== undefined ? (dealStatus ? clip(dealStatus, 20) : null) : existing.dealstatus, req.params.id,
+       genre !== undefined ? clip(genre, 60) : existing.genre, newSet]
     );
     if (dealStatus && existing.avail) track("book_deal", req.user.id, { bookId: req.params.id, dealStatus });
+    if (partialLeft) track("book_deal_partial", req.user.id, { bookId: req.params.id, left: partialLeft, at: "owner" });
     res.json({ ok: true, book: publicBook(req, await getBookRow(req.params.id), null) });
   } catch (e) { console.error("update book:", e.message); res.status(500).json({ error: "העדכון נכשל" }); }
 });
@@ -1210,16 +1250,20 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
 });
 
 // ── יצירת קשר: הטלפון נחשף רק למשתמש מחובר ─────────────────
-async function recordContact(bookId, bookTitle, fromUserId, toUserId, type) {
+async function recordContact(bookId, bookTitle, fromUserId, toUserId, type, volumes) {
+  const vols = volumes ? JSON.stringify(volumes) : null;
   const existing = await pool.query("SELECT * FROM contacts WHERE bookId=$1 AND fromUserId=$2 ORDER BY createdat DESC LIMIT 1", [bookId, fromUserId]);
   const c = existing.rows[0];
-  if (c && c.status === "pending" && !c.askedstatus) return c;
+  if (c && c.status === "pending" && !c.askedstatus) {
+    if (vols !== (c.volumes || null)) await pool.query("UPDATE contacts SET volumes=$1 WHERE id=$2", [vols, c.id]);
+    return c;
+  }
   const id = randomUUID();
   await pool.query(
-    "INSERT INTO contacts (id,bookId,bookTitle,fromUserId,toUserId,type,status,askedStatus,createdAt) VALUES ($1,$2,$3,$4,$5,$6,'pending',false,$7)",
-    [id, bookId, clip(bookTitle, 300), fromUserId, toUserId || "", ["whatsapp", "phone"].includes(type) ? type : "whatsapp", Date.now()]
+    "INSERT INTO contacts (id,bookId,bookTitle,fromUserId,toUserId,type,status,askedStatus,createdAt,volumes) VALUES ($1,$2,$3,$4,$5,$6,'pending',false,$7,$8)",
+    [id, bookId, clip(bookTitle, 300), fromUserId, toUserId || "", ["whatsapp", "phone"].includes(type) ? type : "whatsapp", Date.now(), vols]
   );
-  track("book_contact", fromUserId, { bookId, type });
+  track("book_contact", fromUserId, { bookId, type, ...(volumes ? { volumes: volumes.length } : {}) });
   return { id };
 }
 
@@ -1240,13 +1284,16 @@ app.get("/api/books/:id/phone", requireAuth, async (req, res) => {
 });
 
 app.post("/api/contacts", requireAuth, async (req, res) => {
-  const { bookId, type } = req.body;
+  const { bookId, type, volumes } = req.body;
   if (!bookId) return res.status(400).json({ error: "חסרים פרטים" });
   try {
-    const b = (await pool.query("SELECT title, ownerid FROM books WHERE id=$1", [bookId])).rows[0];
+    const b = (await pool.query("SELECT title, ownerid, setinfo FROM books WHERE id=$1", [bookId])).rows[0];
     if (!b) return res.status(404).json({ error: "הספר לא נמצא" });
     if (b.ownerid === req.user.id) return res.json({ ok: true });
-    const contact = await recordContact(bookId, b.title, req.user.id, b.ownerid, type);
+    const set = parseSet(b.setinfo);
+    let vols = set?.single ? pickVolumes(volumes, set) : null;
+    if (vols && vols.length === set.have.length) vols = null; // כל הסט = עסקה רגילה
+    const contact = await recordContact(bookId, b.title, req.user.id, b.ownerid, type, vols);
     res.json({ ok: true, contact });
   } catch (e) { console.error("contact:", e.message); res.status(500).json({ error: "שגיאה" }); }
 });
@@ -1254,7 +1301,7 @@ app.post("/api/contacts", requireAuth, async (req, res) => {
 app.get("/api/contacts/owner-pending/:userId", requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT c.*, b.title as booktitle, u.name as interestedname
+      `SELECT c.*, b.title as booktitle, b.setinfo as setinfo, u.name as interestedname
        FROM contacts c LEFT JOIN books b ON c.bookid=b.id LEFT JOIN users u ON c.fromuserid=u.id
        WHERE c.touserid=$1 AND c.status='done' AND c.ownerasked=false AND b.avail=true
        ORDER BY c.createdat DESC LIMIT 1`,
@@ -1294,6 +1341,18 @@ app.put("/api/contacts/:id", requireAuth, async (req, res) => {
       await pool.query("UPDATE contacts SET ownerAsked=true, ownerConfirmed=$1 WHERE id=$2", [!!confirmedByOwner, contact.id]);
       if (confirmedByOwner && contact.status === "done") {
         const bookRow = (await pool.query("SELECT * FROM books WHERE id=$1", [contact.bookid])).rows[0];
+        const set = bookRow ? parseSet(bookRow.setinfo) : null;
+        let vols = null;
+        try { vols = pickVolumes(JSON.parse(contact.volumes || "null"), set); } catch {}
+        if (bookRow && bookRow.ownerid === me && bookRow.avail && vols && vols.length < set.have.length) {
+          // רק חלק מהכרכים עברו: הסט נשאר אצל המפרסם עם הכרכים שנותרו
+          const left = { ...set, have: set.have.filter(v => !vols.includes(v)) };
+          await pool.query("UPDATE books SET setinfo=$1 WHERE id=$2", [JSON.stringify(left), bookRow.id]);
+          await pool.query("INSERT INTO book_history (id,bookid,fromuserid,touserid,type,createdat) VALUES ($1,$2,$3,$4,$5,$6)",
+            [randomUUID(), bookRow.id, bookRow.ownerid, contact.fromuserid, clip(`${dealStatus || "agreed"}:${vols.join(",")}`, 200), Date.now()]);
+          track("book_deal_partial", me, { bookId: bookRow.id, dealStatus, volumes: vols.length, left: left.have.length, at: "confirm" });
+          return res.json({ ok: true, partial: true, left: left.have.length });
+        }
         if (bookRow && bookRow.ownerid === me && bookRow.avail) {
           const newOwnerId = contact.fromuserid;
           await pool.query("INSERT INTO book_history (id,bookid,fromuserid,touserid,type,createdat) VALUES ($1,$2,$3,$4,$5,$6)",
