@@ -2485,6 +2485,7 @@ function AdminPage({ onBack }) {
         {h("🧰 פעולות")}
         <div style={{display:"grid",gap:8}}>
           <a href={csvUrl} style={{display:"block",textAlign:"center",padding:11,borderRadius:10,background:"#6a9444",color:"#fff",textDecoration:"none",fontWeight:700,fontSize:14}}>⬇️ הורדת נתונים יומיים לאקסל (CSV)</a>
+          <a href={`${BASE}/api/admin/mailing-list.csv?key=${encodeURIComponent(key)}`} style={{display:"block",textAlign:"center",padding:11,borderRadius:10,background:"#3d6f8e",color:"#fff",textDecoration:"none",fontWeight:700,fontSize:14}}>📧 רשימת דיוור (רק מי שאישר)</a>
           <div style={{display:"flex",gap:8}}>
             {[["daily","דוח יומי"],["weekly","שבועי"],["monthly","חודשי"]].map(([t,l])=><a key={t} href={previewUrl(t)} target="_blank" rel="noreferrer" style={{flex:1,textAlign:"center",padding:9,borderRadius:10,background:"rgba(255,255,255,.1)",color:"#fff",textDecoration:"none",fontSize:13}}>👁️ {l}</a>)}
           </div>

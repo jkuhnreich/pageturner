@@ -126,6 +126,8 @@ async function initDB() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent_at BIGINT",
+    "UPDATE users SET email_consent_at=createdat WHERE email_consent=true AND email_consent_at IS NULL",
     "ALTER TABLE wishlist ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS setinfo TEXT",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS genreother TEXT",
@@ -1525,10 +1527,10 @@ app.post("/api/users/register", limit("register", 40, 60 * 60 * 1000), async (re
       if (address?.trim()) { const geo = await geocode(address.trim()); if (geo) { lat = geo.lat; lng = geo.lng; } }
       const id = randomUUID();
       await pool.query(
-        `INSERT INTO users (id,name,phone,email,type,storeName,address,storeType,lat,lng,plan,xp,chatCount,bookCount,createdAt,email_consent)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'free',0,0,0,$11,$12)`,
+        `INSERT INTO users (id,name,phone,email,type,storeName,address,storeType,lat,lng,plan,xp,chatCount,bookCount,createdAt,email_consent,email_consent_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'free',0,0,0,$11,$12,$13)`,
         [id, clip(name.trim(), 80), phoneDigits || null, email, type === "store" ? "store" : "private",
-         clip(storeName, 120), clip(address, 200), clip(storeType, 60), lat, lng, Date.now(), !!emailConsent]
+         clip(storeName, 120), clip(address, 200), clip(storeType, 60), lat, lng, Date.now(), !!emailConsent, emailConsent ? Date.now() : null]
       );
       user = (await pool.query("SELECT * FROM users WHERE id=$1", [id])).rows[0];
       track("register", id, { type: user.type, method: row.ticketvia || "email", phone: !!phoneDigits, src: clip(req.body.src, 40) || undefined });
@@ -1556,8 +1558,18 @@ app.put("/api/me", requireAuth, async (req, res) => {
     }
     if (phoneDigits && !req.user.phone) track("phone_added", req.user.id, { at: ["publish", "profile"].includes(req.body.at) ? req.body.at : "settings" });
     const newName = name?.trim() ? clip(name.trim(), 80) : req.user.name;
-    await pool.query("UPDATE users SET name=$1, phone=$2, email_consent=$3 WHERE id=$4",
-      [newName, phoneDigits, emailConsent !== undefined ? !!emailConsent : req.user.email_consent, req.user.id]);
+    // דיוור: שומרים מתי ניתנה ההסכמה (חובת ההוכחה עלינו); ביטול מוחק את התאריך
+    const consent = emailConsent !== undefined ? !!emailConsent : !!req.user.email_consent;
+    const consentAt = consent ? (req.user.email_consent ? req.user.email_consent_at || Date.now() : Date.now()) : null;
+    await pool.query("UPDATE users SET name=$1, phone=$2, email_consent=$3, email_consent_at=$4 WHERE id=$5",
+      [newName, phoneDigits, consent, consentAt, req.user.id]);
+    // מי שביטל דיוור: מייל למנהל, כדי למחוק אותו גם מרשימות שכבר הורדו
+    if (req.user.email_consent && !consent && process.env.ADMIN_EMAIL)
+      sendEmail(process.env.ADMIN_EMAIL, `🚫 הסרה מרשימת הדיוור: ${clip(req.user.email, 80)}`, `<div dir="rtl" style="font-family:sans-serif">
+        <p>המשתמש ביטל את ההסכמה לדיוור. אם הורדת רשימה בעבר, צריך למחוק אותו גם ממנה ומכל כלי דיוור.</p>
+        <p><b>${escapeHtml(req.user.email || "")}</b> · ${escapeHtml(req.user.name || "")}</p>
+        <p>נרשם לדיוור: ${req.user.email_consent_at ? new Date(Number(req.user.email_consent_at)).toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" }) : "לא ידוע"} · ביטל: ${new Date().toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" })}</p></div>`)
+        .catch(e => console.error("unsub mail:", e.message));
     if (newName !== req.user.name && !req.user.storename) await pool.query("UPDATE books SET ownername=$1 WHERE ownerid=$2", [newName, req.user.id]);
     if ((phoneDigits || "") !== (req.user.phone || "")) await pool.query("UPDATE books SET phone=$1 WHERE ownerid=$2", [phoneDigits || "", req.user.id]);
     const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
@@ -1904,6 +1916,18 @@ app.get("/api/admin/trends.csv", limit("admin", 30, 15 * 60 * 1000), async (req,
     const csv = "﻿" + [head, ...rows.map(r => [r.day, ...STAT_FIELDS.map(f => r[f[0]] ?? 0)])].map(l => l.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\r\n");
     res.set("Content-Type", "text/csv; charset=utf-8").set("Content-Disposition", `attachment; filename="pageturner-stats-${await israelDay(0)}.csv"`).send(csv);
   } catch (e) { console.error("csv:", e.message); res.status(500).send("error"); }
+});
+
+// רשימת דיוור: רק מי שאישר דיוור ולא הושעה
+app.get("/api/admin/mailing-list.csv", limit("admin", 30, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).send("unauthorized");
+  try {
+    const r = await pool.query("SELECT email, name, email_consent_at FROM users WHERE email_consent=true AND COALESCE(suspended,false)=false AND email IS NOT NULL AND email<>'' ORDER BY email_consent_at DESC NULLS LAST");
+    const day = ms => ms ? new Date(Number(ms)).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" }) : "";
+    const csv = "\uFEFF" + [["אימייל", "שם", "תאריך הסכמה לדיוור"], ...r.rows.map(u => [u.email, u.name || "", day(u.email_consent_at)])]
+      .map(l => l.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    res.set("Content-Type", "text/csv; charset=utf-8").set("Content-Disposition", `attachment; filename="pageturner-mailing-list-${await israelDay(0)}.csv"`).send(csv);
+  } catch (e) { console.error("mailing csv:", e.message); res.status(500).send("error"); }
 });
 
 // ── דוחות במייל ──────────────────────────────────────────
