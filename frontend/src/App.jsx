@@ -767,7 +767,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
   const [frontFile, setFrontFile] = useState(null);
   const [form, setForm] = useState({
     title:"", author:"", publisher:"", year:"",
-    summary:"", condition:"", genre:"", mode:"sell", price:"", lendUntil:"", swapFor:""
+    summary:"", condition:"", genre:"", genreOther:"", mode:"sell", price:"", lendUntil:"", swapFor:""
   });
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -1044,6 +1044,7 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
             {GENRES.map(([g])=><option key={g} value={g}>{g}</option>)}
           </select>
         </div>
+        {form.genre === "אחר" && <Inp label="איזו סוגה?" value={form.genreOther} onChange={upd("genreOther")} placeholder="לדוגמה: אמנות, ספורט, קומיקס" maxLength={40}/>}
       </div>
 
       {/* מה לעשות */}
@@ -2697,7 +2698,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
               {book.condition && chip("sparkle", book.condition)}
               {book.km!=null&&!isNaN(book.km) && chip("pin", kmLabel(book,user))}
               {book.city && chip("home", book.city)}
-              {book.genre && chip((GENRES.find(g=>g[0]===book.genre)||[])[1]||"novel", book.genre)}
+              {book.genre && chip((GENRES.find(g=>g[0]===book.genre)||[])[1]||"novel", book.genre==="אחר"&&book.genreother ? book.genreother : book.genre)}
               {book.mode==="lend"&&book.lenduntil && chip("loop", `להחזיר עד ${new Date(book.lenduntil).toLocaleDateString("he-IL")}`)}
               {book.mode==="swap"&&book.swapfor && chip("swap", `מחפש: ${book.swapfor}`)}
               {set && chip("volumes", `${set.have.length === set.n ? "סט מלא" : "סט חלקי"} · ${set.have.length} מתוך ${set.n} כרכים`)}
@@ -2819,7 +2820,7 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
     title:book.title||"", author:book.author||"", publisher:book.publisher||"",
     year:book.year||"", summary:book.summary||"", condition:book.condition||"",
     mode:book.mode||"sell", price:book.price||"", avail:book.avail!==false,
-    lendUntil:book.lenduntil||"", swapFor:book.swapfor||"", genre:book.genre||""
+    lendUntil:book.lenduntil||"", swapFor:book.swapfor||"", genre:book.genre||"", genreOther:book.genreother||""
   });
   const [isSet, setIsSet] = useState(!!setOf(book));
   const [setVal, setSetVal] = useState(setOf(book) ? { ...setOf(book), each: setOf(book).each ?? "" } : null);
@@ -2865,6 +2866,7 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
               {GENRES.map(([g])=><option key={g} value={g}>{g}</option>)}
             </select>
           </div>
+          {f.genre === "אחר" && <Inp label="איזו סוגה?" value={f.genreOther} onChange={upd("genreOther")} placeholder="לדוגמה: אמנות, ספורט, קומיקס" maxLength={40}/>}
           {(f.genre === SET_GENRE || isSet) && <>
             <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:isSet?10:13,fontSize:14,fontWeight:700,color:C.ink}}>
               <input type="checkbox" checked={isSet} onChange={e=>setIsSet(e.target.checked)} style={{width:20,height:20,accentColor:C.accent}}/>זה סט של כמה כרכים
