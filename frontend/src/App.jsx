@@ -1824,7 +1824,25 @@ export default function App() {
   const greet = (()=>{const h=new Date().getHours();return h>=5&&h<12?"בוקר טוב":h>=12&&h<17?"צהריים טובים":h>=17&&h<21?"ערב טוב":"לילה טוב";})();
   const others = books.filter(b => String(b.ownerid) !== String(user?.id));
   const nearby = userCoords ? others.filter(b => b.km != null).sort((a,b) => a.km - b.km).slice(0, 14) : [];
-  const newest = [...others].sort((a,b) => Number(b.createdat) - Number(a.createdat)).slice(0, 14);
+  // "חדש על המדף": מהחדש לישן, עד 2 לכל סוגה ו-3 לכל מעלה; ספרות ופופולרי קודם, ספרי עיון בסוף
+  const newest = (() => {
+    const TOP = new Set(["ספרות ורומנים","מתח","מדע בדיוני ופנטזיה","אהבה ורומנטיקה","היסטוריה","ביוגרפיה","מדע ופילוסופיה","פיתוח אישי"]);
+    const LOW = new Set(["ספרי לימוד ואנציקלופדיות","ספרי טיולים ואטלסים"]);
+    const tier = b => TOP.has(b.genre) ? 0 : LOW.has(b.genre) ? 2 : 1;
+    const byDate = [...others].sort((a,b) => Number(b.createdat) - Number(a.createdat));
+    const g = {}, o = {}, picked = new Set();
+    for (const t of [0,1,2]) for (const b of byDate) {
+      if (picked.size >= 14 || tier(b) !== t) continue;
+      const gk = b.genre || "-", ok = String(b.ownerid);
+      if ((g[gk]||0) >= 2 || (o[ok]||0) >= 3) continue;
+      picked.add(b); g[gk] = (g[gk]||0) + 1; o[ok] = (o[ok]||0) + 1;
+    }
+    // מעט מגוון? משלימים מהשאר כדי שהשורה לא תהיה ריקה
+    const rest = byDate.filter(b => !picked.has(b)).sort((a,b) => tier(a) - tier(b));
+    const out = [...picked];
+    for (const b of rest) { if (out.length >= 14) break; out.push(b); }
+    return out.sort((a,b) => tier(a) - tier(b));
+  })();
   const free = others.filter(b => b.mode === "give").slice(0, 14);
   const genreCounts = books.reduce((acc,b) => { if (b.genre) acc[b.genre] = (acc[b.genre]||0) + 1; return acc; }, {});
   const genreList = GENRES.filter(([g]) => genreCounts[g]);
