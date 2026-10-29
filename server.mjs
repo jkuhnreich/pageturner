@@ -927,7 +927,8 @@ app.post("/api/analyze/front", visionGuard, async (req, res) => {
     if (!straight && vision.corners) console.log("front: corners rejected", JSON.stringify(vision.corners));
     const croppedImage = straight || await cropBookImage(buf, vision.crop);
     const meta = { isbn: enriched.isbn || vision.isbn, title: enriched.title, author: enriched.author };
-    const communityCover = coverUrl(req, await findCover(meta));
+    // ספר עם מספר כרך: לא לוקחים כריכה מהספרייה, כי לכרכים שונים יש אותו שם ומחבר
+    const communityCover = vision.volume ? null : coverUrl(req, await findCover(meta));
     res.json({ ok: true, data: { ...enriched, isbn: normIsbn(meta.isbn) || enriched.isbn || "" }, googleResults, croppedImage, straightened: !!straight, communityCover });
   } catch (e) {
     console.error("analyze/front:", e.message);
@@ -1128,7 +1129,7 @@ app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, uploa
        coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now(), toCheck.length ? mod.status : null, setText, otherGenre(b.genre, b.genreOther)]
     );
     if (mod.status === "unchecked") notifyUnchecked(req, id, b.title, u).catch(e => console.error("unchecked notify:", e.message));
-    if (b.coverQuality === "straight" && thumbnail?.startsWith("data:") && mod.status === "ok") {
+    if (b.coverQuality === "straight" && !String(b.volume || "").trim() && thumbnail?.startsWith("data:") && mod.status === "ok") {
       saveCover({ isbn: b.isbn, title: b.title, author: b.author }, thumbnail, "user").catch(e => console.error("saveCover:", e.message));
     }
     track("book_publish", u.id, { bookId: id, title: b.title, mode, city, ...(set ? { volumes: set.have.length } : {}) });

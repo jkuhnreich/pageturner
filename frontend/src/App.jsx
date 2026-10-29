@@ -819,9 +819,11 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
       fd.append("image", file);
       const res = await api.upload("/api/analyze/front", fd);
       const d = res.data;
-      // סדר עדיפויות לכריכה: ספריית הקהילה ← הצילום שלכם אחרי יישור ← מאגר חיצוני ← חיתוך פשוט
-      const thumb = res.communityCover || (res.straightened && res.croppedImage) || d.thumbnail || res.croppedImage || "";
-      const quality = res.communityCover ? "community" : res.straightened ? "straight" : "";
+      // סדר עדיפויות לכריכה: הצילום שלכם אחרי יישור ← ספריית הקהילה ← מאגר חיצוני ← חיתוך פשוט
+      // (הצילום של המשתמש קודם: בסדרות כמו ספרי לימוד, לכמה כרכים יש אותו שם ואותו מחבר)
+      const own = res.straightened && res.croppedImage;
+      const thumb = own || res.communityCover || d.thumbnail || res.croppedImage || "";
+      const quality = own ? "straight" : res.communityCover ? "community" : "";
       setForm(f => ({
         ...f,
         title:     d.title     || f.title,
@@ -832,8 +834,10 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
         thumbnail: thumb || f.thumbnail,
         coverQuality: thumb ? quality : f.coverQuality,
         genre:     d.genre     || f.genre,
+        series:    d.series    || f.series,
+        volume:    d.volume    || f.volume,
       }));
-      setCoverNote(res.communityCover ? "כריכה מהספרייה" : res.straightened ? "הכריכה יושרה" : "");
+      setCoverNote(own ? "הכריכה יושרה" : res.communityCover ? "כריכה מהספרייה" : "");
       const cnt = [d.title, d.author, d.publisher].filter(Boolean).length;
       toast_(cnt ? `זיהינו ${cnt} פרטים מהכריכה ✓` : "לא הצלחנו לקרוא את הכריכה, אפשר להשלים ידנית", cnt ? "ok" : "warn");
     } catch (e) {
@@ -860,9 +864,10 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
       // אם Google Books החזיר נתונים מהISBN — עדיפות גבוהה
       if (d.googleTitle) updates.title = d.googleTitle;
       if (d.googleAuthor) updates.author = d.googleAuthor;
-      if (res.communityCover) { updates.thumbnail = res.communityCover; updates.coverQuality = "community"; setCoverNote("כריכה מהספרייה"); }
+      // כריכה מהספרייה רק אם אין עדיין כריכה מהצילום של המשתמש
+      if (res.communityCover && form.coverQuality !== "straight") { updates.thumbnail = res.communityCover; updates.coverQuality = "community"; setCoverNote("כריכה מהספרייה"); }
       if (Object.keys(updates).length) {
-        setForm(f => ({ ...f, ...updates, thumbnail: f.coverQuality === "community" ? f.thumbnail : (updates.thumbnail || f.thumbnail) }));
+        setForm(f => ({ ...f, ...updates, ...(f.coverQuality === "community" || f.coverQuality === "straight" ? { thumbnail: f.thumbnail, coverQuality: f.coverQuality } : { thumbnail: updates.thumbnail || f.thumbnail }) }));
         toast_("✓ פרטי הספר עודכנו מהכריכה האחורית");
       } else {
         toast_("כריכה נותחה — לא נמצאו פרטים", "warn");
