@@ -97,11 +97,11 @@ const GENRES = [
   ["אהבה ורומנטיקה","heart","#F7E4E6"], ["היסטוריה","column","#F2EADB"], ["ביוגרפיה","quill","#EDE6DD"],
   ["מדע ופילוסופיה","atom","#E3EFEA"], ["פיתוח אישי","sprout","#EAF2DF"], ["עסקים וכלכלה","chart","#E6ECF4"],
   ["ילדים ונוער","kite","#FBEBD8"], ["ספרי פעוטות","blocks","#FCE8EC"], ["בישול ואפייה","pot","#F6E6DA"], ["שירה","feather","#ECE7F3"],
-  ["יהדות ורוחניות","candle","#F5EFD9"], ["אנציקלופדיות וספרי לימוד","volumes","#E4ECF2"], ["ספרי טיולים ואטלסים","map","#E2F0EC"],
+  ["יהדות ורוחניות","candle","#F5EFD9"], ["ספרי לימוד ואנציקלופדיות","volumes","#E4ECF2"], ["ספרי טיולים ואטלסים","map","#E2F0EC"],
   ["אחר","dots","#ECEAE4"],
 ];
 // סוגה שבה מציעים סט כרכים (אנציקלופדיה וכדומה)
-const SET_GENRE = "אנציקלופדיות וספרי לימוד";
+const SET_GENRE = "ספרי לימוד ואנציקלופדיות";
 const hashColor = id => { let h = 0; for (const ch of String(id||"")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return SPINES[h % SPINES.length]; };
 
 const CSS = `

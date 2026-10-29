@@ -129,6 +129,7 @@ async function initDB() {
     "ALTER TABLE wishlist ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS setinfo TEXT",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS genreother TEXT",
+    "UPDATE books SET genre='ספרי לימוד ואנציקלופדיות' WHERE genre='אנציקלופדיות וספרי לימוד'",
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS volumes TEXT",
     "CREATE INDEX IF NOT EXISTS books_avail_created ON books (avail, createdat DESC)",
     "CREATE INDEX IF NOT EXISTS books_owner ON books (ownerid)",
@@ -559,11 +560,11 @@ function fuzzKm(km) {
 }
 
 const GENRE_LIST = ["ספרות ורומנים", "מתח", "מדע בדיוני ופנטזיה", "אהבה ורומנטיקה", "היסטוריה", "ביוגרפיה", "מדע ופילוסופיה", "פיתוח אישי",
-  "עסקים וכלכלה", "ילדים ונוער", "ספרי פעוטות", "בישול ואפייה", "שירה", "יהדות ורוחניות", "אנציקלופדיות וספרי לימוד", "ספרי טיולים ואטלסים", "אחר"];
+  "עסקים וכלכלה", "ילדים ונוער", "ספרי פעוטות", "בישול ואפייה", "שירה", "יהדות ורוחניות", "ספרי לימוד ואנציקלופדיות", "ספרי טיולים ואטלסים", "אחר"];
 function mapGenre(categories) {
   if (!categories || !categories.length) return "";
   const c = categories.join(" ").toLowerCase();
-  if (c.includes("encyclopedia") || c.includes("textbook") || c.includes("study aids") || c.includes("reference")) return "אנציקלופדיות וספרי לימוד";
+  if (c.includes("encyclopedia") || c.includes("textbook") || c.includes("study aids") || c.includes("reference")) return "ספרי לימוד ואנציקלופדיות";
   if (c.includes("travel") || c.includes("atlas") || c.includes("maps")) return "ספרי טיולים ואטלסים";
   if (c.includes("board book") || c.includes("baby") || c.includes("toddler")) return "ספרי פעוטות";
   if (c.includes("fiction") || c.includes("novel") || c.includes("literature")) return "ספרות ורומנים";
@@ -788,6 +789,7 @@ function normSet(raw) {
   return { n, have, style: o.style === "num" ? "num" : "heb", single: !!o.single, each: o.single && Number.isFinite(each) && each > 0 ? Math.round(each * 100) / 100 : null };
 }
 // סוגה "אחר": המשתמש יכול לכתוב איזו סוגה (נשמר בנפרד, הסינון נשאר לפי "אחר")
+const fixGenre = g => g === "אנציקלופדיות וספרי לימוד" ? "ספרי לימוד ואנציקלופדיות" : g;
 function otherGenre(genre, text) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
   return genre === "אחר" && t ? clip(t, 40) : null;
@@ -1120,7 +1122,7 @@ app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, uploa
       `INSERT INTO books (id,title,author,publisher,year,summary,condition,series,volume,isbn,genre,mode,price,lendduration,swapfor,lenduntil,avail,ownerName,ownerType,phone,ownerId,lat,lng,city,frontImg,thumbnail,createdAt,imgcheck,setinfo,genreother)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)`,
       [id, clip(b.title.trim(), 300), clip(b.author, 200), clip(b.publisher, 200), clip(b.year, 10), clip(b.summary, 4000), clip(b.condition, 100),
-       clip(b.series, 200), clip(b.volume, 20), clip(b.isbn, 20), clip(b.genre, 60), mode,
+       clip(b.series, 200), clip(b.volume, 20), clip(b.isbn, 20), clip(fixGenre(b.genre), 60), mode,
        mode === "sell" ? (Number(b.price) || null) : null, clip(b.lendDuration, 60), clip(b.swapFor, 300), clip(b.lendUntil || b.lenduntil, 20),
        true, u.storename || u.name || "", u.type || "private", u.phone || "", u.id,
        coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now(), toCheck.length ? mod.status : null, setText, otherGenre(b.genre, b.genreOther)]
@@ -1171,7 +1173,7 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
        clip(lendDuration ?? existing.lendduration, 60), clip(swapFor ?? existing.swapfor, 300), clip(lendUntil ?? existing.lenduntil ?? "", 20),
        existing.hidden ? false : (typeof avail === "boolean" ? avail : existing.avail), coords ? coords.lat : existing.lat, coords ? coords.lng : existing.lng, city,
        dealStatus !== undefined ? (dealStatus ? clip(dealStatus, 20) : null) : existing.dealstatus, req.params.id,
-       genre !== undefined ? clip(genre, 60) : existing.genre, newSet,
+       genre !== undefined ? clip(fixGenre(genre), 60) : existing.genre, newSet,
        genreOther !== undefined || genre !== undefined ? otherGenre(genre !== undefined ? genre : existing.genre, genreOther !== undefined ? genreOther : existing.genreother) : existing.genreother]
     );
     if (dealStatus && existing.avail) track("book_deal", req.user.id, { bookId: req.params.id, dealStatus });
