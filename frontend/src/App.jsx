@@ -592,8 +592,18 @@ function CropSheet({ file, onDone, onClose }) {
   const [url, setUrl] = useState(null);
   const imgRef = useRef(null);
   const drag = useRef(null);
-  const [rect, setRect] = useState({ x: .08, y: .08, w: .84, h: .84 });
+  const [rect, setRect] = useState({ x: .3, y: .2, w: .4, h: .6 });
   const [busy, setBusy] = useState(false);
+  const moved = useRef(false);
+  // מסגרת התחלתית בצורת ספר במרכז, כדי שיהיה ברור שצריך להזיז אותה אל הספר הרצוי
+  const onImgLoad = e => {
+    const { naturalWidth: W, naturalHeight: H } = e.currentTarget;
+    if (!W || !H) return;
+    let h = .6, w = h * H * (2 / 3) / W;
+    if (w > .6) { w = .6; h = w * W * 1.5 / H; }
+    setRect({ x: (1 - w) / 2, y: (1 - h) / 2, w, h });
+    api.track("crop_open", { w: W, h: H });
+  };
   useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
   const MIN = .08;
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -602,13 +612,27 @@ function CropSheet({ file, onDone, onClose }) {
     e.preventDefault(); e.stopPropagation();
     const box = imgRef.current?.getBoundingClientRect();
     if (!box) return;
-    drag.current = { mode, sx: e.clientX, sy: e.clientY, r: rect, bw: box.width, bh: box.height };
+    moved.current = true;
+    if (mode === "draw") {
+      // גרירה על התמונה מחוץ למסגרת: מסמנים מסגרת חדשה מהנקודה הזו
+      const px = clamp((e.clientX - box.left) / box.width, 0, 1), py = clamp((e.clientY - box.top) / box.height, 0, 1);
+      drag.current = { mode, sx: e.clientX, sy: e.clientY, px, py, bw: box.width, bh: box.height };
+    } else {
+      drag.current = { mode, sx: e.clientX, sy: e.clientY, r: rect, bw: box.width, bh: box.height };
+    }
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const move = e => {
     const d = drag.current;
     if (!d) return;
     const dx = (e.clientX - d.sx) / d.bw, dy = (e.clientY - d.sy) / d.bh;
+    if (d.mode === "draw") {
+      const qx = clamp(d.px + dx, 0, 1), qy = clamp(d.py + dy, 0, 1);
+      if (Math.abs(qx - d.px) < .02 && Math.abs(qy - d.py) < .02) return;
+      const x1 = Math.min(d.px, qx), y1 = Math.min(d.py, qy);
+      setRect({ x: x1, y: y1, w: Math.max(MIN, Math.abs(qx - d.px)), h: Math.max(MIN, Math.abs(qy - d.py)) });
+      return;
+    }
     let { x, y, w, h } = d.r;
     if (d.mode === "move") {
       x = clamp(x + dx, 0, 1 - w); y = clamp(y + dy, 0, 1 - h);
@@ -628,7 +652,8 @@ function CropSheet({ file, onDone, onClose }) {
     const img = imgRef.current;
     if (!img?.naturalWidth) return;
     setBusy(true);
-    const r = whole ? { x: 0, y: 0, w: 1, h: 1 } : rect;
+    const r = whole ? { x: 0, y: 0, w: 1, h: 1 } : { ...rect, w: Math.min(rect.w, 1 - rect.x), h: Math.min(rect.h, 1 - rect.y) };
+    api.track("crop_done", { whole: !!whole, moved: moved.current });
     const sx = r.x * img.naturalWidth, sy = r.y * img.naturalHeight, sw = r.w * img.naturalWidth, sh = r.h * img.naturalHeight;
     const k = Math.min(1, 2000 / Math.max(sw, sh));
     const c = document.createElement("canvas");
@@ -638,7 +663,7 @@ function CropSheet({ file, onDone, onClose }) {
   };
 
   useEffect(() => {
-    const k = e => { if (e.key === "Escape") onClose(); else if (e.key === "Enter") finish(false); };
+    const k = e => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", k);
     return () => document.removeEventListener("keydown", k);
   });
@@ -654,13 +679,13 @@ function CropSheet({ file, onDone, onClose }) {
       <div style={{padding:"calc(14px + env(safe-area-inset-top)) 16px 10px",display:"flex",alignItems:"center",gap:12,color:"#fff"}}>
         <button onClick={onClose} aria-label="ביטול" style={{width:40,height:40,borderRadius:"50%",border:"none",background:"rgba(255,255,255,.12)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><Icon name="close" size={20}/></button>
         <div>
-          <div style={{fontSize:16,fontWeight:700}}>סמנו את הספר</div>
-          <div style={{fontSize:12.5,opacity:.75,marginTop:2}}>גררו את הפינות כך שרק הכריכה הרצויה תהיה בתוך המסגרת</div>
+          <div style={{fontSize:16,fontWeight:700}}>איזה ספר מפרסמים? סמנו אותו</div>
+          <div style={{fontSize:12.5,opacity:.75,marginTop:2}}>גררו את המסגרת אל הספר והתאימו את הפינות, או סמנו מסגרת חדשה בגרירה על התמונה</div>
         </div>
       </div>
       <div style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:"14px 22px"}}>
         <div style={{position:"relative",direction:"ltr",lineHeight:0,touchAction:"none"}} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
-          {url && <img ref={imgRef} src={url} alt="" draggable={false} style={{display:"block",maxWidth:"calc(100vw - 44px)",maxHeight:"calc(100dvh - 230px)",userSelect:"none",WebkitUserSelect:"none"}}/>}
+          {url && <img ref={imgRef} src={url} alt="" draggable={false} onLoad={onImgLoad} onPointerDown={start("draw")} style={{display:"block",cursor:"crosshair",touchAction:"none",maxWidth:"calc(100vw - 44px)",maxHeight:"calc(100vh - 230px)",userSelect:"none",WebkitUserSelect:"none"}}/>}
           <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none"}}>
             <div style={{position:"absolute",left:pct(rect.x),top:pct(rect.y),width:pct(rect.w),height:pct(rect.h),boxShadow:"0 0 0 9999px rgba(0,0,0,.6)",border:"2px solid #fff"}}/>
           </div>
