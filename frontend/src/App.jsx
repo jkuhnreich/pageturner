@@ -691,7 +691,9 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile, badge }) {
   // במחשב: אפשר גם לגרור תמונה לתוך המשבצת
   const [over, setOver] = useState(false);
   const onDrop = e => { e.preventDefault(); setOver(false); const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith("image/")); if (f) setCropFile(f); };
-  const openCam = () => canLiveCamera() ? setCam(true) : camRef.current.click();
+  // במחשב (עכבר) לא פותחים מצלמת רשת: בוחרים קובץ, ואז חיתוך
+  const desktop = typeof matchMedia !== "undefined" && !matchMedia("(pointer: coarse)").matches;
+  const openCam = () => canLiveCamera() && !desktop ? setCam(true) : camRef.current.click();
   const pill = {display:"inline-flex",alignItems:"center",gap:4,fontSize:12,fontWeight:700,padding:"6px 10px",borderRadius:9,cursor:"pointer",border:"none"};
   return (
     <div onDragOver={e=>{e.preventDefault();setOver(true);}} onDragLeave={()=>setOver(false)} onDrop={onDrop}
@@ -749,6 +751,12 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
   const barcodeInputRef = useRef(null);
   const copyInputRef = useRef(null);
   const [copyPreview, setCopyPreview] = useState(null);
+  const [copyCrop, setCopyCrop] = useState(null);
+  const applyCopyPhoto = async file => {
+    setCopyPreview(URL.createObjectURL(file));
+    setFrontFile(await compressImage(file));
+    if (!form.thumbnail) setFp(URL.createObjectURL(file));
+  };
   const [isbnBusy, setIsbnBusy] = useState(false);
   const [isSet, setIsSet] = useState(false);
   const [setVal, setSetVal] = useState(null);
@@ -898,13 +906,11 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
           <div style={{fontSize:12,color:C.muted,marginTop:2}}>{frontFile ? "יוצג בדף הספר לצד הכריכה" : "מומלץ: מראה את המצב האמיתי של הספר"}</div>
         </div>
         <button onClick={()=>copyInputRef.current.click()} style={{padding:"8px 12px",borderRadius:10,border:"none",background:C.ink,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{frontFile?"החלפה":"הוספה"}</button>
-        <input ref={copyInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
+        <input ref={copyInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
           const file = e.target.files[0]; e.target.value = "";
-          if (!file) return;
-          setCopyPreview(URL.createObjectURL(file));
-          setFrontFile(await compressImage(file));
-          if (!form.thumbnail) setFp(URL.createObjectURL(file));
+          if (file) setCopyCrop(file);
         }}/>
+        {copyCrop && <CropSheet file={copyCrop} onClose={()=>setCopyCrop(null)} onDone={f=>{setCopyCrop(null);applyCopyPhoto(f);}}/>}
       </div>
       {needPhone && <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 12px 2px",marginBottom:14}}>
         <div style={{fontSize:14,fontWeight:700,color:C.ink,marginBottom:4}}>איך יפנו אליך?</div>
