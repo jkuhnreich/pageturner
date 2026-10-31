@@ -1597,6 +1597,8 @@ app.delete("/api/me", requireAuth, async (req, res) => {
     await client.query("UPDATE analytics SET userid=NULL WHERE userid=$1", [id]);
     await client.query("UPDATE book_history SET fromuserid=NULL WHERE fromuserid=$1", [id]);
     await client.query("UPDATE book_history SET touserid=NULL WHERE touserid=$1", [id]);
+    await client.query("DELETE FROM reports WHERE userid=$1", [id]);
+    await client.query("UPDATE blocked_attempts SET userid=NULL WHERE userid=$1", [id]);
     await client.query("DELETE FROM users WHERE id=$1", [id]);
     await client.query("COMMIT");
     res.json({ ok: true });
