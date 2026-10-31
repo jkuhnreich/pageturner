@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
-import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual, createPublicKey, verify as cryptoVerify, createHmac } from "crypto";
+import { randomUUID, randomBytes, randomInt, createHash, timingSafeEqual, createPublicKey, verify as cryptoVerify, createHmac, scryptSync, createCipheriv } from "crypto";
 import { gzipSync } from "zlib";
 import cron from "node-cron";
 import pg from "pg";
@@ -1595,6 +1595,8 @@ app.delete("/api/me", requireAuth, async (req, res) => {
     await client.query("DELETE FROM sessions WHERE userid=$1", [id]);
     await client.query("DELETE FROM otps WHERE email=$1", [req.user.email]);
     await client.query("UPDATE analytics SET userid=NULL WHERE userid=$1", [id]);
+    await client.query("UPDATE book_history SET fromuserid=NULL WHERE fromuserid=$1", [id]);
+    await client.query("UPDATE book_history SET touserid=NULL WHERE touserid=$1", [id]);
     await client.query("DELETE FROM users WHERE id=$1", [id]);
     await client.query("COMMIT");
     res.json({ ok: true });
@@ -1757,7 +1759,8 @@ app.post("/api/analytics", limit("analytics", 120, 60 * 1000), async (req, res) 
 
 // ── אדמין ────────────────────────────────────────────────
 function isAdmin(req) {
-  const key = req.get("x-admin-key") || req.query.key || req.body?.key;
+  // רק בכותרת או בגוף הבקשה — לא בכתובת, כדי שהמפתח לא יישמר בלוגים ובהיסטוריית הדפדפן
+  const key = req.get("x-admin-key") || req.body?.key;
   return !!process.env.ADMIN_KEY && safeEqual(key, process.env.ADMIN_KEY);
 }
 app.get("/api/admin/stats", limit("admin", 20, 15 * 60 * 1000), async (req, res) => {
@@ -2069,6 +2072,13 @@ async function makeBackup() {
   }
   return data;
 }
+// הצפנת הגיבוי (AES-256-GCM, מפתח שנגזר מ-BACKUP_PASSPHRASE). פענוח: node scripts/decrypt-backup.mjs <file>
+function encryptBackup(buf, pass) {
+  const salt = randomBytes(16), iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", scryptSync(pass, salt, 32), iv);
+  const enc = Buffer.concat([c.update(buf), c.final()]);
+  return Buffer.concat([Buffer.from("PTBK1"), salt, iv, c.getAuthTag(), enc]);
+}
 async function sendBackup() {
   const to = process.env.BACKUP_EMAIL || "pageturner.team@gmail.com";
   try {
@@ -2085,11 +2095,16 @@ async function sendBackup() {
     }
     const date = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
     const counts = Object.entries(data.tables).map(([t, r]) => `${t}: ${r.length}`).join(" · ");
-    if (process.env.BACKUP_DIR) { const fs = await import("fs"); fs.writeFileSync(`${process.env.BACKUP_DIR}/pageturner-backup-${date}.json.gz`, gz); }
-    await sendEmail(to, `🗄️ גיבוי Pageturner ${date}`, `<div dir="rtl" style="font-family:sans-serif">
+    const pass = process.env.BACKUP_PASSPHRASE;
+    const file = pass ? encryptBackup(gz, pass) : gz;
+    const fname = `pageturner-backup-${date}.json.gz${pass ? ".enc" : ""}`;
+    if (!pass) console.warn("⚠️ BACKUP_PASSPHRASE not set — backup sent unencrypted");
+    if (process.env.BACKUP_DIR) { const fs = await import("fs"); fs.writeFileSync(`${process.env.BACKUP_DIR}/${fname}`, file); }
+    await sendEmail(to, `🗄️ גיבוי Pageturner ${date}${pass ? " 🔒" : " ⚠️ לא מוצפן"}`, `<div dir="rtl" style="font-family:sans-serif">
       <p>${note}</p><p style="color:#666;font-size:13px">${counts}</p>
-      <p style="color:#999;font-size:12px">גודל: ${(gz.length / 1024).toFixed(0)}KB. הקובץ מכיל פרטים אישיים של משתמשים — אין להעביר אותו הלאה.</p></div>`,
-      [{ filename: `pageturner-backup-${date}.json.gz`, content: gz.toString("base64") }]);
+      ${pass ? `<p style="color:#666;font-size:13px">🔒 הקובץ מוצפן. לפתיחה: node scripts/decrypt-backup.mjs ${fname}</p>` : `<p style="color:#b33;font-size:13px">⚠️ הקובץ לא מוצפן. יש להגדיר BACKUP_PASSPHRASE ב-Railway.</p>`}
+      <p style="color:#999;font-size:12px">גודל: ${(file.length / 1024).toFixed(0)}KB. הקובץ מכיל פרטים אישיים של משתמשים — אין להעביר אותו הלאה.</p></div>`,
+      [{ filename: fname, content: file.toString("base64") }]);
     console.log(`🗄️ backup sent (${(gz.length / 1024).toFixed(0)}KB)`);
     return { ok: true, size: gz.length, counts };
   } catch (e) { console.error("backup failed:", e.message); return { ok: false, error: e.message }; }
