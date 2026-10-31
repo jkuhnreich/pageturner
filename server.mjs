@@ -1381,16 +1381,55 @@ app.put("/api/contacts/:id", requireAuth, async (req, res) => {
 });
 
 // ── קוד כניסה במייל (OTP) ─────────────────────────────────
+const RESEND_URL = process.env.RESEND_URL || "https://api.resend.com/emails";
 async function sendEmail(to, subject, html, attachments) {
   if (!process.env.RESEND_API_KEY) { console.log(`[email skipped] to=${to} subject=${subject}${attachments ? " attachments=" + attachments.map(a => a.filename + ":" + a.content.length).join(",") : ""}`); return; }
-  const r = await fetch("https://api.resend.com/emails", {
+  const r = await fetch(RESEND_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [to], subject, html, ...(attachments ? { attachments } : {}) }),
   });
   if (!r.ok) { const t = await r.text(); throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`); }
   const kind = /קוד הכניסה/.test(subject) ? "otp" : /גיבוי/.test(subject) ? "backup" : /דוח/.test(subject) ? "report" : /זמין עכשיו/.test(subject) ? "wishlist" : "admin";
-  track("email_sent", null, { kind });
+  await track("email_sent", null, { kind });
+  checkEmailQuota().catch(e => console.error("email quota check:", e.message));
+}
+
+// התראה כשמתקרבים למכסת המיילים היומית של Resend (מתאפסת בחצות UTC = 02:00/03:00 בישראל)
+const EMAIL_DAILY_LIMIT_N = Number(process.env.EMAIL_DAILY_LIMIT || 100);
+const EMAIL_ALERT_LEVELS = String(process.env.EMAIL_ALERT_AT || "65,90").split(",").map(Number).filter(n => n > 0).sort((a, b) => a - b);
+const emailAlertsSent = new Set();
+async function pushAlert(title, message, urgent) {
+  if (!process.env.NTFY_TOPIC) return;
+  await fetch(`${process.env.NTFY_URL || "https://ntfy.sh"}/${encodeURIComponent(process.env.NTFY_TOPIC)}`, {
+    method: "POST",
+    headers: { Title: `=?UTF-8?B?${Buffer.from(title).toString("base64")}?=`, Priority: urgent ? "5" : "4", Tags: urgent ? "rotating_light" : "warning" },
+    body: message,
+  });
+}
+async function checkEmailQuota() {
+  const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+  const day = dayStart.toISOString().slice(0, 10);
+  const n = +(await pool.query("SELECT COUNT(*) FROM analytics WHERE event='email_sent' AND createdat>=$1", [dayStart.getTime()])).rows[0].count;
+  const level = [...EMAIL_ALERT_LEVELS].reverse().find(l => n >= l);
+  if (!level) return;
+  const key = `${day}:${level}`;
+  if (emailAlertsSent.has(key)) return;
+  emailAlertsSent.add(key);
+  const done = await pool.query("SELECT 1 FROM analytics WHERE event='email_alert' AND data->>'key'=$1 LIMIT 1", [key]);
+  if (done.rows.length) return;
+  await track("email_alert", null, { key, n });
+  const urgent = level >= 90;
+  const title = urgent ? `Pageturner: ${n}/${EMAIL_DAILY_LIMIT_N} מיילים היום!` : `Pageturner: ${n} מיילים היום`;
+  const msg = `נשלחו היום ${n} מתוך ${EMAIL_DAILY_LIMIT_N} מיילים במכסה החינמית של Resend. ${urgent ? "עוד מעט הרשמה עם קוד במייל תפסיק לעבוד. כדאי לשדרג עכשיו." : "אם ההרשמות ממשיכות בקצב הזה, כדאי לשדרג ל-Pro."} שדרוג: resend.com/settings/billing. המכסה מתאפסת בחצות UTC.`;
+  await pushAlert(title, msg, urgent).catch(e => console.error("push alert:", e.message));
+  if (process.env.ADMIN_EMAIL && !urgent) {
+    await fetch(RESEND_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [process.env.ADMIN_EMAIL], subject: `⚠️ ${title}`, html: `<div dir="rtl" style="font-family:sans-serif"><p>${escapeHtml(msg)}</p></div>` }),
+    }).catch(e => console.error("quota email:", e.message));
+  }
 }
 
 app.post("/api/auth/send-otp", limit("otp-send", 40, 15 * 60 * 1000), async (req, res) => {
