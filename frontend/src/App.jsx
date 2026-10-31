@@ -208,16 +208,16 @@ const WhatsAppGlyph = ({ size = 20, color = "#fff" }) => (
 );
 
 // כריכה: תמונה אמיתית, או כריכה מעוצבת עם שם הספר
-function Cover({ book, radius = 12, titleSize = 15, eager }) {
+function Cover({ book, radius = 12, titleSize = 15, eager, decorative }) {
   const [failed, setFailed] = useState(false);
   const src = book.thumbnail || book.frontimg;
   const color = hashColor(book.id);
   if (src && !failed) return (
-    <img src={src} alt={book.title} loading={eager?"eager":"lazy"} decoding="async" onError={()=>setFailed(true)}
+    <img src={src} alt={decorative ? "" : book.title} loading={eager?"eager":"lazy"} decoding="async" onError={()=>setFailed(true)}
       style={{width:"100%",height:"100%",objectFit:"cover",display:"block",borderRadius:radius,background:"#E7E1D5"}}/>
   );
   return (
-    <div style={{width:"100%",height:"100%",borderRadius:radius,background:`linear-gradient(160deg, ${color} 0%, ${color} 45%, #1E2D3D 150%)`,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",textAlign:"center",padding:"22% 12% 14%",color:"#fff"}}>
+    <div aria-hidden={decorative || undefined} style={{width:"100%",height:"100%",borderRadius:radius,background:`linear-gradient(160deg, ${color} 0%, ${color} 45%, #1E2D3D 150%)`,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",textAlign:"center",padding:"22% 12% 14%",color:"#fff"}}>
       <div style={{position:"absolute",top:0,bottom:0,right:"6%",width:2,background:"rgba(255,255,255,.16)"}}/>
       <div style={{position:"absolute",width:"90%",aspectRatio:"1",borderRadius:"50%",background:"rgba(255,255,255,.07)",top:"-18%",left:"-30%"}}/>
       <div style={{width:"28%",height:2,background:"rgba(255,255,255,.55)",marginBottom:"10%"}}/>
@@ -332,23 +332,23 @@ function priceLine(book) {
 // אריח ספר — היחידה הבסיסית של הדפדוף
 function BookTile({ book, onOpen, fav, onFav, width, user, showOwner = true }) {
   const own = user?.id && String(book.ownerid) === String(user.id);
+  const hasKm = book.km!=null && !isNaN(book.km);
+  const where = hasKm ? (own?"שלך":book.km<=0.5?"עד 1 ק\"מ":`${book.km} ק"מ`) : (showOwner && book.city ? book.city : "");
   return (
     <div style={{position:"relative",width:width||"auto",animation:"fadeUp .3s ease both"}}>
     <div className="press" role="button" tabIndex={0} onClick={()=>onOpen(book)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen(book);}}}
-      aria-label={[book.title, book.author, (MODES[book.mode]||MODES.sell).label, priceLine(book), book.avail===false?"לא זמין כרגע":""].filter(Boolean).join(", ")}
       style={{cursor:"pointer"}}>
       <div style={{position:"relative",aspectRatio:"2/3",borderRadius:14,boxShadow:"0 6px 16px rgba(30,45,61,.13), 0 1px 2px rgba(30,45,61,.08)",background:"#E7E1D5",opacity:book.avail===false?.55:1,filter:book.avail===false?"grayscale(.7)":"none"}}>
-        <Cover book={book} radius={14} titleSize={width?13:15}/>
+        <Cover book={book} radius={14} titleSize={width?13:15} decorative/>
         <div style={{position:"absolute",top:8,right:8}}><ModeBadge mode={book.mode} small/></div>
         {setOf(book) && <div style={{position:"absolute",bottom:8,right:8,display:"flex",alignItems:"center",gap:4,padding:"3px 8px",borderRadius:99,background:"rgba(30,45,61,.88)",color:"#fff",fontSize:11,fontWeight:700}}><Icon name="volumes" size={12} stroke={2}/>{setOf(book).have.length} כרכים</div>}
       </div>
       <div style={{padding:"9px 2px 0"}}>
-        <div className="clamp2" style={{fontSize:14,fontWeight:700,lineHeight:1.3,color:C.ink}}>{book.title}</div>
+        <div className="clamp2" style={{fontSize:14,fontWeight:700,lineHeight:1.3,color:C.ink}}>{book.title}{book.avail===false && <span className="sr-only">, לא זמין כרגע</span>}</div>
         <div className="clamp1" style={{fontSize:12.5,color:C.muted,marginTop:2}}>{book.author||" "}</div>
         <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5,fontSize:12,color:C.muted}}>
           <span style={{fontWeight:800,color:book.mode==="sell"?C.ink:(MODES[book.mode]||MODES.sell).fg}}>{priceLine(book)}</span>
-          {book.km!=null && !isNaN(book.km) && <><span style={{opacity:.4}}>•</span><span className="clamp1">{own?"שלך":book.km<=0.5?"עד 1 ק\"מ":`${book.km} ק"מ`}</span></>}
-          {book.km==null && showOwner && book.city && <><span style={{opacity:.4}}>•</span><span className="clamp1">{book.city}</span></>}
+          {where && <><span aria-hidden="true" style={{display:"inline-block",width:3,height:3,borderRadius:"50%",background:"currentColor",opacity:.5,flexShrink:0}}/><span className="clamp1">{where}</span></>}
         </div>
       </div>
     </div>
@@ -2040,11 +2040,11 @@ export default function App() {
               </div>
             : <div key="profile-content" style={{animation:"fadeUp .25s ease",paddingTop:18}}>
                 <div style={{background:"#fff",borderRadius:24,padding:"22px 18px 18px",boxShadow:"0 4px 18px rgba(30,45,61,.06)",textAlign:"center"}}>
-                  <label style={{position:"relative",display:"inline-block",cursor:"pointer"}} aria-label="החלפת תמונת פרופיל">
+                  <button type="button" onClick={()=>document.getElementById("pt-avatar-input")?.click()} aria-label="החלפת תמונת פרופיל" style={{position:"relative",display:"inline-block",cursor:"pointer",background:"none",border:"none",padding:0,borderRadius:"50%"}}>
                     {avatarEl(84)}
                     <span style={{position:"absolute",bottom:0,left:0,width:28,height:28,borderRadius:"50%",background:C.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",border:"3px solid #fff"}}><Icon name="camera" size={14} stroke={2.2}/></span>
-                    <input type="file" accept="image/*" style={{display:"none"}} onChange={onAvatarFile}/>
-                  </label>
+                  </button>
+                  <input id="pt-avatar-input" type="file" accept="image/*" style={{display:"none"}} onChange={e=>{onAvatarFile(e);e.target.value="";}}/>
                   <div style={{fontSize:21,fontWeight:800,color:C.ink,marginTop:10}}>{user?.storeName||user?.name}</div>
                   {user?.bio
                     ? <button onClick={()=>{setBioText(user.bio);setEditBio(true);}} style={{background:"none",border:"none",fontSize:14,color:C.muted,marginTop:4,cursor:"pointer",lineHeight:1.5}}>{user.bio}</button>
@@ -2732,7 +2732,7 @@ function BookPage({ book, onClose, isGuest, onGuest, user, onBookUpdated, onCont
             <div style={{textAlign:"center"}}>
               <h1 style={{fontFamily:HEAD,fontSize:27,fontWeight:700,lineHeight:1.15,color:C.ink}}>{book.title}</h1>
               {book.author && <div style={{fontSize:15,color:C.muted,marginTop:6}}>{book.author}</div>}
-              {(book.publisher||book.year) && <div style={{fontSize:12.5,color:C.faint,marginTop:3}}>{[book.publisher,book.year].filter(Boolean).join(" · ")}</div>}
+              {(book.publisher||book.year) && <div style={{fontSize:12.5,color:C.muted,marginTop:3}}>{[book.publisher,book.year].filter(Boolean).join(" · ")}</div>}
               <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginTop:14}}>
                 <ModeBadge mode={book.mode}/>
                 {(book.mode==="sell"||book.mode==="give") && <span style={{fontSize:20,fontWeight:800,color:C.ink}}>{priceLine(book)}</span>}
