@@ -1050,7 +1050,20 @@ app.get("/api/books", async (req, res) => {
   try {
     if (ownerId && all) {
       const r = await pool.query(`SELECT ${BOOK_COLS} FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.ownerid=$1 ORDER BY b.createdat DESC`, [ownerId]);
-      return res.json(r.rows.map(b => publicBook(req, b, coords)));
+      const own = r.rows.map(b => publicBook(req, b, coords));
+      // ספרים שעברו לשכן דרך עסקה מאושרת: נשארים ב"עברו הלאה" של מי שמסר
+      const h = await pool.query(
+        `SELECT DISTINCT ON (b.id) ${BOOK_COLS}, bh.type AS htype, bh.createdat AS hat FROM book_history bh
+         JOIN books b ON b.id=bh.bookid LEFT JOIN users u ON b.ownerid=u.id
+         WHERE bh.fromuserid=$1 AND bh.type NOT LIKE '%:%' AND b.ownerid IS DISTINCT FROM $1
+         ORDER BY b.id, bh.createdat DESC`, [ownerId]);
+      const giver = h.rows.length ? (await pool.query("SELECT name,storename FROM users WHERE id=$1", [ownerId])).rows[0] : null;
+      const passed = h.rows.map(b => ({
+        ...publicBook(req, b, coords),
+        avail: false, dealstatus: b.htype || "agreed", passed: true,
+        ownerid: ownerId, ownername: giver?.storename || giver?.name || "", owneravatar: null, createdat: Number(b.hat) || b.createdat, km: undefined, city: "",
+      }));
+      return res.json([...own, ...passed]);
     }
     let query = `SELECT ${BOOK_COLS} FROM books b LEFT JOIN users u ON b.ownerid=u.id WHERE b.avail=true`;
     const params = [];
