@@ -367,14 +367,21 @@ async function shrinkForCheck(buf) {
     return await im.getBuffer("image/jpeg", { quality: 80 });
   } catch { return null; }
 }
-async function callClaudeMulti(model, bufs, prompt) {
+async function callClaudeMulti(model, bufs, prompt, avatar = false) {
+  const item = avatar
+    ? { type: "object", properties: { unsafe: { type: "boolean" } }, required: ["unsafe"] }
+    : { type: "object", properties: { unsafe: { type: "boolean" }, book: { type: "boolean" } }, required: ["unsafe", "book"] };
   return fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
     method: "POST",
     headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model, max_tokens: 200, messages: [{ role: "user", content: [
-      ...bufs.map(b => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b.toString("base64") } })),
-      { type: "text", text: prompt },
-    ] }] }),
+    body: JSON.stringify({ model, max_tokens: 300,
+      tools: [{ name: "report", description: "Report the check result for each image, in order.",
+        input_schema: { type: "object", properties: { images: { type: "array", items: item } }, required: ["images"] } }],
+      tool_choice: { type: "tool", name: "report" },
+      messages: [{ role: "user", content: [
+        ...bufs.map(b => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b.toString("base64") } })),
+        { type: "text", text: prompt },
+      ] }] }),
   });
 }
 // מחזיר { status: "ok" | "unsafe" | "notbook" | "unchecked" }
@@ -383,15 +390,25 @@ async function moderateImages(buffers, { avatar = false } = {}) {
   if (!bufs.length) return { status: "ok" };
   if (!process.env.ANTHROPIC_API_KEY) return { status: "unchecked", why: "no key" };
   const prompt = avatar ? P_MODERATE_AVATAR : P_MODERATE;
-  try {
-    let r = await callClaudeMulti(MOD_MODEL, bufs, prompt);
-    if (!r.ok && (r.status === 400 || r.status === 404) && MOD_MODEL !== VISION_MODEL) r = await callClaudeMulti(VISION_MODEL, bufs, prompt);
+  const once = async () => {
+    let r = await callClaudeMulti(MOD_MODEL, bufs, prompt, avatar);
+    if (!r.ok && (r.status === 400 || r.status === 404) && MOD_MODEL !== VISION_MODEL) r = await callClaudeMulti(VISION_MODEL, bufs, prompt, avatar);
     if (!r.ok) throw new Error(`moderation ${r.status}: ${(await r.text()).slice(0, 160)}`);
     const d = await r.json();
-    const raw = (d?.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-    const j = parseJ(raw);
+    const tu = (d?.content || []).find(c => c.type === "tool_use");
+    let j = tu?.input;
+    if (!j) {
+      const raw = (d?.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+      try { j = parseJ(raw); } catch { throw new Error(`no json (stop=${d?.stop_reason}) ${raw.slice(0, 120)}`); }
+    }
     const imgs = Array.isArray(j?.images) ? j.images : null;
-    if (!imgs || imgs.length < bufs.length) throw new Error("moderation: bad answer " + raw.slice(0, 120));
+    if (!imgs || imgs.length < bufs.length) throw new Error("bad answer " + JSON.stringify(j).slice(0, 120));
+    return imgs;
+  };
+  try {
+    let imgs;
+    try { imgs = await once(); }
+    catch (e1) { console.error("moderate retry:", e1.message); await new Promise(r => setTimeout(r, 1500)); imgs = await once(); }
     if (imgs.some(x => x.unsafe === true || x.unsafe === "true")) return { status: "unsafe" };
     if (!avatar && imgs.some(x => x.book === false || x.book === "false")) return { status: "notbook" };
     return { status: "ok" };
@@ -1143,7 +1160,7 @@ app.post("/api/books", limit("publish", 120, 60 * 60 * 1000), requireAuth, uploa
        true, u.storename || u.name || "", u.type || "private", u.phone || "", u.id,
        coords?.lat ?? null, coords?.lng ?? null, city, frontImg, thumbnail, Date.now(), toCheck.length ? mod.status : null, setText, otherGenre(b.genre, b.genreOther)]
     );
-    if (mod.status === "unchecked") notifyUnchecked(req, id, b.title, u).catch(e => console.error("unchecked notify:", e.message));
+    if (mod.status === "unchecked") notifyUnchecked(req, id, b.title, u, mod.why).catch(e => console.error("unchecked notify:", e.message));
     if (b.coverQuality === "straight" && !String(b.volume || "").trim() && thumbnail?.startsWith("data:") && mod.status === "ok") {
       saveCover({ isbn: b.isbn, title: b.title, author: b.author }, thumbnail, "user").catch(e => console.error("saveCover:", e.message));
     }
@@ -1203,12 +1220,13 @@ async function hideBook(id, why) {
   await pool.query("UPDATE books SET hidden=true, avail=false WHERE id=$1", [id]);
   track("book_hidden", null, { bookId: id, why });
 }
-async function notifyUnchecked(req, id, title, u) {
+async function notifyUnchecked(req, id, title, u, why = "") {
   if (!process.env.ADMIN_EMAIL) return;
   const hide = `${apiUrl(req)}/api/admin/hide/${id}?t=${hideToken(id)}`;
   await sendEmail(process.env.ADMIN_EMAIL, `🖼️ ספר עם תמונה שלא נבדקה: ${clip(title, 60)}`, `<div dir="rtl" style="font-family:sans-serif">
     <p>הבדיקה האוטומטית של התמונה לא הצליחה (למשל בעיה זמנית בשירות), והספר פורסם בלי בדיקה. כדאי להציץ.</p>
     <p><b>${escapeHtml(title)}</b> · פורסם על ידי ${escapeHtml(u.name || "")}</p>
+    <p style="color:#888;font-size:12px">${escapeHtml(clip(String(why || ""), 200))}</p>
     <p><a href="${siteUrl()}/?book=${id}">לצפייה בספר</a> · <a href="${hide}">להסתיר את הספר</a></p></div>`);
 }
 const REPORT_REASONS = { image: "תמונה לא הולמת", notbook: "זה לא ספר", misleading: "מודעה מטעה", other: "אחר" };
