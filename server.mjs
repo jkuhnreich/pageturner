@@ -1802,7 +1802,7 @@ app.post("/api/feedback", limit("feedback", 5, 60 * 60 * 1000), async (req, res)
 });
 
 // ── אנליטיקס ─────────────────────────────────────────────
-const CLIENT_EVENTS = new Set(["crop_open", "crop_done", "search", "book_view", "page_load", "guest_login", "book_contact", "share", "visit", "signup_start", "signup_submit", "signup_invalid", "signup_back", "add_start", "pwa_install"]);
+const CLIENT_EVENTS = new Set(["crop_open", "crop_done", "search", "book_view", "page_load", "guest_login", "book_contact", "share", "visit", "signup_start", "signup_submit", "signup_invalid", "signup_back", "add_start", "pwa_install", "google_inapp", "google_err"]);
 app.post("/api/analytics", limit("analytics", 120, 60 * 1000), async (req, res) => {
   const { event, data } = req.body;
   if (!CLIENT_EVENTS.has(event)) return res.status(400).json({ error: "event לא מוכר" });
@@ -1866,7 +1866,7 @@ async function israelDay(offsetDays = 0) {
 const STAT_FIELDS = [
   ["visitors", "מבקרים ייחודיים"], ["new_visitors", "מבקרים חדשים"], ["visits", "כניסות"], ["app_visits", "כניסות מהאפליקציה המותקנת"],
   ["signup_starts", "התחילו הרשמה"], ["signup_submits", "לחצו המשך בטופס"], ["signup_invalid", "נתקעו על שגיאה בטופס"], ["otp_sent", "קיבלו קוד הרשמה"],
-  ["otp_ok", "אימתו קוד"], ["otp_bad", "הזינו קוד שגוי"], ["google_new", "התחילו עם Google"], ["signups", "נרשמו"], ["signups_no_phone", "נרשמו בלי טלפון"], ["phone_added", "הוסיפו טלפון אחר כך"], ["signups_google", "נרשמו עם Google"], ["active_users", "משתמשים פעילים"], ["guests", "כניסות כאורח"],
+  ["otp_ok", "אימתו קוד"], ["otp_bad", "הזינו קוד שגוי"], ["google_new", "התחילו עם Google"], ["signups", "נרשמו"], ["signups_no_phone", "נרשמו בלי טלפון"], ["phone_added", "הוסיפו טלפון אחר כך"], ["signups_google", "נרשמו עם Google"], ["google_inapp", "Google חסום (דפדפן בתוך אפליקציה)"], ["google_err", "כניסות Google שנכשלו"], ["active_users", "משתמשים פעילים"], ["guests", "כניסות כאורח"],
   ["books_new", "ספרים חדשים"], ["new_publishers", "מפרסמים חדשים"], ["book_views", "צפיות בספרים"], ["searches", "חיפושים"], ["zero_searches", "חיפושים בלי תוצאות"],
   ["contacts", "פניות למפרסמים"], ["deals", "עסקאות שנסגרו"], ["shares", "שיתופים"], ["wishlist_adds", "משאלות חדשות"], ["pwa_installs", "התקנות לטלפון"],
   ["scans", "סריקות כריכה"], ["image_rejected", "תמונות שנחסמו"], ["books_blocked", "ספרים אסורים שנחסמו"], ["reports", "דיווחים על מודעות"], ["hidden", "מודעות שהוסתרו"],
@@ -1897,8 +1897,8 @@ async function computeStats(a, b) {
   ]);
   const dv = e => one(`SELECT COUNT(DISTINCT COALESCE(data->>'vid', id)) n FROM analytics WHERE event='${e}' AND createdat>=$1 AND createdat<$2`);
   const de = (e, extra = "") => one(`SELECT COUNT(DISTINCT COALESCE(data->>'eh', id)) n FROM analytics WHERE event='${e}' ${extra} AND createdat>=$1 AND createdat<$2`);
-  const [signupSubmits, signupInvalid, otpSent, otpOk, otpBad, googleNew, noPhone, phoneAdded] = await Promise.all([
-    dv("signup_submit"), dv("signup_invalid"), de("otp_sent", "AND data->>'ctx'='signup'"), de("otp_ok"), ev("otp_bad"), de("google_new"),
+  const [googleInapp, googleErr, signupSubmits, signupInvalid, otpSent, otpOk, otpBad, googleNew, noPhone, phoneAdded] = await Promise.all([
+    dv("google_inapp"), dv("google_err"), dv("signup_submit"), dv("signup_invalid"), de("otp_sent", "AND data->>'ctx'='signup'"), de("otp_ok"), ev("otp_bad"), de("google_new"),
     one("SELECT COUNT(*) n FROM analytics WHERE event='register' AND data->>'phone'='false' AND createdat>=$1 AND createdat<$2"), ev("phone_added"),
   ]);
   const list = async (sql, p) => (await q(sql, p)).map(r => ({ k: r.k, n: Number(r.n) }));
@@ -1916,7 +1916,7 @@ async function computeStats(a, b) {
   ]);
   return {
     visitors, new_visitors: newVisitors, visits, app_visits: appVisits, signup_starts: signupStarts, signups, signups_google: signupsGoogle, active_users: active, guests,
-    signup_submits: signupSubmits, signup_invalid: signupInvalid, otp_sent: otpSent, otp_ok: otpOk, otp_bad: otpBad, google_new: googleNew, signups_no_phone: noPhone, phone_added: phoneAdded,
+    signup_submits: signupSubmits, signup_invalid: signupInvalid, otp_sent: otpSent, otp_ok: otpOk, otp_bad: otpBad, google_new: googleNew, google_inapp: googleInapp, google_err: googleErr, signups_no_phone: noPhone, phone_added: phoneAdded,
     books_new: booksNew, new_publishers: newPublishers, book_views: views, searches, zero_searches: zero, contacts, deals, shares, wishlist_adds: wish, pwa_installs: installs,
     scans, image_rejected: imgRej, books_blocked: blocked, reports, hidden, emails, users_total: usersTotal, books_total: booksTotal,
     lists: { sources, topSearches, zeroSearches, topViewed, booksByMode, emailKinds, wishTop, invalidWhy, backSteps },

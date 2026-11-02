@@ -1117,6 +1117,23 @@ function CodeInput({ value, onChange, onEnter }) {
 // ── כפתור "המשך עם Google" (Google Identity Services) ─────────────────
 const GOOGLE_CLIENT_ID = "558837526271-at1k2c514u1bj7h7n6pjbq3n0genks6m.apps.googleusercontent.com";
 let gsiPromise = null;
+// דפדפן בתוך אפליקציה (וואטסאפ, אינסטגרם, פייסבוק וכו') — גוגל חוסמת שם כניסה
+const UA = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+const IN_APP = /; wv\)|FBAN|FBAV|FB_IAB|Instagram|WhatsApp|Line\/|TikTok|Snapchat|musical_ly/i.test(UA);
+const IS_ANDROID = /Android/i.test(UA);
+function InAppNotice() {
+  useEffect(() => { let vid; try { vid = visitInfo().vid; } catch {} api.track("google_inapp", { vid, android: IS_ANDROID }); }, []);
+  const chrome = "intent://" + location.host + location.pathname + location.search + "#Intent;scheme=https;package=com.android.chrome;end";
+  return (
+    <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",fontSize:13,color:C.ink,lineHeight:1.6,textAlign:"center",marginBottom:4}}>
+      כניסה עם Google לא עובדת בתוך האפליקציה הזו.<br/>
+      {IS_ANDROID
+        ? <a href={chrome} style={{color:C.accent,fontWeight:700}}>פתיחה בכרום</a>
+        : <>לחצו על ⋯ ובחרו "פתיחה בספארי"</>}
+      <div style={{color:C.muted,fontSize:12,marginTop:4}}>או המשיכו כאן עם קוד למייל</div>
+    </div>
+  );
+}
 function loadGsi() {
   if (window.google?.accounts?.id) return Promise.resolve();
   if (!gsiPromise) gsiPromise = new Promise((ok, fail) => {
@@ -1127,7 +1144,11 @@ function loadGsi() {
   });
   return gsiPromise;
 }
-function GoogleButton({ onResult, onError }) {
+function GoogleButton(props) {
+  if (IN_APP) return <InAppNotice/>;
+  return <GoogleButtonInner {...props}/>;
+}
+function GoogleButtonInner({ onResult, onError }) {
   const ref = useRef(null);
   const cb = useRef({ onResult, onError });
   cb.current = { onResult, onError };
@@ -1142,13 +1163,13 @@ function GoogleButton({ onResult, onError }) {
         callback: async ({ credential }) => {
           setBusy(true);
           try { cb.current.onResult(await api.post("/api/auth/google", { credential })); }
-          catch (e) { cb.current.onError(e.message); }
+          catch (e) { api.track("google_err", { why: String(e.code || e.status || "x") }); cb.current.onError(e.message); }
           finally { if (alive) setBusy(false); }
         },
       });
       const w = Math.min(380, Math.max(220, Math.round(ref.current.getBoundingClientRect().width || 320)));
       window.google.accounts.id.renderButton(ref.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "pill", locale: "he", width: w, logo_alignment: "center" });
-    }).catch(() => alive && setFailed(true));
+    }).catch(() => { api.track("google_err", { why: "load" }); if (alive) setFailed(true); });
     return () => { alive = false; };
   }, []);
   if (failed) return null;
