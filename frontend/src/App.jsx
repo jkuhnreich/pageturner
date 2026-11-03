@@ -2525,6 +2525,26 @@ function AdminPage({ onBack }) {
           <List items={[{k:"משתמשים",n:T.users_total},{k:"ספרים פעילים",n:T.books_total},{k:"התקנות לטלפון (7 ימים)",n:W.pwa_installs},{k:"סריקות AI (7 ימים)",n:W.scans}]}/></div>
       </div>
 
+      {(()=>{
+        const R = data.recent || { deals: [], deleted: [] };
+        const ST = { sold:"נמכר", lent:"הושאל", swapped:"הוחלף", given:"נמסר", agreed:"סוכם" };
+        const when = t => new Date(t).toLocaleString("he-IL",{timeZone:"Asia/Jerusalem",day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
+        const row = (i, main, sub, t) => (
+          <div key={i} style={{padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,.07)",fontSize:13}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:10}}><b style={{fontWeight:600}}>{main}</b><span style={{color:muted,fontSize:11,whiteSpace:"nowrap"}}>{when(t)}</span></div>
+            {sub && <div style={{color:muted,fontSize:12,marginTop:2}}>{sub}</div>}
+          </div>);
+        return (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginTop:12}}>
+            <div style={{...box,marginBottom:0}}>{h(`🤝 עסקאות שנסגרו (30 ימים) · ${R.deals.length}`)}
+              {R.deals.length ? R.deals.map((d,i)=>row(i, d.title, `${ST[d.status]||ST.agreed}${d.from?` · ${d.from}`:""}${d.to?` ← ${d.to}`:""}`, d.at)) : <div style={{fontSize:13,color:muted}}>לא נסגרו עסקאות</div>}
+            </div>
+            <div style={{...box,marginBottom:0}}>{h(`🗑️ ספרים שנמחקו (30 ימים) · ${R.deleted.length}`)}
+              {R.deleted.length ? R.deleted.map((d,i)=>row(i, d.title, `${d.author?d.author+" · ":""}${d.owner||""}${d.wasAvail?"":" · (כבר לא היה זמין)"}`, d.at)) : <div style={{fontSize:13,color:muted}}>לא נמחקו ספרים</div>}
+            </div>
+          </div>);
+      })()}
+
       <div style={{...box,marginTop:12}}>
         {h("🧰 פעולות")}
         <div style={{display:"grid",gap:8}}>

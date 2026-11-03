@@ -1177,6 +1177,20 @@ async function ownBook(req, res) {
   return existing;
 }
 
+// ── התראת מייל לאדמין על כל עסקה שנסגרת (זמנית — עד DEAL_ALERTS_UNTIL) ──
+const DEAL_ALERTS_UNTIL = Date.parse(process.env.DEAL_ALERTS_UNTIL || "2026-12-03T23:59:59+02:00");
+const DEAL_HE = { sold: "נמכר", lent: "הושאל", swapped: "הוחלף", given: "נמסר", agreed: "סוכם" };
+async function alertDeal(book, dealStatus, fromName, toName, how) {
+  if (!process.env.ADMIN_EMAIL || !(Date.now() < DEAL_ALERTS_UNTIL) || !book) return;
+  const st = DEAL_HE[dealStatus] || DEAL_HE.agreed;
+  await sendEmail(process.env.ADMIN_EMAIL, `🤝 עסקה נסגרה: ${clip(book.title, 60)} (${st})`, `<div dir="rtl" style="font-family:sans-serif">
+    <p><b>${escapeHtml(book.title || "")}</b>${book.author ? " · " + escapeHtml(book.author) : ""}</p>
+    <p>סטטוס: <b>${st}</b></p>
+    <p>מפרסם: ${escapeHtml(fromName || "—")}${toName ? `<br>עבר אל: ${escapeHtml(toName)}` : ""}</p>
+    <p style="color:#888;font-size:12px">${escapeHtml(how)}</p>
+    <p><a href="${siteUrl()}/?book=${book.id}">לצפייה בספר</a></p></div>`);
+}
+
 app.put("/api/books/:id", requireAuth, async (req, res) => {
   const { title, author, publisher, year, summary, mode, price, condition, lendDuration, swapFor, lendUntil, avail, dealStatus, genre, setInfo, genreOther } = req.body;
   try {
@@ -1209,7 +1223,10 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
        genre !== undefined ? clip(fixGenre(genre), 60) : existing.genre, newSet,
        genreOther !== undefined || genre !== undefined ? otherGenre(genre !== undefined ? genre : existing.genre, genreOther !== undefined ? genreOther : existing.genreother) : existing.genreother]
     );
-    if (dealStatus && existing.avail) track("book_deal", req.user.id, { bookId: req.params.id, dealStatus });
+    if (dealStatus && existing.avail) {
+      track("book_deal", req.user.id, { bookId: req.params.id, dealStatus, title: clip(existing.title, 120), from: clip(existing.ownername, 60) });
+      alertDeal(existing, dealStatus, existing.ownername, null, "המפרסם סימן את הספר כעסקה שנסגרה (בלי אישור דו-צדדי)").catch(e => console.error("deal alert:", e.message));
+    }
     if (partialLeft) track("book_deal_partial", req.user.id, { bookId: req.params.id, left: partialLeft, at: "owner" });
     res.json({ ok: true, book: publicBook(req, await getBookRow(req.params.id), null) });
   } catch (e) { console.error("update book:", e.message); res.status(500).json({ error: "העדכון נכשל" }); }
@@ -1285,6 +1302,7 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
   try {
     const existing = await ownBook(req, res);
     if (!existing) return;
+    track("book_deleted", req.user.id, { bookId: req.params.id, title: clip(existing.title, 120), author: clip(existing.author, 80), owner: clip(existing.ownername, 60), mode: existing.mode, wasAvail: !!existing.avail });
     await pool.query("DELETE FROM books WHERE id=$1", [req.params.id]);
     await pool.query("DELETE FROM favorites WHERE bookid=$1", [req.params.id]);
     await pool.query("DELETE FROM reports WHERE bookid=$1", [req.params.id]);
@@ -1403,7 +1421,9 @@ app.put("/api/contacts/:id", requireAuth, async (req, res) => {
           const newOwner = (await pool.query("SELECT name,storename FROM users WHERE id=$1", [newOwnerId])).rows[0];
           await pool.query("UPDATE books SET avail=false,dealstatus=null,prevownerid=$1,ownerid=$2,ownername=$3 WHERE id=$4",
             [bookRow.ownerid, newOwnerId, newOwner?.storename || newOwner?.name || "", bookRow.id]);
-          track("book_deal", me, { bookId: bookRow.id, dealStatus });
+          const toName = newOwner?.storename || newOwner?.name || "";
+          track("book_deal", me, { bookId: bookRow.id, dealStatus, title: clip(bookRow.title, 120), from: clip(bookRow.ownername, 60), to: clip(toName, 60) });
+          alertDeal(bookRow, dealStatus, bookRow.ownername, toName, "עסקה מאושרת משני הצדדים").catch(e => console.error("deal alert:", e.message));
         }
       }
     }
@@ -1980,7 +2000,18 @@ app.get("/api/admin/trends", limit("admin", 60, 15 * 60 * 1000), async (req, res
     const today = await dayStats(await israelDay(0), { fresh: true });
     const [a] = await dayBounds(await israelDay(-6));
     const week = await computeStats(a, Date.now() + 1);
-    res.json({ rows, today, week, fields: STAT_FIELDS, emailDailyLimit: Number(process.env.EMAIL_DAILY_LIMIT || 100) });
+    const since = Date.now() - DAY * 30;
+    const [dl, del] = await Promise.all([
+      pool.query(`SELECT a.data, a.createdat, b.title, b.ownername FROM analytics a LEFT JOIN books b ON b.id = a.data->>'bookId'
+                  WHERE a.event='book_deal' AND a.createdat>$1 ORDER BY a.createdat DESC LIMIT 50`, [since]),
+      pool.query("SELECT data, createdat FROM analytics WHERE event='book_deleted' AND createdat>$1 ORDER BY createdat DESC LIMIT 50", [since]),
+    ]);
+    const js = x => { if (x && typeof x === "object") return x; try { return JSON.parse(x || "{}"); } catch { return {}; } };
+    const recent = {
+      deals: dl.rows.map(r => { const d = js(r.data); return { at: +r.createdat, title: d.title || r.title || "(ספר שנמחק)", status: d.dealStatus || "agreed", from: d.from || "", to: d.to || (d.from ? "" : r.ownername || "") }; }),
+      deleted: del.rows.map(r => { const d = js(r.data); return { at: +r.createdat, title: d.title || "", author: d.author || "", owner: d.owner || "", wasAvail: d.wasAvail !== false }; }),
+    };
+    res.json({ rows, today, week, recent, fields: STAT_FIELDS, emailDailyLimit: Number(process.env.EMAIL_DAILY_LIMIT || 100) });
   } catch (e) { console.error("trends:", e.message); res.status(500).json({ error: e.message }); }
 });
 app.get("/api/admin/trends.csv", limit("admin", 30, 15 * 60 * 1000), async (req, res) => {
