@@ -2008,9 +2008,18 @@ app.get("/api/admin/trends", limit("admin", 60, 15 * 60 * 1000), async (req, res
     ]);
     const js = x => { if (x && typeof x === "object") return x; try { return JSON.parse(x || "{}"); } catch { return {}; } };
     const recent = {
-      deals: dl.rows.map(r => { const d = js(r.data); return { at: +r.createdat, title: d.title || r.title || "(ספר שנמחק)", status: d.dealStatus || "agreed", from: d.from || "", to: d.to || (d.from ? "" : r.ownername || "") }; }),
+      deals: dl.rows.map(r => { const d = js(r.data); return { at: +r.createdat, bookId: d.bookId, title: d.title || r.title || "(ספר שנמחק)", status: d.dealStatus || "agreed", from: d.from || "", to: d.to || (d.from ? "" : r.ownername || "") }; }),
       deleted: del.rows.map(r => { const d = js(r.data); return { at: +r.createdat, title: d.title || "", author: d.author || "", owner: d.owner || "", wasAvail: d.wasAvail !== false }; }),
     };
+    // מי פנה למפרסם על כל ספר בעסקה בלי מקבל רשום — רמז למי הספר עבר
+    const noTo = [...new Set(recent.deals.filter(d => !d.to && d.bookId).map(d => d.bookId))];
+    if (noTo.length) {
+      const cs = await pool.query(`SELECT c.bookid, COALESCE(NULLIF(u.storename,''), u.name) AS name FROM contacts c JOIN users u ON u.id = c.fromuserid
+                                   WHERE c.bookid = ANY($1) ORDER BY c.createdat`, [noTo]);
+      const by = {};
+      for (const r of cs.rows) (by[r.bookid] ||= []).includes(r.name) || by[r.bookid].push(r.name);
+      for (const d of recent.deals) if (!d.to) d.asked = by[d.bookId] || [];
+    }
     res.json({ rows, today, week, recent, fields: STAT_FIELDS, emailDailyLimit: Number(process.env.EMAIL_DAILY_LIMIT || 100) });
   } catch (e) { console.error("trends:", e.message); res.status(500).json({ error: e.message }); }
 });

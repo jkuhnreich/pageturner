@@ -2537,7 +2537,7 @@ function AdminPage({ onBack }) {
         return (
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginTop:12}}>
             <div style={{...box,marginBottom:0}}>{h(`🤝 עסקאות שנסגרו (30 ימים) · ${R.deals.length}`)}
-              {R.deals.length ? R.deals.map((d,i)=>row(i, d.title, `${ST[d.status]||ST.agreed}${d.from?` · ${d.from}`:""}${d.to?` ← ${d.to}`:""}`, d.at)) : <div style={{fontSize:13,color:muted}}>לא נסגרו עסקאות</div>}
+              {R.deals.length ? R.deals.map((d,i)=>row(i, d.title, `${ST[d.status]||ST.agreed}${d.from?` · ${d.from}`:""}${d.to?` ← ${d.to}`:""}${!d.to&&d.asked?(d.asked.length?` · פנו: ${d.asked.join(", ")}`:" · אף אחד לא פנה דרך האתר"):""}`, d.at)) : <div style={{fontSize:13,color:muted}}>לא נסגרו עסקאות</div>}
             </div>
             <div style={{...box,marginBottom:0}}>{h(`🗑️ ספרים שנמחקו (30 ימים) · ${R.deleted.length}`)}
               {R.deleted.length ? R.deleted.map((d,i)=>row(i, d.title, `${d.author?d.author+" · ":""}${d.owner||""}${d.wasAvail?"":" · (כבר לא היה זמין)"}`, d.at)) : <div style={{fontSize:13,color:muted}}>לא נמחקו ספרים</div>}
