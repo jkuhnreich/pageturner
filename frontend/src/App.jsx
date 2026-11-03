@@ -1855,7 +1855,10 @@ export default function App() {
   const TABS = [["search","home","גילוי"],["add","plus","הוספה"],["profile","user","פרופיל"]];
   const greet = (()=>{const h=new Date().getHours();return h>=5&&h<12?"בוקר טוב":h>=12&&h<17?"צהריים טובים":h>=17&&h<21?"ערב טוב":"לילה טוב";})();
   const others = books.filter(b => String(b.ownerid) !== String(user?.id));
-  const nearby = userCoords ? others.filter(b => b.km != null).sort((a,b) => a.km - b.km).slice(0, 14) : [];
+  // ספרי לימוד/אנציקלופדיות/אטלסים נשארים באתר, אבל יורדים לסוף שורת "קרוב אליך"
+  const LOW_GENRES = new Set(["ספרי לימוד ואנציקלופדיות","ספרי טיולים ואטלסים"]);
+  const isLow = b => LOW_GENRES.has(b.genre) ? 1 : 0;
+  const nearby = userCoords ? others.filter(b => b.km != null).sort((a,b) => isLow(a) - isLow(b) || a.km - b.km).slice(0, 14) : [];
   // "חדש על המדף": מהחדש לישן, עד 2 לכל סוגה ו-3 לכל מעלה; ספרות ופופולרי קודם, ספרי עיון בסוף
   const newest = (() => {
     const TOP = new Set(["ספרות ורומנים","מתח","מדע בדיוני ופנטזיה","אהבה ורומנטיקה","היסטוריה","ביוגרפיה","מדע ופילוסופיה","פיתוח אישי"]);
