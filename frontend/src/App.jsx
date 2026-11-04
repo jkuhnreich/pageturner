@@ -1589,6 +1589,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
   const [genreFilter, setGenreFilter] = useState("all");
+  const [memorialOpen, setMemorialOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [editBook, setEditBook] = useState(null);
@@ -1859,6 +1860,14 @@ export default function App() {
   const LOW_GENRES = new Set(["ספרי לימוד ואנציקלופדיות","ספרי טיולים ואטלסים"]);
   const isLow = b => LOW_GENRES.has(b.genre) ? 1 : 0;
   const nearby = userCoords ? others.filter(b => b.km != null).sort((a,b) => isLow(a) - isLow(b) || a.km - b.km).slice(0, 14) : [];
+  // 🕯️ מדף זיכרון זמני: לזכרו של יצחק רבין. נעלם לבד ב-6.11.2026 בחצות; הספרים נשארים בסוגות שלהם.
+  // "רבין" עם נון סופית כמילה שלמה (מותר ו/ל/ש/ב/ה לפני), כדי שלא יתפוס "רבינוביץ'"
+  const memorial = (() => {
+    if (Date.now() >= new Date("2026-11-06T00:00:00+02:00").getTime()) return [];
+    const re = /(^|[^\u0590-\u05FF])[ובלהשמכ]{0,2}רבין(?![\u0590-\u05FF])|\brabin\b/i;
+    return books.filter(b => re.test([b.title, b.author, b.summary, b.series, b.genreother].filter(Boolean).join(" ")))
+      .sort((a,b) => Number(b.createdat) - Number(a.createdat));
+  })();
   // "חדש על המדף": מהחדש לישן, עד 2 לכל סוגה ו-3 לכל מעלה; ספרות ופופולרי קודם, ספרי עיון בסוף
   const newest = (() => {
     const TOP = new Set(["ספרות ורומנים","מתח","מדע בדיוני ופנטזיה","אהבה ורומנטיקה","היסטוריה","ביוגרפיה","מדע ופילוסופיה","פיתוח אישי"]);
@@ -1993,6 +2002,11 @@ export default function App() {
               </button>
             </div>
 
+            {memorial.length>0 && <><SectionHead title="🕯️ לזכרו של יצחק רבין" sub="ספרים שלו, עליו או שמזכירים אותו · עד חמישי בלילה"
+                action={memorial.length>10 ? (memorialOpen ? "פחות" : `הכל (${memorial.length})`) : null} onAction={()=>setMemorialOpen(o=>!o)}/>
+              {memorialOpen && memorial.length>10
+                ? <div className="grid2">{memorial.map(b => <BookTile key={b.id} book={b} onOpen={openBook} fav={favIds.has(b.id)} onFav={toggleFav} user={user}/>)}</div>
+                : <Rail books={memorial.slice(0,10)} onOpen={openBook} favs={favIds} onFav={toggleFav} user={user}/>}</>}
             {nearby.length>0 && <><SectionHead title="קרוב אליך" sub="מסודר לפי מרחק" action="הכל" onAction={()=>document.getElementById("all-books")?.scrollIntoView({behavior:"smooth"})}/>
               <Rail books={nearby} onOpen={openBook} favs={favIds} onFav={toggleFav} user={user}/></>}
             {newest.length>0 && <><SectionHead title="חדש על המדף" sub="הספרים שעלו לאחרונה"/>
