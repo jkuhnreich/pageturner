@@ -2002,7 +2002,7 @@ export default function App() {
               </button>
             </div>
 
-            {memorial.length>0 && <><SectionHead title="🕯️ לזכרו של יצחק רבין" sub="31 שנים"
+            {memorial.length>0 && <><SectionHead title={<><MemorialCandle/>לזכרו של יצחק רבין</>} sub="31 שנים"
                 action={memorial.length>10 ? (memorialOpen ? "פחות" : `הכל (${memorial.length})`) : null} onAction={()=>setMemorialOpen(o=>!o)}/>
               {memorialOpen && memorial.length>10
                 ? <div className="grid2">{memorial.map(b => <BookTile key={b.id} book={b} onOpen={openBook} fav={favIds.has(b.id)} onFav={toggleFav} user={user}/>)}</div>
@@ -3029,3 +3029,25 @@ function EditDrawer({ book, onSave, onDelete, onCancel, toast_ }) {
 // Sun May 24 18:49:04 IDT 2026
 // TEST Thu May 28 23:01:06 IDT 2026
 // Mon Jun  1 11:38:11 IDT 2026
+
+// נר זיכרון עם להבה מהבהבת (למדף הזיכרון)
+function MemorialCandle() {
+  return (
+    <span style={{display:"inline-block",width:22,height:30,marginLeft:8,verticalAlign:"-4px"}} aria-hidden="true">
+      <style>{`@keyframes ptFlicker{0%,100%{transform:scale(1,1) rotate(-1deg);opacity:1}25%{transform:scale(.92,1.06) rotate(2deg);opacity:.92}50%{transform:scale(1.04,.95) rotate(-2deg);opacity:1}75%{transform:scale(.96,1.08) rotate(1deg);opacity:.9}}
+@keyframes ptGlow{0%,100%{opacity:.35}50%{opacity:.6}}
+.pt-flame{transform-origin:11px 13px;animation:ptFlicker 1.6s ease-in-out infinite}
+.pt-glow{animation:ptGlow 2.2s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.pt-flame,.pt-glow{animation:none}}`}</style>
+      <svg viewBox="0 0 22 30" width="22" height="30">
+        <circle className="pt-glow" cx="11" cy="8" r="7" fill="#F5B94A"/>
+        <g className="pt-flame">
+          <path d="M11 1 C14 5 15 8 13.5 11 C12.8 12.5 9.2 12.5 8.5 11 C7 8 8 5 11 1Z" fill="#F29A2E"/>
+          <path d="M11 5 C12.5 7.5 12.8 9 12 10.8 C11.6 11.6 10.4 11.6 10 10.8 C9.2 9 9.5 7.5 11 5Z" fill="#FFE08A"/>
+        </g>
+        <rect x="10.4" y="11.5" width="1.2" height="2.5" fill="#3A2E25"/>
+        <rect x="6" y="14" width="10" height="15" rx="2" fill="#F5F0E8" stroke="#D9CFC0" strokeWidth="1"/>
+      </svg>
+    </span>
+  );
+}
