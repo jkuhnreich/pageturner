@@ -2002,7 +2002,7 @@ export default function App() {
               </button>
             </div>
 
-            {memorial.length>0 && <><SectionHead title="🕯️ לזכרו של יצחק רבין" sub="ספרים שלו, עליו או שמזכירים אותו · עד חמישי בלילה"
+            {memorial.length>0 && <><SectionHead title="🕯️ לזכרו של יצחק רבין" sub="31 שנים"
                 action={memorial.length>10 ? (memorialOpen ? "פחות" : `הכל (${memorial.length})`) : null} onAction={()=>setMemorialOpen(o=>!o)}/>
               {memorialOpen && memorial.length>10
                 ? <div className="grid2">{memorial.map(b => <BookTile key={b.id} book={b} onOpen={openBook} fav={favIds.has(b.id)} onFav={toggleFav} user={user}/>)}</div>
