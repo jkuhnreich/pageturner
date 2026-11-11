@@ -1395,7 +1395,7 @@ function Splash({ onReg, onGuest, onLogin, onShowLegal }) {
         ))}
       </div>
       <h1 style={{fontFamily:HEAD,fontSize:36,fontWeight:700,color:"#fff",textAlign:"center",lineHeight:1.12,marginBottom:12}}>ספרייה<br/>שכונתית</h1>
-      <div style={{color:"rgba(255,255,255,.7)",fontSize:15,marginBottom:10,textAlign:"center",lineHeight:1.6,maxWidth:300}}>הספרים שכבר קראת, אצל השכנים שמחפשים אותם</div>
+      <div style={{color:"rgba(255,255,255,.7)",fontSize:15,marginBottom:10,textAlign:"center",lineHeight:1.6,maxWidth:300}}>ספר טוב נשאר בלב, לא על המדף</div>
       <div style={{color:"rgba(255,255,255,.7)",fontSize:13,marginBottom:40,letterSpacing:".5px"}}>השאלה · מכירה · החלפה · מסירה</div>
       <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}}>
         <Btn variant="accent" onClick={onReg} style={{width:"100%",padding:"15px",fontSize:16,borderRadius:14,boxShadow:"0 6px 20px rgba(107,143,71,.35)"}}>הצטרפות חינם</Btn>
