@@ -6,6 +6,7 @@ const BASE = import.meta.env.VITE_API_URL ||
   (typeof location !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "" : "https://pageturner-production-5baf.up.railway.app");
 
 // ── חיבור: הטוקן נשמר בדפדפן ונשלח בכל בקשה ─────────────────
+let autoGuest = false;
 const session = {
   token() { try { return localStorage.getItem("pt_token") || ""; } catch { return ""; } },
   save(user, token) {
@@ -1385,7 +1386,173 @@ function Register({ onBack, onDone, prefill, onShowLegal, onGooglePrefill }) {
 }
 const linkBtn = {background:"none",border:"none",padding:0,color:"#4a6b2f",textDecoration:"underline",cursor:"pointer",fontSize:"inherit",fontFamily:"inherit"};
 
-// ── מסך פתיחה ──────────────────────────────────────────────
+
+// ── חלון הסימנייה: הרשמה + אישור דיוור = סימנייה במתנה (עד 31.12.26) ─────
+const BM_END = new Date("2027-01-01T00:00:00+02:00").getTime();
+const BM_ON = () => Date.now() < BM_END;
+const BM_FINE = "200 סימניות ראשונות · אחת למשתמש · עד 31.12.26 · ט.ל.ח";
+const BM_CONSENT = "אני מאשר/ת לקבל דיוור שיווקי מספרייה שכונתית (Pageturner)";
+const BM_CSS = `
+.bm-scrim{position:fixed;inset:0;z-index:900;background:rgba(18,22,16,.58);display:grid;place-items:center;direction:rtl;
+  padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom));animation:bmFade .25s ease}
+@keyframes bmFade{from{opacity:0}}
+.bm-modal{position:relative;width:min(920px,100%);min-height:min(560px,100%);max-height:100%;border-radius:22px;overflow:hidden;
+  background:#3b2a1c url(/bookmark-gift.jpg) center/cover no-repeat;box-shadow:0 24px 60px rgba(0,0,0,.35);display:flex;outline:none;animation:fadeUp .3s ease}
+.bm-modal:focus,.bm-modal:focus-visible{outline:none!important}
+.bm-photo{display:none}
+.bm-card{margin:3.2%;margin-inline-end:auto;width:47%;background:#FBF6EC;border-radius:18px;padding:clamp(16px,2.6vw,28px);
+  display:flex;flex-direction:column;gap:12px;overflow:auto}
+.bm-x{position:absolute;top:12px;left:12px;width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.92);
+  display:grid;place-items:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2);z-index:2;color:#1E2D3D}
+.bm-h{font-family:${"'Playpen Sans Hebrew','Rubik',sans-serif"};font-weight:700;font-size:clamp(26px,4.4vw,40px);line-height:1.1;margin:0;text-align:center;color:#1E2D3D;text-wrap:balance}
+.bm-gift{display:flex;align-items:center;gap:10px;justify-content:center}
+.bm-brush{background:#527236;color:#fff;font-weight:700;font-size:clamp(15px,1.9vw,18px);line-height:1.3;padding:8px 18px;
+  border-radius:14px 40px 18px 34px / 22px 14px 30px 16px;transform:rotate(-1.2deg);text-align:center}
+.bm-in{width:100%;height:48px;border:1.5px solid #1E2D3D;border-radius:999px;background:#fff;padding:0 16px;font-size:16px;color:#1E2D3D;outline:none}
+.bm-in:focus{box-shadow:0 0 0 3px rgba(82,114,54,.3)}
+.bm-otp{letter-spacing:.5em;text-align:center;direction:ltr;font-size:22px}
+.bm-ok{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.4;cursor:pointer;color:#1E2D3D}
+.bm-ok input{width:20px;height:20px;margin:1px 0 0;accent-color:#527236;flex:none}
+.bm-cta{height:52px;border:0;border-radius:999px;background:#527236;color:#fff;font-size:19px;font-weight:700;cursor:pointer;box-shadow:inset 0 -3px 0 #3f5a29;width:100%}
+.bm-cta:disabled{background:#b7b9ad;box-shadow:none;cursor:not-allowed}
+.bm-fine{font-size:12px;color:#5A655E;text-align:center;line-height:1.4;margin:0}
+.bm-lead{margin:0;text-align:center;font-size:15px;line-height:1.5;color:#5A655E}
+.bm-link{background:none;border:0;padding:0;color:#4a6b2f;font-weight:600;font-size:inherit;text-decoration:underline;cursor:pointer;font-family:inherit}
+.bm-err{color:#C2412D;font-size:13px;margin:0;text-align:center}
+@media (max-width:720px){
+  .bm-modal{min-height:0;flex-direction:column;background:#FBF6EC}
+  .bm-photo{display:block;height:min(26vh,190px);background:url(/bookmark-gift.jpg) 30% 18%/170% auto no-repeat;flex:none}
+  .bm-card{width:auto;margin:0;border-radius:0;padding:16px 18px 20px}
+}`;
+
+function BmGiftIcon() {
+  return <svg viewBox="0 0 48 48" width="46" height="46" fill="none" stroke="#B7791F" strokeWidth="2.2" strokeLinejoin="round" style={{flex:"none"}}><rect x="6" y="18" width="36" height="10" rx="1.5"/><rect x="9" y="28" width="30" height="15" rx="1.5"/><path d="M24 18v25M24 18c-4-8-13-8-12-2 1 3 8 2 12 2zm0 0c4-8 13-8 12-2-1 3-8 2-12 2z"/></svg>;
+}
+
+// mode: "signup" (אורח) | "consent" (רשום שלא אישר דיוור)
+function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }) {
+  const [step, setStep] = useState(mode === "consent" ? "consent" : "form");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [ok, setOk] = useState(false);
+  const [code, setCode] = useState("");
+  const [ticket, setTicket] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const dref = useDialog(onClose);
+  const vid = () => { try { return visitInfo().vid; } catch { return undefined; } };
+  const emailOk = /^\S+@\S+\.\S+$/.test(email.trim());
+  const formOk = name.trim().length > 1 && emailOk;
+
+  // אחרי כניסה/הרשמה: מי שכבר אישר דיוור — סיימנו; אחרת שואלים פעם אחת
+  const afterAuth = (u, token, isNew) => {
+    onAuth(u, token, isNew);
+    if (u.emailConsent) { setStep("done"); api.track("bm_consent", { vid: vid(), via: "signup" }); }
+    else setStep("ask");
+  };
+  const register = async (tk, nm, em) => {
+    let src = ""; try { src = sessionStorage.getItem("pt_src") || ""; } catch {}
+    const res = await api.post("/api/users/register", { name: nm, email: em, type: "private", ticket: tk, emailConsent: ok, src });
+    afterAuth(res.user, res.token, !res.existing);
+  };
+  const run = async fn => { setBusy(true); setErr(""); try { await fn(); } catch (e) { setErr(e.message || "משהו השתבש, נסו שוב"); } finally { setBusy(false); } };
+
+  const sendCode = () => run(async () => {
+    api.track("signup_submit", { vid: vid(), via: "bm" });
+    await api.post("/api/auth/send-otp", { email: email.trim(), ctx: "signup" });
+    setCode(""); setStep("code");
+  });
+  const verify = () => run(async () => {
+    if (code.length !== 6) throw new Error("הקוד בן 6 ספרות");
+    const res = await api.post("/api/auth/verify-otp", { email: email.trim(), code });
+    if (!res.isNew) return afterAuth(res.user, res.token, false);
+    await register(res.ticket, name.trim(), email.trim().toLowerCase());
+  });
+  const onGoogle = res => {
+    if (!res.isNew) return afterAuth(res.user, res.token, false);
+    setName(res.name || ""); setEmail(res.email); setTicket(res.ticket); setErr(""); setStep("google");
+  };
+  const finishGoogle = () => run(async () => {
+    if (name.trim().length < 2) throw new Error("צריך למלא שם");
+    try { await register(ticket, name.trim(), email); }
+    catch (e) { if (e.code === "verify") { setStep("form"); setTicket(null); } throw e; }
+  });
+  const giveConsent = () => run(async () => {
+    const d = await api.put("/api/me", { emailConsent: true });
+    if (d?.user) onAuth(d.user);
+    api.track("bm_consent", { vid: vid(), via: mode === "consent" ? "banner" : "ask" });
+    setStep("done");
+  });
+
+  const consentBox = (
+    <label className="bm-ok">
+      <input type="checkbox" checked={ok} onChange={e => setOk(e.target.checked)}/>
+      <span>{BM_CONSENT} · <b style={{color:"#4a6b2f"}}>🎁 סימנייה במתנה</b></span>
+    </label>
+  );
+  const errEl = err && <p className="bm-err" role="alert">{err}</p>;
+  const fine = <p className="bm-fine">{BM_FINE}</p>;
+
+  let body;
+  if (step === "form") body = <>
+    <h2 className="bm-h">מצטרפים לספרייה השכונתית</h2>
+    <div className="bm-gift"><div className="bm-brush">מאשרים עדכונים במייל<br/>ומקבלים סימנייה במתנה</div><BmGiftIcon/></div>
+    <GoogleButton onError={setErr} onResult={onGoogle}/>
+    <OrDivider/>
+    <input className="bm-in" value={name} onChange={e => setName(e.target.value)} placeholder="שם מלא" autoComplete="name" aria-label="שם מלא"/>
+    <input className="bm-in" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && formOk && !busy && sendCode()} placeholder="כתובת מייל" type="email" inputMode="email" autoComplete="email" aria-label="כתובת מייל" style={{direction:"ltr",textAlign:"right"}}/>
+    {consentBox}
+    {errEl}
+    <button className="bm-cta" disabled={!formOk || busy} onClick={sendCode}>{busy ? "שולחים קוד..." : "הרשמה"}</button>
+    {fine}
+    <p className="bm-fine">כבר רשומים? <button className="bm-link" onClick={onLogin}>כניסה</button> · בהרשמה אני מסכים/ה ל<button className="bm-link" onClick={() => onShowLegal("terms")}>תנאי השימוש</button> ול<button className="bm-link" onClick={() => onShowLegal("privacy")}>מדיניות הפרטיות</button></p>
+  </>;
+  else if (step === "code") body = <>
+    <h2 className="bm-h">כמעט שם</h2>
+    <p className="bm-lead">שלחנו קוד בן 6 ספרות אל <b style={{direction:"ltr",display:"inline-block",color:"#1E2D3D"}}>{email.trim()}</b>. אפשר לקפוץ למייל ולחזור לכאן, החלון יחכה. כדאי לבדוק גם בספאם.</p>
+    <input className="bm-in bm-otp" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()} inputMode="numeric" autoComplete="one-time-code" placeholder="••••••" autoFocus aria-label="קוד"/>
+    {errEl}
+    <button className="bm-cta" disabled={code.length !== 6 || busy} onClick={verify}>{busy ? "מאמתים..." : "אימות והרשמה"}</button>
+    <p className="bm-fine"><button className="bm-link" onClick={() => { setStep("form"); setErr(""); }}>תיקון פרטים</button> · <button className="bm-link" onClick={sendCode} disabled={busy}>שלחו קוד שוב</button></p>
+  </>;
+  else if (step === "google") body = <>
+    <h2 className="bm-h">כמעט שם</h2>
+    <p className="bm-lead">החשבון שלך בגוגל אומת. השם נלקח ממנו, ואפשר לשנות.</p>
+    <input className="bm-in" value={name} onChange={e => setName(e.target.value)} placeholder="שם מלא" autoComplete="name" aria-label="שם מלא"/>
+    {consentBox}
+    {errEl}
+    <button className="bm-cta" disabled={busy} onClick={finishGoogle}>{busy ? "רגע..." : "סיום הרשמה"}</button>
+    {fine}
+  </>;
+  else if (step === "ask" || step === "consent") body = <>
+    <h2 className="bm-h">{step === "ask" ? "🎉 נרשמת! רוצה גם סימנייה במתנה?" : "מצטרפים ומקבלים מתנה!"}</h2>
+    <div className="bm-gift"><div className="bm-brush">סימנייה מעוצבת של<br/>הספרייה השכונתית</div><BmGiftIcon/></div>
+    {consentBox}
+    {errEl}
+    <button className="bm-cta" disabled={!ok || busy} onClick={giveConsent}>{busy ? "רגע..." : step === "ask" ? "כן, רוצה סימנייה!" : "רוצה את הסימנייה שלי!"}</button>
+    {step === "ask" && <button className="bm-link" style={{alignSelf:"center"}} onClick={onClose}>לא תודה, מעבר לספרים</button>}
+    {fine}
+  </>;
+  else body = <div style={{textAlign:"center",display:"grid",gap:12,justifyItems:"center",padding:"10px 0"}}>
+    <div style={{fontSize:46}}>🎁</div>
+    <h2 className="bm-h">הסימנייה שלך שמורה!</h2>
+    <p className="bm-lead">נעדכן אותך במייל איך ומתי מקבלים אותה.</p>
+    <button className="bm-cta" onClick={onClose}>מעבר לספרים</button>
+  </div>;
+
+  return (
+    <div className="bm-scrim" onClick={onClose}>
+      <style>{BM_CSS}</style>
+      <div ref={dref} tabIndex={-1} role="dialog" aria-modal="true" aria-label="סימנייה במתנה" className="bm-modal" onClick={e => e.stopPropagation()}>
+        <button className="bm-x" onClick={onClose} aria-label="סגירה"><Icon name="close" size={18} stroke={2.4}/></button>
+        <div className="bm-photo"/>
+        <div className="bm-card">{body}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── מסך פתיחה (לא בשימוש: נכנסים ישר לאתר כאורחים) ──────────
 function Splash({ onReg, onGuest, onLogin, onShowLegal }) {
   return (
     <div style={{minHeight:"100vh",background:`radial-gradient(120% 80% at 50% 0%, #2a3d52 0%, ${HDR} 60%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,direction:"rtl"}}>
@@ -1559,15 +1726,17 @@ export default function App() {
     try {
       const u = JSON.parse(localStorage.getItem("pt_user") || "null");
       if (u && u.type !== "guest" && !session.token()) return "login";
-      return u ? (localStorage.getItem("pt_screen") || "app") : "splash";
-    } catch { return "splash"; }
+      return "app";
+    } catch { return "app"; }
   });
   const [user, setUser] = useState(() => {
     try {
       const u = JSON.parse(localStorage.getItem("pt_user") || "null");
       if (u && u.type !== "guest" && !session.token()) { session.clear(); return null; }
-      return u;
-    } catch { return null; }
+      if (u) return u;
+    } catch {}
+    // בלי מסך פתיחה: מבקר חדש נכנס ישר לאתר כאורח
+    const g = { name: "אורח", type: "guest" }; session.save(g); autoGuest = true; return g;
   });
   // pageturner.co.il/privacy ו-/terms פותחים ישירות את המסמך (קישור קבוע עבור Google ואחרים)
   const [legal, setLegal] = useState(() => window.location.pathname.match(/^\/(privacy|terms|accessibility)\/?$/)?.[1] || null);
@@ -1605,7 +1774,8 @@ export default function App() {
   }, []);
 
   const isGuest = user?.type === "guest";
-  const onGuestAction = useCallback(() => setScreen("register"), []);
+  const [joinModal, setJoinModal] = useState(null);
+  const onGuestAction = useCallback(() => setJoinModal("signup"), []);
 
   // טען ספרים מהשרת
   const [userCoords, setUserCoords] = useState(null);
@@ -1819,10 +1989,37 @@ export default function App() {
     toast_(welcome ? `ברוך הבא, ${u.name} 📖` : `שלום ${u.name} 👋`);
   };
   const handleGuest = () => { const g = {name:"אורח",type:"guest"}; setUser(g); session.save(g); setScreen("app"); api.track("guest_login"); };
+  // חזרה לאתר כאורח (במקום מסך הפתיחה שהוסר)
+  const goGuest = () => { const g = {name:"אורח",type:"guest"}; setUser(g); session.save(g); setScreen("app"); };
+  // כניסה/הרשמה מתוך חלון הסימנייה: שומרים את המשתמש בלי לסגור את החלון
+  const handleModalAuth = (u, token, isNew) => {
+    if (token) session.save(u, token); else session.saveUser(u);
+    setUser(u); setScreen("app");
+    if (token) toast_(isNew ? `ברוך הבא, ${u.name} 📖` : `שלום ${u.name} 👋`);
+  };
+  useEffect(() => { if (autoGuest) { autoGuest = false; api.track("guest_login", { auto: true }); } }, []);
+  // חלון הסימנייה קופץ אחרי 2 שניות: לאורח פעם בביקור, לרשום שלא אישר דיוור פעם ב-3 ימים, ולכל היותר פעמיים
+  useEffect(() => {
+    if (screen !== "app" || !user || !BM_ON() || legal) return;
+    const need = isGuest ? "signup" : (user.id && session.token() && user.emailConsent === false ? "consent" : null);
+    if (!need) return;
+    try {
+      if (need === "signup" && sessionStorage.getItem("pt_bm_seen")) return;
+      if (need === "consent" && (Number(localStorage.getItem("pt_bm_n") || 0) >= 2 || Date.now() - Number(localStorage.getItem("pt_bm_seen") || 0) < 3 * 864e5)) return;
+    } catch {}
+    const t = setTimeout(() => {
+      try {
+        if (need === "signup") sessionStorage.setItem("pt_bm_seen", "1");
+        else { localStorage.setItem("pt_bm_seen", String(Date.now())); localStorage.setItem("pt_bm_n", String(Number(localStorage.getItem("pt_bm_n") || 0) + 1)); }
+      } catch {}
+      setJoinModal(m => m || need); api.track("bm_popup", { m: need });
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [screen, user?.id, user?.emailConsent, isGuest, legal]);
   const logout = async () => {
     resetUi();
     try { await api.post("/api/auth/logout"); } catch {}
-    session.clear(); setUser(null); setScreen("splash");
+    session.clear(); goGuest();
   };
 
   const saveEdit = async (id, fields) => {
@@ -1848,10 +2045,10 @@ export default function App() {
 
   // ── screens ──────────────────────────────────────────────
   const legalSheet = legal && <LegalSheet kind={legal} onClose={()=>{setLegal(null);if(/^\/(privacy|terms|accessibility)/.test(window.location.pathname))window.history.replaceState(null,"","/");}}/>;
-  if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>{navigate("/");setScreen(user?"app":"splash");}}/></>
+  if (screen === "admin") return <><style>{CSS}</style><AdminPage onBack={()=>{navigate("/");if(user)setScreen("app");else goGuest();}}/></>
   if (screen === "splash") return <><style>{CSS}</style><main><Splash onReg={()=>setScreen("register")} onGuest={handleGuest} onLogin={()=>setScreen("login")} onShowLegal={setLegal}/></main>{legalSheet}<Toast t={toast}/></>;
-  if (screen === "login") return <><style>{CSS}</style><main><Login onBack={()=>setScreen("splash")} onDone={(u,t)=>handleAuth(u,t,false)} onRegister={pf=>{setRegPrefill(pf);setScreen("register");}}/></main><Toast t={toast}/></>;
-  if (screen === "register") return <><style>{CSS}</style><main><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);setScreen(user?"app":"splash");}} onDone={(u,t)=>handleAuth(u,t,true)} onGooglePrefill={setRegPrefill} onShowLegal={setLegal}/></main>{legalSheet}</>;
+  if (screen === "login") return <><style>{CSS}</style><main><Login onBack={goGuest} onDone={(u,t)=>handleAuth(u,t,false)} onRegister={pf=>{setRegPrefill(pf);setScreen("register");}}/></main><Toast t={toast}/></>;
+  if (screen === "register") return <><style>{CSS}</style><main><Register key={regPrefill?.email||"new"} prefill={regPrefill} onBack={()=>{setRegPrefill(null);if(user)setScreen("app");else goGuest();}} onDone={(u,t)=>handleAuth(u,t,true)} onGooglePrefill={setRegPrefill} onShowLegal={setLegal}/></main>{legalSheet}</>;
 
   const TABS = [["search","home","גילוי"],["add","plus","הוספה"],["profile","user","פרופיל"]];
   const greet = (()=>{const h=new Date().getHours();return h>=5&&h<12?"בוקר טוב":h>=12&&h<17?"צהריים טובים":h>=17&&h<21?"ערב טוב":"לילה טוב";})();
@@ -1941,11 +2138,11 @@ export default function App() {
         <div style={{maxWidth:900,margin:"0 auto",padding:"12px 16px 0",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
           <button onClick={()=>{clearFilters();goTab("search");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0,color:"#fff"}}>
             <img src="/favicon.svg" alt="" width="30" height="30" style={{borderRadius:8}}/>
-            <span style={{fontFamily:HEAD,fontSize:21,fontWeight:700}}>ספרייה שכונתית</span>
+            <span style={{fontFamily:HEAD,fontSize:isGuest?"clamp(16px,4.9vw,21px)":21,fontWeight:700,whiteSpace:"nowrap"}}>ספרייה שכונתית</span>
           </button>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {isGuest
-              ? <button onClick={onGuestAction} style={{background:C.accent,border:"none",borderRadius:99,padding:"8px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>הצטרפות</button>
+              ? <button onClick={onGuestAction} style={{background:C.accent,border:"none",borderRadius:99,padding:"8px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>כניסה / הצטרפות</button>
               : <button onClick={()=>goTab("profile")} aria-label="הפרופיל שלי" style={{background:"none",border:"2px solid rgba(255,255,255,.25)",borderRadius:"50%",padding:0,cursor:"pointer"}}>{avatarEl(32)}</button>}
             <button onClick={()=>setMenuOpen(true)} aria-label="תפריט" style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:12,cursor:"pointer",width:38,height:38,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="menu" size={20}/></button>
           </div>
@@ -2184,12 +2381,14 @@ export default function App() {
         </div>
       </nav>
 
+      {joinModal && <JoinModal mode={joinModal} user={user} toast_={toast_} onClose={()=>setJoinModal(null)} onAuth={handleModalAuth}
+        onLogin={()=>{setJoinModal(null);setScreen("login");}} onShowLegal={setLegal}/>}
       <Toast t={toast}/>
       {legalSheet}
       {showContact && <ContactSheet user={user} isGuest={isGuest} onClose={()=>setShowContact(false)} toast_={toast_}/>}
       {showSettings && !isGuest && <SettingsSheet user={user} onClose={()=>setShowSettings(false)} toast_={toast_}
         onSaved={u=>{setUser(u);session.saveUser(u);}}
-        onDeleted={()=>{resetUi();session.clear();setUser(null);setScreen("splash");toast_("החשבון נמחק");}}
+        onDeleted={()=>{resetUi();session.clear();goGuest();toast_("החשבון נמחק");}}
         onShowLegal={setLegal}/>}
       {wishMatches.length>0 && tab==="search" && !viewBook && !pendingContact && !ownerPending && (
         <div style={{position:"fixed",bottom:80,left:0,right:0,zIndex:590,padding:"0 16px",direction:"rtl"}}>
@@ -2215,6 +2414,7 @@ export default function App() {
             <div style={{background:HDR,padding:"32px 20px 20px"}}>
               <h2 style={{fontFamily:HEAD,fontSize:19,fontWeight:700,color:"#fff"}}>ספרייה שכונתית</h2>
               <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:4}}>{isGuest?"Pageturner":`שלום, ${user?.name||""}`}</div>
+              {isGuest && <button onClick={()=>{setMenuOpen(false);setJoinModal("signup");}} style={{marginTop:14,width:"100%",padding:"12px",background:C.accent,border:"none",borderRadius:99,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer"}}>כניסה / הצטרפות</button>}
             </div>
             <div style={{flex:1,padding:"12px 0"}}>
               {[
@@ -2232,7 +2432,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-            {isGuest && <button onClick={()=>{setMenuOpen(false);session.clear();setUser(null);setScreen("splash");}} style={{padding:"16px 20px",background:"none",border:"none",borderTop:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:C.ink,textAlign:"right"}}><Icon name="user" size={19}/>הרשמה / כניסה</button>}
             {!isGuest && <button onClick={logout} style={{padding:"16px 20px",background:"none",border:"none",borderTop:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:C.red,textAlign:"right"}}>
               <Icon name="logout" size={19}/>יציאה
             </button>}
