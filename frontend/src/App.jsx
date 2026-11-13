@@ -1435,12 +1435,18 @@ function BmGiftIcon() {
   return <svg viewBox="0 0 48 48" width="46" height="46" fill="none" stroke="#B7791F" strokeWidth="2.2" strokeLinejoin="round" style={{flex:"none"}}><rect x="6" y="18" width="36" height="10" rx="1.5"/><rect x="9" y="28" width="30" height="15" rx="1.5"/><path d="M24 18v25M24 18c-4-8-13-8-12-2 1 3 8 2 12 2zm0 0c4-8 13-8 12-2-1 3-8 2-12 2z"/></svg>;
 }
 
+// חלון ההרשמה זוכר את שלב הקוד ל-30 דקות, כדי שמי שקפץ למייל ימצא אותו מחכה גם אם הדף נטען מחדש
+const JOIN_KEY = "pt_join";
+function loadJoin() { try { const j = JSON.parse(localStorage.getItem(JOIN_KEY) || "null"); if (j && Date.now() - j.ts < 30 * 60e3) return j; localStorage.removeItem(JOIN_KEY); } catch {} return null; }
+function saveJoin(j) { try { if (j) localStorage.setItem(JOIN_KEY, JSON.stringify({ ...j, ts: Date.now() })); else localStorage.removeItem(JOIN_KEY); } catch {} }
+
 // mode: "signup" (אורח) | "consent" (רשום שלא אישר דיוור)
 function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }) {
-  const [step, setStep] = useState(mode === "consent" ? "consent" : "form");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [ok, setOk] = useState(false);
+  const [saved] = useState(() => mode === "signup" ? loadJoin() : null);
+  const [step, setStep] = useState(mode === "consent" ? "consent" : saved?.step === "code" ? "code" : "form");
+  const [name, setName] = useState(saved?.name || "");
+  const [email, setEmail] = useState(saved?.email || "");
+  const [ok, setOk] = useState(!!saved?.ok);
   const [code, setCode] = useState("");
   const [ticket, setTicket] = useState(null);
   const [err, setErr] = useState("");
@@ -1452,6 +1458,7 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
 
   // אחרי כניסה/הרשמה: מי שכבר אישר דיוור — סיימנו; אחרת שואלים פעם אחת
   const afterAuth = (u, token, isNew) => {
+    saveJoin(null);
     onAuth(u, token, isNew);
     if (u.emailConsent) { setStep("done"); api.track("bm_consent", { vid: vid(), via: "signup" }); }
     else setStep("ask");
@@ -1467,6 +1474,7 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     api.track("signup_submit", { vid: vid(), via: "bm" });
     await api.post("/api/auth/send-otp", { email: email.trim(), ctx: "signup" });
     setCode(""); setStep("code");
+    saveJoin({ step: "code", name: name.trim(), email: email.trim(), ok });
   });
   const verify = () => run(async () => {
     if (code.length !== 6) throw new Error("הקוד בן 6 ספרות");
@@ -1520,7 +1528,7 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     <input className="bm-in bm-otp" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()} inputMode="numeric" autoComplete="one-time-code" placeholder="••••••" autoFocus aria-label="קוד"/>
     {errEl}
     <button className="bm-cta" disabled={code.length !== 6 || busy} onClick={verify}>{busy ? "מאמתים..." : "אימות והרשמה"}</button>
-    <p className="bm-fine"><button className="bm-link" onClick={() => { setStep("form"); setErr(""); }}>תיקון פרטים</button> · <button className="bm-link" onClick={sendCode} disabled={busy}>שלחו קוד שוב</button></p>
+    <p className="bm-fine"><button className="bm-link" onClick={() => { saveJoin(null); setStep("form"); setErr(""); }}>תיקון פרטים</button> · <button className="bm-link" onClick={sendCode} disabled={busy}>שלחו קוד שוב</button></p>
   </>;
   else if (step === "google") body = <>
     <h2 className="bm-h">כמעט שם</h2>
@@ -1770,6 +1778,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [editBook, setEditBook] = useState(null);
   const [viewBook, setViewBook] = useState(null);
+  const bookOpenRef = useRef(false); bookOpenRef.current = !!viewBook;
   const [viewBookId, setViewBookId] = useState(()=>{
     const p = new URLSearchParams(window.location.search);
     return p.get("book") || null;
@@ -2005,23 +2014,33 @@ export default function App() {
     if (token) toast_(isNew ? `ברוך הבא, ${u.name} 📖` : `שלום ${u.name} 👋`);
   };
   useEffect(() => { if (autoGuest) { autoGuest = false; api.track("guest_login", { auto: true }); } }, []);
-  // חלון הסימנייה קופץ אחרי 2 שניות: לאורח פעם בביקור, לרשום שלא אישר דיוור פעם ב-3 ימים, ולכל היותר 3 פעמים
+  // חלון הסימנייה: קודם נותנים לראות ספרים. קופץ אחרי גלילה או אחרי 15 שניות, ולא מעל ספר פתוח.
+  // לאורח פעם בביקור, לרשום שלא אישר דיוור פעם ב-3 ימים ולכל היותר 3 פעמים. מי שהיה באמצע קוד, חוזר אליו מיד.
   useEffect(() => {
     if (screen !== "app" || !user || !BM_ON() || legal) return;
     const need = isGuest ? "signup" : (user.id && session.token() && user.emailConsent === false && !user.bmGifted ? "consent" : null);
     if (!need) return;
+    if (need === "signup" && loadJoin()?.step === "code") { setJoinModal(m => m || "signup"); api.track("bm_popup", { m: "resume" }); return; }
     try {
       if (need === "signup" && sessionStorage.getItem("pt_bm_seen")) return;
       if (need === "consent" && (Number(localStorage.getItem("pt_bm_n") || 0) >= 3 || Date.now() - Number(localStorage.getItem("pt_bm_seen") || 0) < 3 * 864e5)) return;
     } catch {}
-    const t = setTimeout(() => {
+    const t0 = Date.now();
+    let done = false, scrolled = 0;
+    const fire = () => {
+      if (done || bookOpenRef.current) return;
+      done = true; stop();
       try {
         if (need === "signup") sessionStorage.setItem("pt_bm_seen", "1");
         else { localStorage.setItem("pt_bm_seen", String(Date.now())); localStorage.setItem("pt_bm_n", String(Number(localStorage.getItem("pt_bm_n") || 0) + 1)); }
       } catch {}
       setJoinModal(m => m || need); api.track("bm_popup", { m: need });
-    }, 2000);
-    return () => clearTimeout(t);
+    };
+    const onScroll = () => { if (!scrolled && window.scrollY > 500) scrolled = Date.now(); };
+    const iv = setInterval(() => { if ((scrolled && Date.now() - scrolled > 800) || Date.now() - t0 > 15000) fire(); }, 500);
+    const stop = () => { clearInterval(iv); window.removeEventListener("scroll", onScroll); };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { done = true; stop(); };
   }, [screen, user?.id, user?.emailConsent, isGuest, legal]);
   const logout = async () => {
     resetUi();
@@ -2388,7 +2407,7 @@ export default function App() {
         </div>
       </nav>
 
-      {joinModal && <JoinModal mode={joinModal} user={user} toast_={toast_} onClose={()=>setJoinModal(null)} onAuth={handleModalAuth}
+      {joinModal && <JoinModal mode={joinModal} user={user} toast_={toast_} onClose={()=>{ saveJoin(null); setJoinModal(null); }} onAuth={handleModalAuth}
         onLogin={()=>{setJoinModal(null);setScreen("login");}} onShowLegal={setLegal}/>}
       <Toast t={toast}/>
       {legalSheet}
