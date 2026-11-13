@@ -129,6 +129,7 @@ async function initDB() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent_at BIGINT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS bm_welcome_at BIGINT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS bm_ever BOOLEAN DEFAULT false",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS bm_pending BOOLEAN DEFAULT false",
     "UPDATE users SET bm_ever=true WHERE email_consent=true AND COALESCE(bm_ever,false)=false",
     "UPDATE users SET email_consent_at=createdat WHERE email_consent=true AND email_consent_at IS NULL",
     "ALTER TABLE wishlist ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false",
@@ -1450,9 +1451,35 @@ async function sendEmail(to, subject, html, attachments) {
 }
 
 // מייל אישור למי שהצטרף לדיוור (מתנת הסימנייה). קישור לווטסאפ רק אם WHATSAPP_GROUP_URL מוגדר
-async function sendBookmarkWelcome(u) {
+// מכסת Resend (100 ביום, מתאפסת ב-02:00 שעון ישראל):
+// בזמן הרשמה, מייל הסימנייה יוצא מיד עד 50 מיילים ביום; מעבר לזה נכנס לתור.
+// כל שעה (9:00-22:00), אם השעה האחרונה הייתה שקטה, התור נשלח עד 70, כך שתמיד נשארים 30 לקודי כניסה.
+const BM_NOW_MAX = Number(process.env.BM_WELCOME_MAX_DAILY || 50);
+const BM_LATE_MAX = Number(process.env.BM_WELCOME_LATE_MAX || 70);
+const BM_QUIET_PER_HOUR = Number(process.env.BM_QUIET_PER_HOUR || 3);
+async function emailsToday() {
+  const d = new Date(); d.setUTCHours(0, 0, 0, 0);
+  return +(await pool.query("SELECT COUNT(*) FROM analytics WHERE event='email_sent' AND createdat>=$1", [d.getTime()])).rows[0].count;
+}
+async function emailsLastHour() {
+  return +(await pool.query("SELECT COUNT(*) FROM analytics WHERE event='email_sent' AND createdat>=$1", [Date.now() - 3600000])).rows[0].count;
+}
+async function flushBookmarkQueue(cap = BM_NOW_MAX) {
+  const room = Math.max(0, cap - await emailsToday());
+  if (!room) return { sent: 0 };
+  const r = await pool.query("SELECT * FROM users WHERE bm_pending=true AND email_consent=true AND bm_welcome_at IS NULL AND COALESCE(suspended,false)=false ORDER BY email_consent_at NULLS LAST LIMIT $1", [room]);
+  let sent = 0;
+  for (const u of r.rows) {
+    try { await sendBookmarkWelcome(u, true); sent++; } catch (e) { console.error("bm queue:", e.message); }
+    await new Promise(ok => setTimeout(ok, 600));
+  }
+  return { sent };
+}
+async function sendBookmarkWelcome(u, now) {
   if (!u?.email || u.bm_welcome_at) return;
-  await pool.query("UPDATE users SET bm_welcome_at=$1 WHERE id=$2", [Date.now(), u.id]);
+  if (!now && await emailsToday() >= BM_NOW_MAX) { await pool.query("UPDATE users SET bm_pending=true WHERE id=$1", [u.id]); return; }
+  const claim = await pool.query("UPDATE users SET bm_welcome_at=$1, bm_pending=false WHERE id=$2 AND bm_welcome_at IS NULL RETURNING id", [Date.now(), u.id]);
+  if (!claim.rows.length) return;
   const site = siteUrl(), wa = process.env.WHATSAPP_GROUP_URL, ig = process.env.INSTAGRAM_URL || "https://www.instagram.com/pageturner.co.il/";
   const first = escapeHtml(String(u.name || "").trim().split(/\s+/)[0] || "");
   const btn = (href, label, bg, icon) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:999px;font-size:16px;min-width:220px">${icon ? `<img src="${icon}" width="22" height="22" alt="" style="vertical-align:middle;margin-left:8px;border:0;border-radius:6px"/>` : ""}<span style="vertical-align:middle">${label}</span></a>`;
@@ -1914,6 +1941,17 @@ app.get("/api/admin/stats", limit("admin", 20, 15 * 60 * 1000), async (req, res)
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// שליחת מייל הסימנייה למי שאישר דיוור ועוד לא קיבל: עד המכסה עכשיו, השאר בבוקר
+app.post("/api/admin/bm-welcome-all", limit("admin", 10, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
+  try {
+    await pool.query("UPDATE users SET bm_pending=true WHERE email_consent=true AND bm_welcome_at IS NULL AND COALESCE(suspended,false)=false");
+    const { sent } = await flushBookmarkQueue();
+    const left = +(await pool.query("SELECT COUNT(*) FROM users WHERE bm_pending=true AND bm_welcome_at IS NULL")).rows[0].count;
+    res.json({ ok: true, sent, queued: left });
+  } catch (e) { console.error("bm all:", e.message); res.status(500).json({ error: "שגיאה" }); }
+});
+
 app.post("/api/admin/send-report", limit("admin", 20, 15 * 60 * 1000), async (req, res) => {
   if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
   await sendReport(req.body.type || "daily");
@@ -2258,6 +2296,9 @@ app.post("/api/admin/backup", limit("admin", 20, 15 * 60 * 1000), async (req, re
 });
 
 cron.schedule("0 8 * * *", () => sendReport("daily"), { timezone: "Asia/Jerusalem" });
+cron.schedule("0 9-22 * * *", async () => {
+  try { if (await emailsLastHour() <= BM_QUIET_PER_HOUR) await flushBookmarkQueue(BM_LATE_MAX); } catch (e) { console.error("bm queue:", e.message); }
+}, { timezone: "Asia/Jerusalem" });
 cron.schedule("0 9 * * 0", () => sendReport("weekly"), { timezone: "Asia/Jerusalem" });
 cron.schedule("0 10 1 * *", () => sendReport("monthly"), { timezone: "Asia/Jerusalem" });
 // ניקוי: חיבורים שפגו וקודים ישנים
