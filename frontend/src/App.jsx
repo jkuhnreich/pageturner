@@ -1424,13 +1424,14 @@ const BM_CSS = `
 .bm-lead{margin:0;text-align:center;font-size:15px;line-height:1.5;color:#5A655E}
 .bm-link{background:none;border:0;padding:0;color:#4a6b2f;font-weight:600;font-size:inherit;text-decoration:underline;cursor:pointer;font-family:inherit}
 .bm-sec{height:46px;border:1.5px solid #527236;border-radius:999px;background:transparent;color:#3f5a29;font-size:16px;font-weight:700;cursor:pointer;width:100%;font-family:inherit}
+.bm-row{display:flex;gap:8px}.bm-row .bm-cta{flex:1;width:auto;min-width:0}.bm-row .bm-sec{flex:1;width:auto;min-width:0;height:52px;white-space:nowrap}
 .bm-err{color:#C2412D;font-size:13px;margin:0;text-align:center}
 @media (max-width:720px){
   .bm-modal{min-height:0;flex-direction:column;background:#FBF6EC}
   .bm-photo{display:block;height:min(26vh,190px);background:url(/bookmark-gift.jpg) 30% 18%/170% auto no-repeat;flex:none}
   .bm-card{width:auto;margin:0;border-radius:0;padding:16px 18px 20px}
   /* מסך אחד בלי גלילה: התמונה מתכווצת לפי גובה המסך, והטופס נשאר בולט */
-  .bm-photo{height:clamp(60px,calc(100dvh - 590px),170px)}
+  .bm-photo{height:clamp(70px,calc(100dvh - 535px),200px)}
   .bm-card{padding:12px 16px 14px;gap:9px}
   .bm-h{font-size:22px}
   .bm-brush{font-size:14px;padding:6px 14px}
@@ -1438,6 +1439,7 @@ const BM_CSS = `
   .bm-in{height:48px}
   .bm-cta{height:48px;font-size:18px}
   .bm-sec{height:42px;font-size:15px}
+  .bm-row .bm-sec{height:48px;font-size:14px;padding:0 6px}
   .bm-ok{font-size:13px;line-height:1.35}
   .bm-ok input{width:18px;height:18px}
   .bm-fine{font-size:11px;line-height:1.35}
@@ -1528,11 +1530,13 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     <input className="bm-in" value={name} onChange={e => setName(e.target.value)} placeholder="שם מלא" autoComplete="name" aria-label="שם מלא"/>
     <input className="bm-in" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && formOk && !busy && sendCode()} placeholder="כתובת מייל" type="email" inputMode="email" autoComplete="email" aria-label="כתובת מייל" style={{direction:"ltr",textAlign:"right"}}/>
     {consentBox}
-    {fine}
     {errEl}
-    <button className="bm-cta" disabled={!formOk || busy} onClick={sendCode}>{busy ? "שולחים קוד..." : "הרשמה"}</button>
-    <button className="bm-sec" onClick={onLogin}>כבר רשומים? כניסה</button>
+    <div className="bm-row">
+      <button className="bm-cta" disabled={!formOk || busy} onClick={sendCode}>{busy ? "שולחים קוד..." : "הרשמה"}</button>
+      <button className="bm-sec" onClick={onLogin}>כבר רשומים? כניסה</button>
+    </div>
     <p className="bm-fine">בהרשמה אני מסכים/ה ל<button className="bm-link" onClick={() => onShowLegal("terms")}>תנאי השימוש</button> ול<button className="bm-link" onClick={() => onShowLegal("privacy")}>מדיניות הפרטיות</button></p>
+    {fine}
   </>;
   else if (step === "code") body = <>
     <h2 className="bm-h">כמעט שם</h2>
