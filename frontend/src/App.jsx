@@ -1466,6 +1466,7 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
   const vid = () => { try { return visitInfo().vid; } catch { return undefined; } };
   const emailOk = /^\S+@\S+\.\S+$/.test(email.trim());
   const formOk = name.trim().length > 1 && emailOk;
+  useEffect(() => { if (mode === "signup") api.track("signup_start", { vid: vid(), via: "bm" }); }, []);
 
   // אחרי כניסה/הרשמה: מי שכבר אישר דיוור — סיימנו; אחרת שואלים פעם אחת
   const afterAuth = (u, token, isNew) => {

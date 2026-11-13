@@ -1946,7 +1946,7 @@ app.post("/api/feedback", limit("feedback", 5, 60 * 60 * 1000), async (req, res)
 });
 
 // ── אנליטיקס ─────────────────────────────────────────────
-const CLIENT_EVENTS = new Set(["crop_open", "crop_done", "search", "book_view", "page_load", "guest_login", "book_contact", "share", "visit", "signup_start", "signup_submit", "signup_invalid", "signup_back", "add_start", "pwa_install", "google_inapp", "google_err"]);
+const CLIENT_EVENTS = new Set(["crop_open", "crop_done", "search", "book_view", "page_load", "guest_login", "book_contact", "share", "visit", "signup_start", "signup_submit", "signup_invalid", "signup_back", "add_start", "pwa_install", "google_inapp", "google_err", "bm_popup", "bm_consent"]);
 app.post("/api/analytics", limit("analytics", 120, 60 * 1000), async (req, res) => {
   const { event, data } = req.body;
   if (!CLIENT_EVENTS.has(event)) return res.status(400).json({ error: "event לא מוכר" });
