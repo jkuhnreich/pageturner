@@ -1540,12 +1540,12 @@ async function sendBookmarkWelcome(u, now, test) {
     <p>תודה שהצטרפת לעדכונים של <b>הספרייה השכונתית</b>. שמרנו בשבילך סימנייה מעוצבת, מתנה קטנה על ההצטרפות.</p>
     <p><b>איך מקבלים אותה?</b><br/>אנחנו מתאמים בימים אלה את החלוקה בשכונה. ברגע שייקבעו מועד ומקום, נשלח לך כאן במייל את כל הפרטים.</p>
     <p><b>רוצים לשמוע ראשונים?</b><br/>${wa ? "בקבוצת הווטסאפ ובעמוד האינסטגרם שלנו" : "בעמוד האינסטגרם שלנו"} נעדכן על חלוקת הסימניות, על מפגשים ועל ספרים חדשים בשכונה.</p>
-    ${wa ? `<p style="text-align:center;margin:16px 0 10px">${btn(escapeHtml(wa), "הצטרפות לקבוצת הווטסאפ", "#25A35A", `${site}/email/whatsapp.png`)}</p>` : ""}
-    <p style="text-align:center;margin:10px 0 20px">${btn(escapeHtml(ig), "עקבו אחרינו באינסטגרם", "#C13584;background-image:linear-gradient(45deg,#F58529,#DD2A7B 50%,#8134AF)", `${site}/email/instagram.png`)}</p>
+    ${wa ? `<p style="text-align:center;margin:16px 0 10px"><a href="${escapeHtml(wa)}"><img src="${site}/email/btn-wa.png" width="300" height="52" alt="הצטרפות לקבוצת הוואטסאפ" style="display:inline-block;border:0;max-width:100%;height:auto"/></a></p>` : ""}
+    <p style="text-align:center;margin:10px 0 20px"><a href="${escapeHtml(ig)}"><img src="${site}/email/btn-ig.png" width="300" height="52" alt="עקבו אחרינו באינסטגרם" style="display:inline-block;border:0;max-width:100%;height:auto"/></a></p>
     <p>ובינתיים, יש לך על המדף ספר שכבר קראת? צלמו אותו ותנו לו לפגוש קורא חדש.</p>
     <p style="text-align:center;margin:20px 0">${btn(site, "לספרייה השכונתית", "#527236", `${site}/icon-192.png`)}</p>
     <p style="margin-top:22px">להתראות בשכונה,<br/>צוות הספרייה השכונתית</p>
-    <p style="font-size:12px;color:#5A655E;border-top:1px solid #e3dccd;padding-top:12px;margin-top:22px">קיבלת את המייל כי אישרת לקבל עדכונים מהספרייה השכונתית. <a href="${unsubLink(u.id)}" style="color:#4a6b2f">להסרה מרשימת הדיוור</a>, או פשוט השיבו למייל הזה.</p>
+    <p style="font-size:12px;color:#5A655E;border-top:1px solid #e3dccd;padding-top:12px;margin-top:22px"><a href="${unsubLink(u.id)}" style="color:#5A655E">להסרה מרשימת הדיוור</a></p>
   </div></div>`;
   await sendEmail(u.email, (test ? "[בדיקה] " : "") + "🎁 הסימנייה שלך שמורה | ספרייה שכונתית", html, undefined, { "List-Unsubscribe": `<${unsubLink(u.id)}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
 }
