@@ -1508,9 +1508,9 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     <input className="bm-in" value={name} onChange={e => setName(e.target.value)} placeholder="שם מלא" autoComplete="name" aria-label="שם מלא"/>
     <input className="bm-in" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && formOk && !busy && sendCode()} placeholder="כתובת מייל" type="email" inputMode="email" autoComplete="email" aria-label="כתובת מייל" style={{direction:"ltr",textAlign:"right"}}/>
     {consentBox}
+    {fine}
     {errEl}
     <button className="bm-cta" disabled={!formOk || busy} onClick={sendCode}>{busy ? "שולחים קוד..." : "הרשמה"}</button>
-    {fine}
     <button className="bm-sec" onClick={onLogin}>כבר רשומים? כניסה</button>
     <p className="bm-fine">בהרשמה אני מסכים/ה ל<button className="bm-link" onClick={() => onShowLegal("terms")}>תנאי השימוש</button> ול<button className="bm-link" onClick={() => onShowLegal("privacy")}>מדיניות הפרטיות</button></p>
   </>;
@@ -1527,18 +1527,18 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     <p className="bm-lead">החשבון שלך בגוגל אומת. השם נלקח ממנו, ואפשר לשנות.</p>
     <input className="bm-in" value={name} onChange={e => setName(e.target.value)} placeholder="שם מלא" autoComplete="name" aria-label="שם מלא"/>
     {consentBox}
+    {fine}
     {errEl}
     <button className="bm-cta" disabled={busy} onClick={finishGoogle}>{busy ? "רגע..." : "סיום הרשמה"}</button>
-    {fine}
   </>;
   else if (step === "ask" || step === "consent") body = <>
     <h2 className="bm-h">{step === "ask" ? "🎉 נרשמת! רוצה גם סימנייה במתנה?" : "מצטרפים ומקבלים מתנה!"}</h2>
     <div className="bm-gift"><div className="bm-brush">סימנייה מעוצבת של<br/>הספרייה השכונתית</div><BmGiftIcon/></div>
     {consentBox}
+    {fine}
     {errEl}
     <button className="bm-cta" disabled={!ok || busy} onClick={giveConsent}>{busy ? "רגע..." : step === "ask" ? "כן, רוצה סימנייה!" : "רוצה את הסימנייה שלי!"}</button>
     {step === "ask" && <button className="bm-link" style={{alignSelf:"center"}} onClick={onClose}>לא תודה, מעבר לספרים</button>}
-    {fine}
   </>;
   else body = <div style={{textAlign:"center",display:"grid",gap:12,justifyItems:"center",padding:"10px 0"}}>
     <div style={{fontSize:46}}>🎁</div>
