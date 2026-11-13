@@ -112,6 +112,9 @@ input,textarea,button,select{font-family:'Rubik',system-ui,sans-serif}
 input::placeholder,textarea::placeholder{color:#767670}
 input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
 ::-webkit-scrollbar{width:3px;height:0}::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+@media (max-width:420px){.hdr-logo{display:none}.hdr-join{font-size:12px!important;padding:7px 11px!important}}
+@media (max-width:370px){.hdr-join{white-space:normal!important;line-height:1.15;width:70px;padding:5px 8px!important;font-size:11.5px!important}.hdr-title{font-size:19px!important}}
+@media (max-width:320px){.hdr-title{font-size:17px!important}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -1998,14 +2001,14 @@ export default function App() {
     if (token) toast_(isNew ? `ברוך הבא, ${u.name} 📖` : `שלום ${u.name} 👋`);
   };
   useEffect(() => { if (autoGuest) { autoGuest = false; api.track("guest_login", { auto: true }); } }, []);
-  // חלון הסימנייה קופץ אחרי 2 שניות: לאורח פעם בביקור, לרשום שלא אישר דיוור פעם ב-3 ימים, ולכל היותר פעמיים
+  // חלון הסימנייה קופץ אחרי 2 שניות: לאורח פעם בביקור, לרשום שלא אישר דיוור פעם ב-3 ימים, ולכל היותר 3 פעמים
   useEffect(() => {
     if (screen !== "app" || !user || !BM_ON() || legal) return;
     const need = isGuest ? "signup" : (user.id && session.token() && user.emailConsent === false ? "consent" : null);
     if (!need) return;
     try {
       if (need === "signup" && sessionStorage.getItem("pt_bm_seen")) return;
-      if (need === "consent" && (Number(localStorage.getItem("pt_bm_n") || 0) >= 2 || Date.now() - Number(localStorage.getItem("pt_bm_seen") || 0) < 3 * 864e5)) return;
+      if (need === "consent" && (Number(localStorage.getItem("pt_bm_n") || 0) >= 3 || Date.now() - Number(localStorage.getItem("pt_bm_seen") || 0) < 3 * 864e5)) return;
     } catch {}
     const t = setTimeout(() => {
       try {
@@ -2136,13 +2139,13 @@ export default function App() {
       {/* Header */}
       <header style={{position:"sticky",top:0,zIndex:60,background:"rgba(30,45,61,.97)",backdropFilter:"saturate(1.4) blur(10px)",paddingTop:"env(safe-area-inset-top)",boxShadow:"0 1px 0 rgba(255,255,255,.04)"}}>
         <div style={{maxWidth:900,margin:"0 auto",padding:"12px 16px 0",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-          <button onClick={()=>{clearFilters();goTab("search");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0,color:"#fff"}}>
-            <img src="/favicon.svg" alt="" width="30" height="30" style={{borderRadius:8}}/>
-            <span style={{fontFamily:HEAD,fontSize:isGuest?"clamp(16px,4.9vw,21px)":21,fontWeight:700,whiteSpace:"nowrap"}}>ספרייה שכונתית</span>
+          <button onClick={()=>{clearFilters();goTab("search");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0,color:"#fff",minWidth:0}}>
+            <img src="/favicon.svg" alt="" width="30" height="30" className={isGuest?"hdr-logo":undefined} style={{borderRadius:8}}/>
+            <span className="hdr-title" style={{fontFamily:HEAD,fontSize:21,fontWeight:700,whiteSpace:"nowrap"}}>ספרייה שכונתית</span>
           </button>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
             {isGuest
-              ? <button onClick={onGuestAction} style={{background:C.accent,border:"none",borderRadius:99,padding:"8px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>כניסה / הצטרפות</button>
+              ? <button onClick={onGuestAction} className="hdr-join" style={{background:C.accent,border:"none",borderRadius:99,padding:"8px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>כניסה / הצטרפות</button>
               : <button onClick={()=>goTab("profile")} aria-label="הפרופיל שלי" style={{background:"none",border:"2px solid rgba(255,255,255,.25)",borderRadius:"50%",padding:0,cursor:"pointer"}}>{avatarEl(32)}</button>}
             <button onClick={()=>setMenuOpen(true)} aria-label="תפריט" style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:12,cursor:"pointer",width:38,height:38,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="menu" size={20}/></button>
           </div>
