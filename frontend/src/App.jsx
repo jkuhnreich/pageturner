@@ -1471,8 +1471,23 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
   const afterAuth = (u, token, isNew) => {
     saveJoin(null);
     onAuth(u, token, isNew);
-    if (u.emailConsent) { setStep("done"); api.track("bm_consent", { vid: vid(), via: "signup" }); }
-    else setStep("ask");
+    // מסך "הסימנייה שלך שמורה" מוצג רק פעם אחת לכל משתמש; בכניסות הבאות החלון פשוט נסגר
+    const key = "pt_bm_done_" + u.id;
+    let shown = false; try { shown = localStorage.getItem(key) === "1"; } catch {}
+    if (u.emailConsent) {
+      if (shown && !isNew) return onClose();
+      try { localStorage.setItem(key, "1"); } catch {}
+      setStep("done"); api.track("bm_consent", { vid: vid(), via: "signup" });
+      return;
+    }
+    // מי שלא אישר דיוור: לא שואלים שוב את מי שכבר קיבל סימנייה, ולא יותר מפעם ב-3 ימים / 3 פעמים
+    if (!isNew) {
+      let recent = false;
+      try { recent = Number(localStorage.getItem("pt_bm_n") || 0) >= 3 || Date.now() - Number(localStorage.getItem("pt_bm_seen") || 0) < 3 * 864e5; } catch {}
+      if (u.bmGifted || recent) return onClose();
+      try { localStorage.setItem("pt_bm_seen", String(Date.now())); localStorage.setItem("pt_bm_n", String(Number(localStorage.getItem("pt_bm_n") || 0) + 1)); } catch {}
+    }
+    setStep("ask");
   };
   const register = async (tk, nm, em) => {
     let src = ""; try { src = sessionStorage.getItem("pt_src") || ""; } catch {}
@@ -1506,6 +1521,7 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     const d = await api.put("/api/me", { emailConsent: true });
     if (d?.user) onAuth(d.user);
     api.track("bm_consent", { vid: vid(), via: mode === "consent" ? "banner" : "ask" });
+    try { if (d?.user?.id) localStorage.setItem("pt_bm_done_" + d.user.id, "1"); } catch {}
     setStep("done");
   });
 
