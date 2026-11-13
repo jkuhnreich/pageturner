@@ -1423,6 +1423,7 @@ const BM_CSS = `
 .bm-fine{font-size:12px;color:#5A655E;text-align:center;line-height:1.4;margin:0}
 .bm-lead{margin:0;text-align:center;font-size:15px;line-height:1.5;color:#5A655E}
 .bm-link{background:none;border:0;padding:0;color:#4a6b2f;font-weight:600;font-size:inherit;text-decoration:underline;cursor:pointer;font-family:inherit}
+.bm-sec{height:46px;border:1.5px solid #527236;border-radius:999px;background:transparent;color:#3f5a29;font-size:16px;font-weight:700;cursor:pointer;width:100%;font-family:inherit}
 .bm-err{color:#C2412D;font-size:13px;margin:0;text-align:center}
 @media (max-width:720px){
   .bm-modal{min-height:0;flex-direction:column;background:#FBF6EC}
@@ -1510,7 +1511,8 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     {errEl}
     <button className="bm-cta" disabled={!formOk || busy} onClick={sendCode}>{busy ? "שולחים קוד..." : "הרשמה"}</button>
     {fine}
-    <p className="bm-fine">כבר רשומים? <button className="bm-link" onClick={onLogin}>כניסה</button> · בהרשמה אני מסכים/ה ל<button className="bm-link" onClick={() => onShowLegal("terms")}>תנאי השימוש</button> ול<button className="bm-link" onClick={() => onShowLegal("privacy")}>מדיניות הפרטיות</button></p>
+    <button className="bm-sec" onClick={onLogin}>כבר רשומים? כניסה</button>
+    <p className="bm-fine">בהרשמה אני מסכים/ה ל<button className="bm-link" onClick={() => onShowLegal("terms")}>תנאי השימוש</button> ול<button className="bm-link" onClick={() => onShowLegal("privacy")}>מדיניות הפרטיות</button></p>
   </>;
   else if (step === "code") body = <>
     <h2 className="bm-h">כמעט שם</h2>
