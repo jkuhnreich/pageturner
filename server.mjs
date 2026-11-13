@@ -127,6 +127,7 @@ async function initDB() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS featuredBooks TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent_at BIGINT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS bm_welcome_at BIGINT",
     "UPDATE users SET email_consent_at=createdat WHERE email_consent=true AND email_consent_at IS NULL",
     "ALTER TABLE wishlist ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS setinfo TEXT",
@@ -1441,9 +1442,33 @@ async function sendEmail(to, subject, html, attachments) {
     body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [to], subject, html, ...(attachments ? { attachments } : {}) }),
   });
   if (!r.ok) { const t = await r.text(); throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`); }
-  const kind = /קוד הכניסה/.test(subject) ? "otp" : /גיבוי/.test(subject) ? "backup" : /דוח/.test(subject) ? "report" : /זמין עכשיו/.test(subject) ? "wishlist" : "admin";
+  const kind = /קוד הכניסה/.test(subject) ? "otp" : /גיבוי/.test(subject) ? "backup" : /דוח/.test(subject) ? "report" : /זמין עכשיו/.test(subject) ? "wishlist" : /הסימנייה שלך/.test(subject) ? "bm_welcome" : "admin";
   await track("email_sent", null, { kind });
   checkEmailQuota().catch(e => console.error("email quota check:", e.message));
+}
+
+// מייל אישור למי שהצטרף לדיוור (מתנת הסימנייה). קישור לווטסאפ רק אם WHATSAPP_GROUP_URL מוגדר
+async function sendBookmarkWelcome(u) {
+  if (!u?.email || u.bm_welcome_at) return;
+  await pool.query("UPDATE users SET bm_welcome_at=$1 WHERE id=$2", [Date.now(), u.id]);
+  const site = siteUrl(), wa = process.env.WHATSAPP_GROUP_URL;
+  const first = escapeHtml(String(u.name || "").trim().split(/\s+/)[0] || "");
+  const btn = (href, label, bg) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:999px;font-size:16px">${label}</a>`;
+  const html = `<div dir="rtl" style="background:#F5F0E8;padding:24px 12px;font-family:Arial,sans-serif;color:#1E2D3D">
+  <div style="max-width:520px;margin:0 auto;background:#FBF6EC;border-radius:18px;padding:28px 24px;line-height:1.7;font-size:16px">
+    <div style="text-align:center;font-size:44px">🎁</div>
+    <h1 style="text-align:center;font-size:24px;margin:6px 0 18px">הסימנייה שלך שמורה!</h1>
+    <p>שלום${first ? " " + first : ""},</p>
+    <p>תודה שהצטרפת לעדכונים של <b>הספרייה השכונתית</b>. שמרנו בשבילך סימנייה מעוצבת, מתנה קטנה על ההצטרפות.</p>
+    <p><b>איך מקבלים אותה?</b><br/>אנחנו מתאמים בימים אלה את החלוקה בשכונה. ברגע שייקבעו מועד ומקום, נשלח לך כאן במייל את כל הפרטים.</p>
+    ${wa ? `<p><b>רוצים לשמוע ראשונים?</b><br/>פתחנו קבוצת וואטסאפ של הספרייה השכונתית. שם נעדכן על חלוקת הסימניות, על מפגשים ועל ספרים חדשים בשכונה.</p>
+    <p style="text-align:center;margin:20px 0">${btn(escapeHtml(wa), "הצטרפות לקבוצת הווטסאפ", "#25A35A")}</p>` : ""}
+    <p>ובינתיים, יש לך על המדף ספר שכבר קראת? צלמו אותו ותנו לו לפגוש קורא חדש.</p>
+    <p style="text-align:center;margin:20px 0">${btn(site, "לספרייה השכונתית", "#527236")}</p>
+    <p style="margin-top:22px">להתראות בשכונה,<br/>צוות הספרייה השכונתית</p>
+    <p style="font-size:12px;color:#5A655E;border-top:1px solid #e3dccd;padding-top:12px;margin-top:22px">קיבלת את המייל כי אישרת לקבל עדכונים מהספרייה השכונתית. אפשר לבטל בכל רגע בהגדרות הפרופיל באתר.</p>
+  </div></div>`;
+  await sendEmail(u.email, "🎁 הסימנייה שלך שמורה | ספרייה שכונתית", html);
 }
 
 // התראה כשמתקרבים למכסת המיילים היומית של Resend (מתאפסת בחצות UTC = 02:00/03:00 בישראל)
@@ -1624,6 +1649,7 @@ app.post("/api/users/register", limit("register", 40, 60 * 60 * 1000), async (re
       );
       user = (await pool.query("SELECT * FROM users WHERE id=$1", [id])).rows[0];
       track("register", id, { type: user.type, method: row.ticketvia || "email", phone: !!phoneDigits, src: clip(req.body.src, 40) || undefined });
+      if (user.email_consent) sendBookmarkWelcome(user).catch(e => console.error("bm welcome:", e.message));
     }
     await pool.query("UPDATE otps SET tickethash=NULL WHERE email=$1", [email]);
     const token = await createSession(user.id);
@@ -1660,6 +1686,7 @@ app.put("/api/me", requireAuth, async (req, res) => {
         <p><b>${escapeHtml(req.user.email || "")}</b> · ${escapeHtml(req.user.name || "")}</p>
         <p>נרשם לדיוור: ${req.user.email_consent_at ? new Date(Number(req.user.email_consent_at)).toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" }) : "לא ידוע"} · ביטל: ${new Date().toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" })}</p></div>`)
         .catch(e => console.error("unsub mail:", e.message));
+    if (!req.user.email_consent && consent) sendBookmarkWelcome(req.user).catch(e => console.error("bm welcome:", e.message));
     if (newName !== req.user.name && !req.user.storename) await pool.query("UPDATE books SET ownername=$1 WHERE ownerid=$2", [newName, req.user.id]);
     if ((phoneDigits || "") !== (req.user.phone || "")) await pool.query("UPDATE books SET phone=$1 WHERE ownerid=$2", [phoneDigits || "", req.user.id]);
     const user = (await pool.query("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
