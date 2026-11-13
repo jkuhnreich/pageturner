@@ -1522,11 +1522,13 @@ async function flushBookmarkQueue(cap = BM_NOW_MAX) {
   }
   return { sent };
 }
-async function sendBookmarkWelcome(u, now) {
-  if (!u?.email || u.bm_welcome_at) return;
-  if (!now && await emailsToday() >= BM_NOW_MAX) { await pool.query("UPDATE users SET bm_pending=true WHERE id=$1", [u.id]); return; }
-  const claim = await pool.query("UPDATE users SET bm_welcome_at=$1, bm_pending=false WHERE id=$2 AND bm_welcome_at IS NULL RETURNING id", [Date.now(), u.id]);
-  if (!claim.rows.length) return;
+async function sendBookmarkWelcome(u, now, test) {
+  if (!u?.email || (!test && u.bm_welcome_at)) return;
+  if (!test) {
+    if (!now && await emailsToday() >= BM_NOW_MAX) { await pool.query("UPDATE users SET bm_pending=true WHERE id=$1", [u.id]); return; }
+    const claim = await pool.query("UPDATE users SET bm_welcome_at=$1, bm_pending=false WHERE id=$2 AND bm_welcome_at IS NULL RETURNING id", [Date.now(), u.id]);
+    if (!claim.rows.length) return;
+  }
   const site = siteUrl(), wa = process.env.WHATSAPP_GROUP_URL, ig = process.env.INSTAGRAM_URL || "https://www.instagram.com/pageturner.co.il/";
   const first = escapeHtml(String(u.name || "").trim().split(/\s+/)[0] || "");
   const btn = (href, label, bg, icon) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:999px;font-size:16px;min-width:220px">${icon ? `<img src="${icon}" width="22" height="22" alt="" style="vertical-align:middle;margin-left:8px;border:0;border-radius:6px"/>` : ""}<span style="vertical-align:middle">${label}</span></a>`;
@@ -1545,7 +1547,7 @@ async function sendBookmarkWelcome(u, now) {
     <p style="margin-top:22px">להתראות בשכונה,<br/>צוות הספרייה השכונתית</p>
     <p style="font-size:12px;color:#5A655E;border-top:1px solid #e3dccd;padding-top:12px;margin-top:22px">קיבלת את המייל כי אישרת לקבל עדכונים מהספרייה השכונתית. <a href="${unsubLink(u.id)}" style="color:#4a6b2f">להסרה מרשימת הדיוור</a>, או פשוט השיבו למייל הזה.</p>
   </div></div>`;
-  await sendEmail(u.email, "🎁 הסימנייה שלך שמורה | ספרייה שכונתית", html, undefined, { "List-Unsubscribe": `<${unsubLink(u.id)}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
+  await sendEmail(u.email, (test ? "[בדיקה] " : "") + "🎁 הסימנייה שלך שמורה | ספרייה שכונתית", html, undefined, { "List-Unsubscribe": `<${unsubLink(u.id)}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
 }
 
 // התראה כשמתקרבים למכסת המיילים היומית של Resend (מתאפסת בחצות UTC = 02:00/03:00 בישראל)
@@ -1997,6 +1999,18 @@ app.post("/api/admin/bm-welcome-all", limit("admin", 10, 15 * 60 * 1000), async 
     const left = +(await pool.query("SELECT COUNT(*) FROM users WHERE bm_pending=true AND bm_welcome_at IS NULL")).rows[0].count;
     res.json({ ok: true, sent, queued: left });
   } catch (e) { console.error("bm all:", e.message); res.status(500).json({ error: "שגיאה" }); }
+});
+
+// מייל סימנייה לבדיקה, נשלח רק למייל של המנהל, בלי לשנות שום דבר במסד הנתונים
+app.post("/api/admin/bm-test", limit("admin", 10, 15 * 60 * 1000), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
+  const to = process.env.ADMIN_EMAIL;
+  if (!to) return res.status(400).json({ error: "ADMIN_EMAIL לא מוגדר" });
+  try {
+    const u = (await pool.query("SELECT * FROM users WHERE email=$1", [normEmail(to)])).rows[0] || { id: "test", email: to, name: "" };
+    await sendBookmarkWelcome({ ...u, email: to }, true, true);
+    res.json({ ok: true, to });
+  } catch (e) { console.error("bm test:", e.message); res.status(500).json({ error: "שגיאה" }); }
 });
 
 app.post("/api/admin/send-report", limit("admin", 20, 15 * 60 * 1000), async (req, res) => {
