@@ -763,8 +763,9 @@ function CoverSlot({ label, sub, icon, preview, loading, onFile, badge }) {
 function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
   const needPhone = !user?.phone;
   const [newPhone, setNewPhone] = useState("");
-  const [step, setStep] = useState("gps"); // gps | choose | camera | manual
+  const [step, setStep] = useState(coords ? "choose" : "gps"); // gps | choose | camera | manual — מי שכבר אישר מיקום לא נשאל שוב
   const [gpsGranted, setGpsGranted] = useState(false);
+  const [gpsPos, setGpsPos] = useState(null);
   const [fp, setFp] = useState(null);  // front preview URL
   const [bp, setBp] = useState(null);  // back preview URL
   const [fl, setFl] = useState(false); // front loading
@@ -883,14 +884,9 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
     } finally { setBl(false); }
   };
 
+  // לא מבקשים מהדפדפן מיקום בשמירת הספר: רק מה שאושר קודם במסך המיקום שלנו
   const getCoords = () => new Promise(resolve => {
-    if (coords) return resolve(coords);
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: false, timeout: 10000 }
-    );
+    resolve(coords || gpsPos || null);
   });
 
   const save = async () => {
@@ -975,7 +971,8 @@ function AddBook({ user, onDone, toast_, coords, onNeedPhone, onUserUpdate }) {
           navigator.geolocation.getCurrentPosition(
             pos => {
               setGpsGranted(true);
-              if (typeof coords === "object" && coords !== null) return;
+              const c = { lat: +pos.coords.latitude.toFixed(3), lng: +pos.coords.longitude.toFixed(3) };
+              setGpsPos(c); try { localStorage.setItem("pt_coords", JSON.stringify(c)); } catch {}
             },
             () => setGpsGranted(false),
             { enableHighAccuracy: false, timeout: 10000 }
@@ -1812,15 +1809,23 @@ export default function App() {
   // טען ספרים מהשרת
   const [userCoords, setUserCoords] = useState(null);
 
+  // מיקום: לא מבקשים הרשאה בכניסה. משתמשים במיקום ששמור במכשיר, או שואלים בשקט רק אם כבר אושר בעבר.
+  // הבקשה עצמה קופצת רק כשהמשתמש לוחץ "קרובים אליי" או מעלה ספר
+  const gotCoords = useCallback(pos => {
+    const c = { lat: +pos.coords.latitude.toFixed(3), lng: +pos.coords.longitude.toFixed(3) };
+    setUserCoords(c); try { localStorage.setItem("pt_coords", JSON.stringify(c)); } catch {}
+  }, []);
+  const askLocation = useCallback(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(gotCoords, () => toast_("כדי לראות ספרים קרובים צריך לאשר גישה למיקום בהגדרות הדפדפן", "warn"), { enableHighAccuracy: false, timeout: 10000 });
+  }, [gotCoords, toast_]);
   useEffect(() => {
-    if (navigator.geolocation && user && screen === "app") {
-      navigator.geolocation.getCurrentPosition(
-        pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => {},
-        { enableHighAccuracy: false, timeout: 10000 }
-      );
-    }
-  }, [user, screen]);
+    if (!navigator.geolocation || !user || screen !== "app") return;
+    try { const c = JSON.parse(localStorage.getItem("pt_coords") || "null"); if (c?.lat) setUserCoords(c); } catch {}
+    navigator.permissions?.query?.({ name: "geolocation" }).then(p => {
+      if (p.state === "granted") navigator.geolocation.getCurrentPosition(gotCoords, () => {}, { enableHighAccuracy: false, timeout: 10000 });
+    }).catch(() => {});
+  }, [user, screen, gotCoords]);
 
   const loadMyBooks = useCallback(async () => {
     if (!user?.id) return;
@@ -2133,9 +2138,6 @@ export default function App() {
   const goTab = id => {
     setTab(id); navigate(`?tab=${id}`); window.scrollTo({top:0});
     if (id === "add") api.track("add_start");
-    if (id === "add" && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(pos => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }), () => {}, { enableHighAccuracy: false, timeout: 10000 });
-    }
   };
   const onAvatarFile = async e => {
     const file = e.target.files[0];
@@ -2263,7 +2265,7 @@ export default function App() {
                 ))}
               </div></>}
 
-            <div id="all-books" style={{scrollMarginTop:150}}><SectionHead title="כל הספרים" sub={userCoords?"הקרובים ביותר קודם":"החדשים קודם"}/></div>
+            <div id="all-books" style={{scrollMarginTop:150}}><SectionHead title="כל הספרים" sub={userCoords?"הקרובים ביותר קודם":"החדשים קודם"} action={userCoords?undefined:"📍 קרובים אליי"} onAction={userCoords?undefined:askLocation}/></div>
             {books.length ? (
               <div className="grid2">{books.map(b => <BookTile key={b.id} book={b} onOpen={openBook} fav={favIds.has(b.id)} onFav={toggleFav} user={user}/>)}</div>
             ) : (
