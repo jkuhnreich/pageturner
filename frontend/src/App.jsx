@@ -1429,6 +1429,18 @@ const BM_CSS = `
   .bm-modal{min-height:0;flex-direction:column;background:#FBF6EC}
   .bm-photo{display:block;height:min(26vh,190px);background:url(/bookmark-gift.jpg) 30% 18%/170% auto no-repeat;flex:none}
   .bm-card{width:auto;margin:0;border-radius:0;padding:16px 18px 20px}
+  /* מסך אחד בלי גלילה: התמונה מתכווצת לפי גובה המסך, והטופס נשאר בולט */
+  .bm-photo{height:clamp(60px,calc(100dvh - 590px),170px)}
+  .bm-card{padding:12px 16px 14px;gap:9px}
+  .bm-h{font-size:22px}
+  .bm-brush{font-size:14px;padding:6px 14px}
+  .bm-gift svg{width:34px;height:34px}
+  .bm-in{height:48px}
+  .bm-cta{height:48px;font-size:18px}
+  .bm-sec{height:42px;font-size:15px}
+  .bm-ok{font-size:13px;line-height:1.35}
+  .bm-ok input{width:18px;height:18px}
+  .bm-fine{font-size:11px;line-height:1.35}
 }`;
 
 function BmGiftIcon() {
