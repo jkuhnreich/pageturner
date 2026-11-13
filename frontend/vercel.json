@@ -11,5 +11,5 @@
       { "key": "Permissions-Policy", "value": "camera=(self), geolocation=(self), microphone=()" }
     ] }
   ],
-  "rewrites": [{ "source": "/((?!api/|assets/|.*\\..*).*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/unsubscribe", "destination": "https://pageturner-production-5baf.up.railway.app/api/unsubscribe" }, { "source": "/((?!api/|assets/|.*\\..*).*)", "destination": "/index.html" }]
 }

@@ -486,6 +486,53 @@ async function recordBlocked(req, info, at) {
     <p><a href="${link}">להשעות את המשתמש ולהסתיר את כל הספרים שלו</a></p></div>`);
 }
 const COVER_HOSTS = /^https:\/\/(covers\.openlibrary\.org|books\.google\.com|books\.googleusercontent\.com|[a-z0-9-]+\.googleusercontent\.com)\//i;
+// ── הסרה מרשימת הדיוור: קישור אישי בכל מייל (בלי התחברות), או הקלדת כתובת המייל ──
+const unsubToken = id => createHmac("sha256", process.env.ADMIN_KEY || "pt-hide").update("unsub:" + id).digest("base64url").slice(0, 32);
+const unsubLink = id => `${siteUrl()}/unsubscribe?u=${encodeURIComponent(id)}&t=${unsubToken(id)}`;
+async function unsubscribeUser(u, via) {
+  if (!u?.email_consent) return;
+  await pool.query("UPDATE users SET email_consent=false, email_consent_at=NULL WHERE id=$1", [u.id]);
+  track("unsubscribe", u.id, { via });
+  if (process.env.ADMIN_EMAIL) sendEmail(process.env.ADMIN_EMAIL, `🚫 הסרה מרשימת הדיוור: ${clip(u.email, 80)}`, `<div dir="rtl" style="font-family:sans-serif">
+    <p>המשתמש הסיר את עצמו מרשימת הדיוור (${via === "link" ? "קישור במייל" : "הקלדת כתובת"}). אם הורדת רשימה בעבר, צריך למחוק אותו גם ממנה ומכל כלי דיוור.</p>
+    <p><b>${escapeHtml(u.email || "")}</b> · ${escapeHtml(u.name || "")}</p></div>`).catch(e => console.error("unsub mail:", e.message));
+}
+function unsubPage(body) {
+  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>הסרה מרשימת הדיוור | ספרייה שכונתית</title>
+<style>body{margin:0;background:#F5F0E8;font-family:Rubik,Arial,sans-serif;color:#1E2D3D}.c{max-width:420px;margin:40px auto;background:#FBF6EC;border-radius:18px;padding:28px 22px;text-align:center;line-height:1.6}
+h1{font-size:22px;margin:10px 0}input{width:100%;box-sizing:border-box;height:48px;border:1.5px solid #1E2D3D;border-radius:999px;padding:0 16px;font-size:16px;margin:10px 0;direction:ltr;text-align:right}
+button{width:100%;height:48px;border:0;border-radius:999px;background:#527236;color:#fff;font-size:17px;font-weight:700;cursor:pointer}a{color:#4a6b2f}p{color:#5A655E}</style></head>
+<body><div class="c"><img src="${siteUrl()}/icon-192.png" width="56" height="56" alt="" style="border-radius:14px"><h1>ספרייה שכונתית</h1>${body}</div></body></html>`;
+}
+app.get("/api/unsubscribe", limit("unsub", 60, 15 * 60 * 1000), async (req, res) => {
+  const { u, t } = req.query;
+  let body;
+  if (typeof u === "string" && typeof t === "string" && safeEqual(t, unsubToken(u))) {
+    const user = (await pool.query("SELECT email FROM users WHERE id=$1", [u]).catch(() => ({ rows: [] }))).rows[0];
+    body = `<p>להסיר את <b dir="ltr">${escapeHtml(user?.email || "")}</b> מרשימת הדיוור?</p>
+      <form method="post" action="/unsubscribe?u=${encodeURIComponent(u)}&t=${encodeURIComponent(t)}"><button>הסרה מרשימת הדיוור</button></form>`;
+  } else {
+    body = `<p>הקלידו את כתובת המייל שתרצו להסיר מרשימת הדיוור:</p>
+      <form method="post" action="/unsubscribe"><input type="email" name="email" required placeholder="כתובת מייל" autocomplete="email"><button>הסרה מרשימת הדיוור</button></form>`;
+  }
+  res.set("Cache-Control", "no-store").type("html").send(unsubPage(body));
+});
+app.post("/api/unsubscribe", express.urlencoded({ extended: false, limit: "10kb" }), limit("unsub", 30, 15 * 60 * 1000), async (req, res) => {
+  try {
+    const { u, t } = req.query;
+    if (typeof u === "string" && typeof t === "string" && safeEqual(t, unsubToken(u))) {
+      const user = (await pool.query("SELECT * FROM users WHERE id=$1", [u])).rows[0];
+      await unsubscribeUser(user, "link");
+      return res.set("Cache-Control", "no-store").type("html").send(unsubPage(`<p><b>הוסרת מרשימת הדיוור.</b> לא נשלח לך יותר עדכונים במייל.</p><p><a href="${siteUrl()}">חזרה לספרייה השכונתית</a></p>`));
+    }
+    const email = normEmail(req.body?.email);
+    if (email) {
+      const user = (await pool.query("SELECT * FROM users WHERE email=$1", [email])).rows[0];
+      await unsubscribeUser(user, "form");
+    }
+    res.set("Cache-Control", "no-store").type("html").send(unsubPage(`<p><b>הבקשה התקבלה.</b> אם הכתובת הייתה ברשימת הדיוור, היא הוסרה ממנה.</p><p><a href="${siteUrl()}">חזרה לספרייה השכונתית</a></p>`));
+  } catch (e) { console.error("unsubscribe:", e.message); res.status(500).type("html").send(unsubPage("<p>משהו השתבש, נסו שוב או השיבו למייל שקיבלתם.</p>")); }
+});
 const hideToken = id => createHmac("sha256", process.env.ADMIN_KEY || "pt-hide").update("hide:" + id).digest("base64url").slice(0, 32);
 function siteUrl() { return process.env.SITE_URL || "https://pageturner.co.il"; }
 function apiUrl(req) { return process.env.PUBLIC_API_URL || origin(req); }
@@ -1437,12 +1484,12 @@ app.put("/api/contacts/:id", requireAuth, async (req, res) => {
 
 // ── קוד כניסה במייל (OTP) ─────────────────────────────────
 const RESEND_URL = process.env.RESEND_URL || "https://api.resend.com/emails";
-async function sendEmail(to, subject, html, attachments) {
+async function sendEmail(to, subject, html, attachments, headers) {
   if (!process.env.RESEND_API_KEY) { console.log(`[email skipped] to=${to} subject=${subject}${attachments ? " attachments=" + attachments.map(a => a.filename + ":" + a.content.length).join(",") : ""}`); return; }
   const r = await fetch(RESEND_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", to: [to], subject, html, ...(attachments ? { attachments } : {}) }),
+    body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", reply_to: process.env.REPLY_TO || "pageturner.team@gmail.com", to: [to], subject, html, ...(attachments ? { attachments } : {}), ...(headers ? { headers } : {}) }),
   });
   if (!r.ok) { const t = await r.text(); throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`); }
   const kind = /קוד הכניסה/.test(subject) ? "otp" : /גיבוי/.test(subject) ? "backup" : /דוח/.test(subject) ? "report" : /זמין עכשיו/.test(subject) ? "wishlist" : /הסימנייה שלך/.test(subject) ? "bm_welcome" : "admin";
@@ -1496,9 +1543,9 @@ async function sendBookmarkWelcome(u, now) {
     <p>ובינתיים, יש לך על המדף ספר שכבר קראת? צלמו אותו ותנו לו לפגוש קורא חדש.</p>
     <p style="text-align:center;margin:20px 0">${btn(site, "לספרייה השכונתית", "#527236", `${site}/icon-192.png`)}</p>
     <p style="margin-top:22px">להתראות בשכונה,<br/>צוות הספרייה השכונתית</p>
-    <p style="font-size:12px;color:#5A655E;border-top:1px solid #e3dccd;padding-top:12px;margin-top:22px">קיבלת את המייל כי אישרת לקבל עדכונים מהספרייה השכונתית. אפשר לבטל בכל רגע בהגדרות הפרופיל באתר.</p>
+    <p style="font-size:12px;color:#5A655E;border-top:1px solid #e3dccd;padding-top:12px;margin-top:22px">קיבלת את המייל כי אישרת לקבל עדכונים מהספרייה השכונתית. <a href="${unsubLink(u.id)}" style="color:#4a6b2f">להסרה מרשימת הדיוור</a>, או פשוט השיבו למייל הזה.</p>
   </div></div>`;
-  await sendEmail(u.email, "🎁 הסימנייה שלך שמורה | ספרייה שכונתית", html);
+  await sendEmail(u.email, "🎁 הסימנייה שלך שמורה | ספרייה שכונתית", html, undefined, { "List-Unsubscribe": `<${unsubLink(u.id)}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
 }
 
 // התראה כשמתקרבים למכסת המיילים היומית של Resend (מתאפסת בחצות UTC = 02:00/03:00 בישראל)
