@@ -128,6 +128,8 @@ async function initDB() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT false",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_consent_at BIGINT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS bm_welcome_at BIGINT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS bm_ever BOOLEAN DEFAULT false",
+    "UPDATE users SET bm_ever=true WHERE email_consent=true AND COALESCE(bm_ever,false)=false",
     "UPDATE users SET email_consent_at=createdat WHERE email_consent=true AND email_consent_at IS NULL",
     "ALTER TABLE wishlist ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false",
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS setinfo TEXT",
@@ -788,7 +790,7 @@ function privateUser(req, u) {
   return {
     ...publicUser(req, u),
     email: u.email, phone: u.phone || "", address: u.address || "",
-    emailConsent: !!u.email_consent, featuredBooks: u.featuredbooks || "[]",
+    emailConsent: !!u.email_consent, bmGifted: !!(u.bm_ever || u.bm_welcome_at || u.email_consent), featuredBooks: u.featuredbooks || "[]",
   };
 }
 
@@ -1456,8 +1458,8 @@ async function sendBookmarkWelcome(u) {
   const btn = (href, label, bg) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:999px;font-size:16px">${label}</a>`;
   const html = `<div dir="rtl" style="background:#F5F0E8;padding:24px 12px;font-family:Arial,sans-serif;color:#1E2D3D">
   <div style="max-width:520px;margin:0 auto;background:#FBF6EC;border-radius:18px;padding:28px 24px;line-height:1.7;font-size:16px">
-    <div style="text-align:center;font-size:44px">🎁</div>
-    <h1 style="text-align:center;font-size:24px;margin:6px 0 18px">הסימנייה שלך שמורה!</h1>
+    <div style="text-align:center;margin-bottom:14px"><img src="${site}/icon-192.png" width="64" height="64" alt="" style="border-radius:16px;display:inline-block"/><div style="font-size:22px;font-weight:700;margin-top:6px">ספרייה שכונתית</div><div style="font-size:13px;color:#5A655E">ספר טוב נשאר בלב, לא על המדף</div></div>
+    <h1 style="text-align:center;font-size:24px;margin:6px 0 18px;border-top:1px solid #e3dccd;padding-top:18px">🎁 הסימנייה שלך שמורה!</h1>
     <p>שלום${first ? " " + first : ""},</p>
     <p>תודה שהצטרפת לעדכונים של <b>הספרייה השכונתית</b>. שמרנו בשבילך סימנייה מעוצבת, מתנה קטנה על ההצטרפות.</p>
     <p><b>איך מקבלים אותה?</b><br/>אנחנו מתאמים בימים אלה את החלוקה בשכונה. ברגע שייקבעו מועד ומקום, נשלח לך כאן במייל את כל הפרטים.</p>

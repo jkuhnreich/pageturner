@@ -2008,7 +2008,7 @@ export default function App() {
   // חלון הסימנייה קופץ אחרי 2 שניות: לאורח פעם בביקור, לרשום שלא אישר דיוור פעם ב-3 ימים, ולכל היותר 3 פעמים
   useEffect(() => {
     if (screen !== "app" || !user || !BM_ON() || legal) return;
-    const need = isGuest ? "signup" : (user.id && session.token() && user.emailConsent === false ? "consent" : null);
+    const need = isGuest ? "signup" : (user.id && session.token() && user.emailConsent === false && !user.bmGifted ? "consent" : null);
     if (!need) return;
     try {
       if (need === "signup" && sessionStorage.getItem("pt_bm_seen")) return;
