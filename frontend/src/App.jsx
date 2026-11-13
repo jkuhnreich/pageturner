@@ -113,7 +113,8 @@ input::placeholder,textarea::placeholder{color:#767670}
 input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
 ::-webkit-scrollbar{width:3px;height:0}::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
 @media (max-width:420px){.hdr-logo{display:none}.hdr-join{font-size:12px!important;padding:7px 11px!important}}
-@media (max-width:370px){.hdr-join{white-space:normal!important;line-height:1.15;width:70px;padding:5px 8px!important;font-size:11.5px!important}.hdr-title{font-size:19px!important}}
+@media (max-width:370px){.hdr-join{font-size:11.5px!important;padding:6px 10px!important}.hdr-title{font-size:19px!important}}
+@media (max-width:340px){.hdr-join{white-space:normal!important;line-height:1.15;width:70px;padding:5px 8px!important}}
 @media (max-width:320px){.hdr-title{font-size:17px!important}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
@@ -1184,8 +1185,8 @@ function GoogleButtonInner({ onResult, onError }) {
     </div>
   );
 }
-function OrDivider() {
-  return <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0",color:C.muted,fontSize:12}}><div style={{flex:1,height:1,background:C.border}}/>או עם קוד למייל<div style={{flex:1,height:1,background:C.border}}/></div>;
+function OrDivider({ tight }) {
+  return <div style={{display:"flex",alignItems:"center",gap:10,margin:tight?"-4px 0":"14px 0",color:C.muted,fontSize:12}}><div style={{flex:1,height:1,background:C.border}}/>או עם קוד למייל<div style={{flex:1,height:1,background:C.border}}/></div>;
 }
 
 function Login({ onBack, onDone, onRegister }) {
@@ -1405,13 +1406,14 @@ const BM_CSS = `
 .bm-photo{display:none}
 .bm-card{margin:3.2%;margin-inline-end:auto;width:47%;background:#FBF6EC;border-radius:18px;padding:clamp(16px,2.6vw,28px);
   display:flex;flex-direction:column;gap:12px;overflow:auto}
+.bm-card>*{flex-shrink:0}
 .bm-x{position:absolute;top:12px;left:12px;width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.92);
   display:grid;place-items:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2);z-index:2;color:#1E2D3D}
 .bm-h{font-family:${"'Playpen Sans Hebrew','Rubik',sans-serif"};font-weight:700;font-size:clamp(26px,4.4vw,40px);line-height:1.1;margin:0;text-align:center;color:#1E2D3D;text-wrap:balance}
 .bm-gift{display:flex;align-items:center;gap:10px;justify-content:center}
 .bm-brush{background:#527236;color:#fff;font-weight:700;font-size:clamp(15px,1.9vw,18px);line-height:1.3;padding:8px 18px;
   border-radius:14px 40px 18px 34px / 22px 14px 30px 16px;transform:rotate(-1.2deg);text-align:center}
-.bm-in{width:100%;height:48px;border:1.5px solid #1E2D3D;border-radius:999px;background:#fff;padding:0 16px;font-size:16px;color:#1E2D3D;outline:none}
+.bm-in{width:100%;height:52px;border:1.5px solid #1E2D3D;border-radius:999px;background:#fff;padding:0 16px;font-size:16px;color:#1E2D3D;outline:none}
 .bm-in:focus{box-shadow:0 0 0 3px rgba(82,114,54,.3)}
 .bm-otp{letter-spacing:.5em;text-align:center;direction:ltr;font-size:22px}
 .bm-ok{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.4;cursor:pointer;color:#1E2D3D}
@@ -1501,7 +1503,7 @@ function JoinModal({ mode, user, onClose, onAuth, onLogin, onShowLegal, toast_ }
     <h2 className="bm-h">מצטרפים לספרייה השכונתית</h2>
     <div className="bm-gift"><div className="bm-brush">מאשרים עדכונים במייל<br/>ומקבלים סימנייה במתנה</div><BmGiftIcon/></div>
     <GoogleButton onError={setErr} onResult={onGoogle}/>
-    <OrDivider/>
+    <OrDivider tight/>
     <input className="bm-in" value={name} onChange={e => setName(e.target.value)} placeholder="שם מלא" autoComplete="name" aria-label="שם מלא"/>
     <input className="bm-in" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && formOk && !busy && sendCode()} placeholder="כתובת מייל" type="email" inputMode="email" autoComplete="email" aria-label="כתובת מייל" style={{direction:"ltr",textAlign:"right"}}/>
     {consentBox}
