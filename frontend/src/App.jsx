@@ -2239,12 +2239,12 @@ export default function App() {
 
         {tab === "search" && <>
           {/* סינון לפי סוג עסקה */}
-          <div className="rail" style={{padding:"14px 16px 4px",gap:8}}>
+          <div className="rail" style={{padding:"14px 16px 4px",gap:6}}>
             {[["all","הכל","shelf"],...Object.entries(MODES).map(([k,m])=>[k,m.label,m.icon])].map(([k,l,ic])=>{
               const on = modeFilter===k;
               return (
                 <button key={k} className="press" onClick={()=>setModeFilter(k)} aria-pressed={on}
-                  style={{display:"flex",alignItems:"center",gap:6,padding:"9px 15px",borderRadius:99,fontSize:14,fontWeight:on?700:500,cursor:"pointer",whiteSpace:"nowrap",
+                  style={{display:"flex",alignItems:"center",gap:5,padding:"9px 11px",borderRadius:99,fontSize:14,fontWeight:on?700:500,cursor:"pointer",whiteSpace:"nowrap",
                     border:"1.5px solid "+(MODES[k]?(on?MODES[k].solid:MODES[k].solid+"55"):(on?C.ink:C.border)),
                     background:on?(MODES[k]?.solid||C.ink):(MODES[k]?.bg||"#fff"),color:on?"#fff":(MODES[k]?.fg||C.ink),transition:"background .15s,color .15s"}}>
                   <Icon name={ic} size={16} stroke={2} color={on?"#fff":(MODES[k]?.fg||C.ink)}/>{l}
