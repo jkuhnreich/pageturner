@@ -1499,10 +1499,9 @@ async function sendEmail(to, subject, html, attachments, headers) {
 
 // מייל אישור למי שהצטרף לדיוור (מתנת הסימנייה). קישור לווטסאפ רק אם WHATSAPP_GROUP_URL מוגדר
 // מכסת Resend (100 ביום, מתאפסת ב-02:00 שעון ישראל):
-// בזמן הרשמה, מייל הסימנייה יוצא מיד עד 50 מיילים ביום; מעבר לזה נכנס לתור.
-// כל שעה (9:00-22:00), אם השעה האחרונה הייתה שקטה, התור נשלח עד 70, כך שתמיד נשארים 30 לקודי כניסה.
-const BM_NOW_MAX = Number(process.env.BM_WELCOME_MAX_DAILY || 50);
-const BM_LATE_MAX = Number(process.env.BM_WELCOME_LATE_MAX || 70);
+// מייל הסימנייה יוצא מיד עד 90 מיילים ביום; רק מעבר לזה נכנס לתור, כדי שתמיד יישארו 10 לקודי כניסה.
+const BM_NOW_MAX = Number(process.env.BM_WELCOME_MAX_DAILY || 90);
+const BM_LATE_MAX = Number(process.env.BM_WELCOME_LATE_MAX || 90);
 const BM_QUIET_PER_HOUR = Number(process.env.BM_QUIET_PER_HOUR || 3);
 async function emailsToday() {
   const d = new Date(); d.setUTCHours(0, 0, 0, 0);
@@ -1988,17 +1987,6 @@ app.get("/api/admin/stats", limit("admin", 20, 15 * 60 * 1000), async (req, res)
       cities: cities.rows, hourly: hourly.rows,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// שליחת מייל הסימנייה למי שאישר דיוור ועוד לא קיבל: עד המכסה עכשיו, השאר בבוקר
-app.post("/api/admin/bm-welcome-all", limit("admin", 10, 15 * 60 * 1000), async (req, res) => {
-  if (!isAdmin(req)) return res.status(401).json({ error: "unauthorized" });
-  try {
-    await pool.query("UPDATE users SET bm_pending=true WHERE email_consent=true AND bm_welcome_at IS NULL AND COALESCE(suspended,false)=false");
-    const { sent } = await flushBookmarkQueue();
-    const left = +(await pool.query("SELECT COUNT(*) FROM users WHERE bm_pending=true AND bm_welcome_at IS NULL")).rows[0].count;
-    res.json({ ok: true, sent, queued: left });
-  } catch (e) { console.error("bm all:", e.message); res.status(500).json({ error: "שגיאה" }); }
 });
 
 // מייל סימנייה לבדיקה, נשלח רק למייל של המנהל, בלי לשנות שום דבר במסד הנתונים
