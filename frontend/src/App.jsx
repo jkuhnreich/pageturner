@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-import { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, useId } from "react";
 import { useNavigate } from "react-router-dom";
 
 const BASE = import.meta.env.VITE_API_URL ||
@@ -1914,6 +1914,20 @@ export default function App() {
     }
   }, [favIds, isGuest, user?.id, toast_]);
   const openBook = useCallback(b => { setViewBook(b); api.track("book_view", { bookId: b.id, title: b.title }); }, []);
+  // שמירת מיקום הגלילה: כשסוגרים דף ספר/משתמש חוזרים לאותו מקום ברשימה
+  const overlayOpen = !!(viewBook || viewUserId);
+  const overlayRef = useRef(overlayOpen); overlayRef.current = overlayOpen;
+  const listY = useRef(0);
+  useEffect(() => {
+    const onScroll = () => { if (!overlayRef.current) listY.current = window.scrollY; };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  const wasOpen = useRef(overlayOpen);
+  useLayoutEffect(() => {
+    if (wasOpen.current && !overlayOpen) window.scrollTo(0, listY.current);
+    wasOpen.current = overlayOpen;
+  }, [overlayOpen]);
 
   useEffect(() => {
     const onEdit = e => setEditBook(e.detail);
