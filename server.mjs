@@ -1484,12 +1484,12 @@ app.put("/api/contacts/:id", requireAuth, async (req, res) => {
 
 // ── קוד כניסה במייל (OTP) ─────────────────────────────────
 const RESEND_URL = process.env.RESEND_URL || "https://api.resend.com/emails";
-async function sendEmail(to, subject, html, attachments, headers) {
+async function sendEmail(to, subject, html, attachments, headers, replyTo) {
   if (!process.env.RESEND_API_KEY) { console.log(`[email skipped] to=${to} subject=${subject}${attachments ? " attachments=" + attachments.map(a => a.filename + ":" + a.content.length).join(",") : ""}`); return; }
   const r = await fetch(RESEND_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", reply_to: process.env.REPLY_TO || "pageturner.team@gmail.com", to: [to], subject, html, ...(attachments ? { attachments } : {}), ...(headers ? { headers } : {}) }),
+    body: JSON.stringify({ from: "Pageturner <noreply@pageturner.co.il>", reply_to: replyTo || process.env.REPLY_TO || "pageturner.team@gmail.com", to: [to], subject, html, ...(attachments ? { attachments } : {}), ...(headers ? { headers } : {}) }),
   });
   if (!r.ok) { const t = await r.text(); throw new Error(`Resend ${r.status}: ${t.slice(0, 200)}`); }
   const kind = /קוד הכניסה/.test(subject) ? "otp" : /גיבוי/.test(subject) ? "backup" : /דוח/.test(subject) ? "report" : /זמין עכשיו/.test(subject) ? "wishlist" : /הסימנייה שלך/.test(subject) ? "bm_welcome" : "admin";
@@ -1934,12 +1934,11 @@ app.post("/api/feedback", limit("feedback", 5, 60 * 60 * 1000), async (req, res)
   const message = String(req.body.message || "").trim();
   const replyTo = normEmail(req.body.email || req.user?.email || "");
   if (message.length < 3) return res.status(400).json({ error: "כתבו כמה מילים" });
-  if (!process.env.ADMIN_EMAIL) return res.status(503).json({ error: "לא ניתן לשלוח כרגע" });
   try {
-    await sendEmail(process.env.ADMIN_EMAIL, `📮 פנייה מהאתר${req.user ? " — " + clip(req.user.name, 40) : ""}`, `<div dir="rtl" style="font-family:sans-serif">
+    await sendEmail(process.env.CONTACT_EMAIL || "pageturner.team@gmail.com", `📮 פנייה מהאתר${req.user ? " — " + clip(req.user.name, 40) : ""}`, `<div dir="rtl" style="font-family:sans-serif">
       <p><b>מאת:</b> ${escapeHtml(req.user?.name || "אורח")} ${replyTo ? "&lt;" + escapeHtml(replyTo) + "&gt;" : ""}</p>
       <p style="white-space:pre-wrap;background:#f5f0e8;padding:12px;border-radius:8px">${escapeHtml(clip(message, 3000))}</p>
-    </div>`);
+    </div>`, undefined, undefined, replyTo || undefined);
     res.json({ ok: true });
   } catch (e) { console.error("feedback:", e.message); res.status(500).json({ error: "השליחה נכשלה, נסו שוב" }); }
 });
