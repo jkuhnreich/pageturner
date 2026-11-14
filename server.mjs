@@ -1532,15 +1532,13 @@ async function sendBookmarkWelcome(u, now, test) {
   const first = escapeHtml(String(u.name || "").trim().split(/\s+/)[0] || "");
   const btn = (href, label, bg, icon) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:999px;font-size:16px;min-width:220px">${icon ? `<img src="${icon}" width="22" height="22" alt="" style="vertical-align:middle;margin-left:8px;border:0;border-radius:6px"/>` : ""}<span style="vertical-align:middle">${label}</span></a>`;
   const html = `<div dir="rtl" style="background:#F5F0E8;padding:24px 12px;font-family:Arial,sans-serif;color:#1E2D3D">
-  <div style="max-width:520px;margin:0 auto;background:#FBF6EC;border-radius:18px;padding:28px 24px;line-height:1.7;font-size:16px">
-    <div style="text-align:center;margin-bottom:14px"><img src="${site}/icon-192.png" width="64" height="64" alt="" style="border-radius:16px;display:inline-block"/><br/><img src="${site}/email/levin-title.png" width="231" height="45" alt="ספרייה שכונתית" style="display:inline-block;margin-top:4px;border:0"/><div style="font-size:13px;color:#5A655E">ספר טוב נשאר בלב, לא על המדף</div></div>
-    <h1 style="text-align:center;font-size:24px;margin:6px 0 18px;border-top:1px solid #e3dccd;padding-top:18px">🎁 הסימנייה שלך שמורה!</h1>
-    <p>שלום${first ? " " + first : ""},</p>
-    <p>תודה שהצטרפת לעדכונים של <b>הספרייה השכונתית</b>. שמרנו בשבילך סימנייה מעוצבת, מתנה קטנה על ההצטרפות.</p>
-    <p><b>איך מקבלים אותה?</b><br/>אנחנו מתאמים בימים אלה את החלוקה בשכונה. ברגע שייקבעו מועד ומקום, נשלח לך כאן במייל את כל הפרטים.</p>
-    <p><b>רוצים לשמוע ראשונים?</b><br/>${wa ? "בקבוצת הווטסאפ ובעמוד האינסטגרם שלנו" : "בעמוד האינסטגרם שלנו"} נעדכן על חלוקת הסימניות, על מפגשים ועל ספרים חדשים בשכונה.</p>
-    ${wa ? `<p style="text-align:center;margin:16px 0 10px"><a href="${escapeHtml(wa)}"><img src="${site}/email/btn-wa.png" width="300" height="52" alt="הצטרפות לקבוצת הוואטסאפ" style="display:inline-block;border:0;max-width:100%;height:auto"/></a></p>` : ""}
-    <p style="text-align:center;margin:10px 0 20px"><a href="${escapeHtml(ig)}"><img src="${site}/email/btn-ig.png" width="300" height="52" alt="עקבו אחרינו באינסטגרם" style="display:inline-block;border:0;max-width:100%;height:auto"/></a></p>
+  <div style="max-width:520px;margin:0 auto;background:#FBF6EC;border-radius:18px;padding:18px 22px 24px;line-height:1.6;font-size:16px">
+    <div style="text-align:center;margin-bottom:6px"><img src="${site}/email/levin-title.png" width="185" height="36" alt="ספרייה שכונתית" style="display:inline-block;border:0"/></div>
+    <h1 style="text-align:center;font-size:22px;margin:4px 0 10px">🎁 הסימנייה שלך שמורה!</h1>
+    <p style="margin:0 0 10px">שלום${first ? " " + first : ""}, תודה שהצטרפת לעדכונים של <b>הספרייה השכונתית</b>. ${wa ? "בקבוצת הווטסאפ ובאינסטגרם" : "באינסטגרם"} נעדכן ראשונים על חלוקת הסימניות:</p>
+    ${wa ? `<p style="text-align:center;margin:8px 0 8px"><a href="${escapeHtml(wa)}"><img src="${site}/email/btn-wa.png" width="300" height="52" alt="הצטרפות לקבוצת הוואטסאפ" style="display:inline-block;border:0;max-width:100%;height:auto"/></a></p>` : ""}
+    <p style="text-align:center;margin:8px 0 18px"><a href="${escapeHtml(ig)}"><img src="${site}/email/btn-ig.png" width="300" height="52" alt="עקבו אחרינו באינסטגרם" style="display:inline-block;border:0;max-width:100%;height:auto"/></a></p>
+    <p><b>איך מקבלים את הסימנייה?</b><br/>אנחנו מתאמים בימים אלה את החלוקה בשכונה. ברגע שייקבעו מועד ומקום, נשלח לך כאן במייל את כל הפרטים.</p>
     <p>ובינתיים, יש לך על המדף ספר שכבר קראת? צלמו אותו ותנו לו לפגוש קורא חדש.</p>
     <p style="text-align:center;margin:20px 0">${btn(site, "לספרייה השכונתית", "#527236", `${site}/icon-192.png`)}</p>
     <p style="margin-top:22px">להתראות בשכונה,<br/>צוות הספרייה השכונתית</p>
